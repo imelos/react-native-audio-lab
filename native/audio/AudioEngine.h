@@ -29,7 +29,12 @@ private:
     juce::AudioDeviceManager deviceManager;
     
     std::atomic<bool> isPlaying{false};
+    std::atomic<bool> noteTriggered{false};
     std::atomic<int> currentNote{60};  // Middle C
     double phase = 0.0;
     double sampleRate = 44100.0;
+    float envelope = 0.0f;
+    float envelopeTarget = 0.0f;
+    const float attackTime = 0.01f;   // 10ms attack
+    const float releaseTime = 0.05f;  // 50ms release
 };
