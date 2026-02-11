@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 70;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -13,7 +13,8 @@
 		778F02FF2F3C7C5200F4C534 /* CoreMIDI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778F02FE2F3C7C5200F4C534 /* CoreMIDI.framework */; };
 		778F03052F3C840300F4C534 /* JuceModules.mm in Sources */ = {isa = PBXBuildFile; fileRef = 778F03042F3C840300F4C534 /* JuceModules.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
 		778F030D2F3CC1E500F4C534 /* JuceMetadata.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F030C2F3CC1E500F4C534 /* JuceMetadata.cpp */; };
-		778F030F2F3CC3C900F4C534 /* AppSpecs-generated.mm in Sources */ = {isa = PBXBuildFile; fileRef = 778F030E2F3CC3C900F4C534 /* AppSpecs-generated.mm */; };
+		778F03132F3CE14500F4C534 /* BaseOscillatorVoice.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03122F3CE14500F4C534 /* BaseOscillatorVoice.cpp */; };
+		778F03162F3CE20800F4C534 /* BasicSynthSound.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03152F3CE20800F4C534 /* BasicSynthSound.cpp */; };
 		778FB0882F3B6CE500F4C534 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB0872F3B6CE500F4C534 /* AVFoundation.framework */; };
 		778FB08A2F3B6CEE00F4C534 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB0892F3B6CEE00F4C534 /* CoreAudio.framework */; };
 		778FB08C2F3B6CF400F4C534 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB08B2F3B6CF300F4C534 /* Accelerate.framework */; };
@@ -21,6 +22,7 @@
 		778FC17E2F3BA17700F4C534 /* AudioEngine.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778FB0B02F3BA17600F4C534 /* AudioEngine.cpp */; };
 		77BE82272F3B3FF100E9C167 /* AudioModule.mm in Sources */ = {isa = PBXBuildFile; fileRef = 77BE82262F3B3FF100E9C167 /* AudioModule.mm */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		C7135191C2A80147D0C1E047 /* libPods-ReactNativeAudioLab.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 2B1EE2BDDA23048B7A2AEBCE /* libPods-ReactNativeAudioLab.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,9 +30,8 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = ReactNativeAudioLab/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = ReactNativeAudioLab/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = ReactNativeAudioLab/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		3B4392A12AC88292D35C810B /* Pods-ReactNativeAudioLab.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ReactNativeAudioLab.debug.xcconfig"; path = "Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab.debug.xcconfig"; sourceTree = "<group>"; };
-		5709B34CF0A7D63546082F79 /* Pods-ReactNativeAudioLab.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ReactNativeAudioLab.release.xcconfig"; path = "Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab.release.xcconfig"; sourceTree = "<group>"; };
-		5DCACB8F33CDC322A6C60F78 /* libPods-ReactNativeAudioLab.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ReactNativeAudioLab.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		2B1EE2BDDA23048B7A2AEBCE /* libPods-ReactNativeAudioLab.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ReactNativeAudioLab.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		64F40DD34F5C7E1F7C690206 /* Pods-ReactNativeAudioLab.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ReactNativeAudioLab.release.xcconfig"; path = "Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab.release.xcconfig"; sourceTree = "<group>"; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = ReactNativeAudioLab/AppDelegate.swift; sourceTree = "<group>"; };
 		778F00002F3BCF6200F4C534 /* RunQueue.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RunQueue.h; sourceTree = "<group>"; };
 		778F00012F3BCF6200F4C534 /* RunQueue.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = RunQueue.c; sourceTree = "<group>"; };
@@ -700,6 +701,11 @@
 		778F030B2F3CBDE600F4C534 /* JuceHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = JuceHeader.h; sourceTree = "<group>"; };
 		778F030C2F3CC1E500F4C534 /* JuceMetadata.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = JuceMetadata.cpp; sourceTree = "<group>"; };
 		778F030E2F3CC3C900F4C534 /* AppSpecs-generated.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = "AppSpecs-generated.mm"; path = "build/generated/ios/ReactCodegen/AppSpecs/AppSpecs-generated.mm"; sourceTree = "<group>"; };
+		778F03102F3CD12700F4C534 /* SineWaveSound.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SineWaveSound.h; sourceTree = "<group>"; };
+		778F03112F3CE07000F4C534 /* BaseOscillatorVoice.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BaseOscillatorVoice.h; sourceTree = "<group>"; };
+		778F03122F3CE14500F4C534 /* BaseOscillatorVoice.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = BaseOscillatorVoice.cpp; sourceTree = "<group>"; };
+		778F03142F3CE1C600F4C534 /* BasicSynthSound.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BasicSynthSound.h; sourceTree = "<group>"; };
+		778F03152F3CE20800F4C534 /* BasicSynthSound.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = BasicSynthSound.cpp; sourceTree = "<group>"; };
 		778FB0872F3B6CE500F4C534 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		778FB0892F3B6CEE00F4C534 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		778FB08B2F3B6CF300F4C534 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
@@ -3104,11 +3110,12 @@
 		77BE82252F3B3FBE00E9C167 /* AudioModule.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioModule.h; sourceTree = "<group>"; };
 		77BE82262F3B3FF100E9C167 /* AudioModule.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioModule.mm; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = ReactNativeAudioLab/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		E9207A4949E369360F24BE3F /* Pods-ReactNativeAudioLab.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ReactNativeAudioLab.debug.xcconfig"; path = "Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab.debug.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		778F03062F3CBC2D00F4C534 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		778F03062F3CBC2D00F4C534 /* Exceptions for "libs" folder in "ReactNativeAudioLab" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				libNewProject.a,
@@ -3118,7 +3125,14 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		778FE84A2F3BA94E00F4C534 /* libs */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (778F03062F3CBC2D00F4C534 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = libs; sourceTree = "<group>"; };
+		778FE84A2F3BA94E00F4C534 /* libs */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				778F03062F3CBC2D00F4C534 /* Exceptions for "libs" folder in "ReactNativeAudioLab" target */,
+			);
+			path = libs;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -3131,6 +3145,7 @@
 				778FB08C2F3B6CF400F4C534 /* Accelerate.framework in Frameworks */,
 				778FB08A2F3B6CEE00F4C534 /* CoreAudio.framework in Frameworks */,
 				778FB0882F3B6CE500F4C534 /* AVFoundation.framework in Frameworks */,
+				C7135191C2A80147D0C1E047 /* libPods-ReactNativeAudioLab.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3158,7 +3173,7 @@
 				778FB0892F3B6CEE00F4C534 /* CoreAudio.framework */,
 				778FB0872F3B6CE500F4C534 /* AVFoundation.framework */,
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				5DCACB8F33CDC322A6C60F78 /* libPods-ReactNativeAudioLab.a */,
+				2B1EE2BDDA23048B7A2AEBCE /* libPods-ReactNativeAudioLab.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -4667,8 +4682,13 @@
 				778FB0AF2F3BA17600F4C534 /* AudioEngine.h */,
 				778FB0B02F3BA17600F4C534 /* AudioEngine.cpp */,
 				778F030C2F3CC1E500F4C534 /* JuceMetadata.cpp */,
+				778F03122F3CE14500F4C534 /* BaseOscillatorVoice.cpp */,
+				778F03152F3CE20800F4C534 /* BasicSynthSound.cpp */,
 				778F02FA2F3BD8BB00F4C534 /* JuceConfig.h */,
 				778F030B2F3CBDE600F4C534 /* JuceHeader.h */,
+				778F03102F3CD12700F4C534 /* SineWaveSound.h */,
+				778F03112F3CE07000F4C534 /* BaseOscillatorVoice.h */,
+				778F03142F3CE1C600F4C534 /* BasicSynthSound.h */,
 			);
 			path = audio;
 			sourceTree = "<group>";
@@ -9087,8 +9107,8 @@
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				3B4392A12AC88292D35C810B /* Pods-ReactNativeAudioLab.debug.xcconfig */,
-				5709B34CF0A7D63546082F79 /* Pods-ReactNativeAudioLab.release.xcconfig */,
+				E9207A4949E369360F24BE3F /* Pods-ReactNativeAudioLab.debug.xcconfig */,
+				64F40DD34F5C7E1F7C690206 /* Pods-ReactNativeAudioLab.release.xcconfig */,
 			);
 			path = Pods;
 			sourceTree = "<group>";
@@ -9100,13 +9120,13 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "ReactNativeAudioLab" */;
 			buildPhases = (
-				C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */,
+				3342C1B682F391C47E639780 /* [CP] Check Pods Manifest.lock */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
-				00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */,
-				E235C05ADACE081382539298 /* [CP] Copy Pods Resources */,
+				B751CD0315505586C4E6A028 /* [CP] Embed Pods Frameworks */,
+				F87EEB2CB298AE1884F4E7F6 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -9134,7 +9154,6 @@
 				};
 			};
 			buildConfigurationList = 83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "ReactNativeAudioLab" */;
-			compatibilityVersion = "Xcode 12.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -9142,6 +9161,7 @@
 				Base,
 			);
 			mainGroup = 83CBB9F61A601CBA00E9B192;
+			preferredProjectObjectVersion = 77;
 			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -9181,28 +9201,7 @@
 			shellPath = /bin/sh;
 			shellScript = "set -e\n\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nREACT_NATIVE_XCODE=\"$REACT_NATIVE_PATH/scripts/react-native-xcode.sh\"\n\n/bin/sh -c \"\\\"$WITH_ENVIRONMENT\\\" \\\"$REACT_NATIVE_XCODE\\\"\"\n";
 		};
-		00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks-${CONFIGURATION}-input-files.xcfilelist",
-			);
-			inputPaths = (
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputFileListPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */ = {
+		3342C1B682F391C47E639780 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -9224,7 +9223,28 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		E235C05ADACE081382539298 /* [CP] Copy Pods Resources */ = {
+		B751CD0315505586C4E6A028 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			inputPaths = (
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		F87EEB2CB298AE1884F4E7F6 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -9256,7 +9276,8 @@
 				778F030D2F3CC1E500F4C534 /* JuceMetadata.cpp in Sources */,
 				778FC17E2F3BA17700F4C534 /* AudioEngine.cpp in Sources */,
 				778F03052F3C840300F4C534 /* JuceModules.mm in Sources */,
-				778F030F2F3CC3C900F4C534 /* AppSpecs-generated.mm in Sources */,
+				778F03162F3CE20800F4C534 /* BasicSynthSound.cpp in Sources */,
+				778F03132F3CE14500F4C534 /* BaseOscillatorVoice.cpp in Sources */,
 				77BE82272F3B3FF100E9C167 /* AudioModule.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -9266,7 +9287,7 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 3B4392A12AC88292D35C810B /* Pods-ReactNativeAudioLab.debug.xcconfig */;
+			baseConfigurationReference = E9207A4949E369360F24BE3F /* Pods-ReactNativeAudioLab.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
@@ -9365,6 +9386,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
+					"$(SDKROOT)/usr/lib/swift",
 					"$(inherited)",
 					"\"${PODS_CONFIGURATION_BUILD_DIR}/DoubleConversion\"",
 					"\"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly\"",
@@ -9457,7 +9479,7 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 5709B34CF0A7D63546082F79 /* Pods-ReactNativeAudioLab.release.xcconfig */;
+			baseConfigurationReference = 64F40DD34F5C7E1F7C690206 /* Pods-ReactNativeAudioLab.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
@@ -9555,6 +9577,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
+					"$(SDKROOT)/usr/lib/swift",
 					"$(inherited)",
 					"\"${PODS_CONFIGURATION_BUILD_DIR}/DoubleConversion\"",
 					"\"${PODS_CONFIGURATION_BUILD_DIR}/RCT-Folly\"",

@@ -1,96 +1,132 @@
-//#include "JuceConfig.h"
 #include "AudioEngine.h"
-#include <cmath>
+#include "BaseOscillatorVoice.h"     // your voice class
+#include "BasicSynthSound.h"         // your sound class
 
-AudioEngine::AudioEngine() {
-}
+AudioEngine::AudioEngine() = default;
 
-AudioEngine::~AudioEngine() {
+AudioEngine::~AudioEngine()
+{
     shutdown();
 }
 
-bool AudioEngine::initialize() {
-    // Initialize the audio device
+bool AudioEngine::initialize()
+{
     juce::String error = deviceManager.initialise(
-        0,     // number of input channels
-        2,     // number of output channels
-        nullptr,
-        true   // select default device on failure
+        0,              // inputs
+        2,              // outputs (stereo)
+        nullptr,        // xml config (use default)
+        true            // try default device on failure
     );
-    
-    if (error.isNotEmpty()) {
-        // Handle error
+
+    if (error.isNotEmpty())
+    {
+        // You can log error here or return it to React Native
+        DBG("Audio init failed: " << error);
         return false;
     }
-    
+
+    // === Prepare the synthesizer ===
+
+    synth.clearVoices();
+    synth.clearSounds();
+
+    // Add one sound type (very simple — accepts all notes & channels)
+    synth.addSound(new BasicSynthSound());
+
+    // Add multiple voices = polyphony
+    const int polyphony = 16;   // change this to 8, 12, 24, 32... depending on device
+    for (int i = 0; i < polyphony; ++i)
+    {
+        synth.addVoice(new BaseOscillatorVoice());
+    }
+
+    // Optional: set initial global parameters
+    // (you will later expose setters for this)
+
     deviceManager.addAudioCallback(this);
     return true;
 }
 
-void AudioEngine::shutdown() {
+void AudioEngine::shutdown()
+{
     deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
+    synth.clearVoices();
+    synth.clearSounds();
 }
 
-void AudioEngine::startNote(int midiNote) {
-    currentNote = midiNote;
-    phase = 0.0;
-    envelopeTarget = 1.0f;
-    noteTriggered = true;
-    isPlaying = true;
+// ────────────────────────────────────────────────
+// Main note control from React Native
+// ────────────────────────────────────────────────
+
+void AudioEngine::noteOn(int midiNote, float velocity)
+{
+    synth.noteOn(1, midiNote, velocity);   // channel 1
 }
 
-void AudioEngine::stopNote() {
-    envelopeTarget = 0.0f;
-    noteTriggered = false;
+void AudioEngine::noteOff(int midiNote)
+{
+    synth.noteOff(1, midiNote, 1.0f, true);   // true = allow release tail
 }
 
-void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
-                                        int numInputChannels,
-                                        float* const* outputChannelData,
-                                        int numOutputChannels,
-                                        int numSamples,
-                                        const juce::AudioIODeviceCallbackContext& context) {
-  // Calculate envelope increment per sample
-      float attackIncrement = 1.0f / (attackTime * sampleRate);
-      float releaseIncrement = 1.0f / (releaseTime * sampleRate);
-      
-      for (int i = 0; i < numSamples; ++i) {
-          // Update envelope
-          if (envelope < envelopeTarget) {
-              envelope += attackIncrement;
-              if (envelope > envelopeTarget) envelope = envelopeTarget;
-          } else if (envelope > envelopeTarget) {
-              envelope -= releaseIncrement;
-              if (envelope < envelopeTarget) envelope = envelopeTarget;
-              if (envelope <= 0.0f) isPlaying = false;  // Stop only when envelope reaches 0
-          }
-          
-          if (isPlaying || envelope > 0.0f) {
-              float frequency = 440.0f * std::pow(2.0f, (currentNote - 69) / 12.0f);
-              float sample = std::sin(phase) * 0.25f * envelope;  // Apply envelope
-              
-              for (int channel = 0; channel < numOutputChannels; ++channel) {
-                  outputChannelData[channel][i] = sample;
-              }
-              
-              phase += 2.0 * M_PI * frequency / sampleRate;
-              if (phase > 2.0 * M_PI) {
-                  phase -= 2.0 * M_PI;
-              }
-          } else {
-              for (int channel = 0; channel < numOutputChannels; ++channel) {
-                  outputChannelData[channel][i] = 0.0f;
-              }
-          }
-      }
+// ────────────────────────────────────────────────
+// JUCE audio callbacks
+// ────────────────────────────────────────────────
+
+void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
+{
+    synth.setCurrentPlaybackSampleRate(device->getCurrentSampleRate());
 }
 
-void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device) {
-    sampleRate = device->getCurrentSampleRate();
-    phase = 0.0;
+void AudioEngine::audioDeviceIOCallbackWithContext(
+    const float* const* /*inputChannelData*/,
+    int /*numInputChannels*/,
+    float* const* outputChannelData,
+    int numOutputChannels,
+    int numSamples,
+    const juce::AudioIODeviceCallbackContext& /*context*/)
+{
+    juce::AudioBuffer<float> buffer(outputChannelData, numOutputChannels, numSamples);
+    
+    // Clear buffer first (very important!)
+    buffer.clear();
+
+    juce::MidiBuffer dummyMidi;   // we trigger notes manually, no real MIDI
+    synth.renderNextBlock(buffer, dummyMidi, 0, numSamples);
 }
 
-void AudioEngine::audioDeviceStopped() {
-    // Clean up if needed
+void AudioEngine::audioDeviceStopped()
+{
+    // usually nothing needed here
+}
+
+
+void AudioEngine::setWaveform(BaseOscillatorVoice::Waveform waveform)
+{
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+    {
+        if (auto* voice = synth.getVoice(i))
+        {
+            if (auto* oscVoice = dynamic_cast<BaseOscillatorVoice*>(voice))
+            {
+                oscVoice->setWaveform(waveform);
+            }
+        }
+    }
+}
+
+void AudioEngine::setADSR(float attack, float decay, float sustain, float release)
+{
+    juce::ADSR::Parameters params { attack, decay, sustain, release };
+
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+    {
+        if (auto* voice = synth.getVoice(i))
+        {
+            if (auto* oscVoice = dynamic_cast<BaseOscillatorVoice*>(voice))
+            {
+                oscVoice->setADSR(params);
+            }
+        }
+    }
 }
