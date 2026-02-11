@@ -73,3 +73,21 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# developer user for login without typing credentials
+src/devuser.ts
+.env.local
+
+# sentry credentials
+android/sentry.properties
+
+ios/tmp.xcconfig
+
+.env.
+
+src/features/three/bundler/dist/
+
+# Expo
+.expo
+dist/
+web-build/
