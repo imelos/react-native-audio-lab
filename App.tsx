@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Pressable,
@@ -6,8 +6,9 @@ import {
   Text,
   Button,
   ScrollView,
+  findNodeHandle,
 } from 'react-native';
-import NativeAudioModule from './src/specs/NativeAudioModule'; // your TurboModule import
+import NativeAudioModule from './src/specs/NativeAudioModule';
 
 const NOTES = [
   { note: 60, name: 'C4' },
@@ -25,8 +26,9 @@ type Waveform = (typeof WAVEFORMS)[number];
 
 export default function App() {
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
-
-  // Optional: you can add more controls later (volume, detune, etc.)
+  const activeNoteRef = useRef<number | null>(null);
+  const keyRefsRef = useRef<Map<number, View>>(new Map());
+  const keyLayoutsRef = useRef<Map<number, { x: number; y: number; width: number; height: number }>>(new Map());
 
   const changeWaveform = () => {
     const currentIndex = WAVEFORMS.indexOf(currentWaveform);
@@ -37,11 +39,68 @@ export default function App() {
     NativeAudioModule.setWaveform(nextWave);
   };
 
+  const measureKey = (note: number) => {
+    const ref = keyRefsRef.current.get(note);
+    if (ref) {
+      ref.measure((x, y, width, height, pageX, pageY) => {
+        keyLayoutsRef.current.set(note, { x: pageX, y: pageY, width, height });
+      });
+    }
+  };
+
+  const findNoteAtPosition = (pageX: number, pageY: number): number | null => {
+    for (const [note, layout] of keyLayoutsRef.current.entries()) {
+      if (
+        pageX >= layout.x &&
+        pageX <= layout.x + layout.width &&
+        pageY >= layout.y &&
+        pageY <= layout.y + layout.height
+      ) {
+        return note;
+      }
+    }
+    return null;
+  };
+
+  const handleTouchStart = (note: number) => {
+    // Measure all keys on first touch (lazy initialization)
+    if (keyLayoutsRef.current.size === 0) {
+      NOTES.forEach(({ note }) => measureKey(note));
+    }
+
+    if (activeNoteRef.current !== null) {
+      NativeAudioModule.noteOff(activeNoteRef.current);
+    }
+    NativeAudioModule.noteOn(note, 0.85);
+    activeNoteRef.current = note;
+  };
+
+  const handleTouchMove = (event: any) => {
+    const { pageX, pageY } = event.nativeEvent;
+    const note = findNoteAtPosition(pageX, pageY);
+
+    if (note !== null && note !== activeNoteRef.current) {
+      // Stop previous note
+      if (activeNoteRef.current !== null) {
+        NativeAudioModule.noteOff(activeNoteRef.current);
+      }
+      // Start new note
+      NativeAudioModule.noteOn(note, 0.85);
+      activeNoteRef.current = note;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (activeNoteRef.current !== null) {
+      NativeAudioModule.noteOff(activeNoteRef.current);
+      activeNoteRef.current = null;
+    }
+  };
+
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <Text style={styles.title}>JUCE Synth</Text>
 
-      {/* Waveform selector */}
       <View style={styles.controlRow}>
         <Text style={styles.label}>Waveform: {currentWaveform}</Text>
         <Button
@@ -51,7 +110,6 @@ export default function App() {
         />
       </View>
 
-      {/* Quick ADSR presets */}
       <View style={styles.controlRow}>
         <Text style={styles.label}>Presets:</Text>
         <View style={styles.buttonGroup}>
@@ -70,14 +128,21 @@ export default function App() {
         </View>
       </View>
 
-      {/* Keyboard */}
-      <View style={styles.keyboard}>
+      <View 
+        style={styles.keyboard}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         {NOTES.map(({ note, name }) => (
           <Pressable
             key={note}
+            ref={(ref) => {
+              if (ref) {
+                keyRefsRef.current.set(note, ref as any);
+              }
+            }}
             style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}
-            onTouchStart={() => NativeAudioModule.noteOn(note, 0.85)}
-            onTouchEnd={() => NativeAudioModule.noteOff(note)}
+            onTouchStart={() => handleTouchStart(note)}
           >
             <Text style={styles.noteName}>{name}</Text>
           </Pressable>
@@ -85,7 +150,7 @@ export default function App() {
       </View>
 
       <View style={{ height: 60 }} />
-    </ScrollView>
+    </View>
   );
 }
 
