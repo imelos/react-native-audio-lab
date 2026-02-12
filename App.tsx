@@ -82,8 +82,10 @@ export default function App() {
           <Pressable
             key={note}
             style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}
-            onPressIn={() => NativeAudioModule.noteOn(note, 0.85)}
-            onPressOut={() => NativeAudioModule.noteOff(note)}
+            onTouchStart={() => NativeAudioModule.noteOn(note, 0.85)}
+            onTouchEnd={() => NativeAudioModule.noteOff(note)}
+            onPressIn={() => {}} // Empty handler to activate Pressable's press state
+            onPressOut={() => {}}
           >
             <Text style={styles.noteName}>{name}</Text>
           </Pressable>

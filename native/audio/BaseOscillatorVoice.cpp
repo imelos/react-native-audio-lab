@@ -65,7 +65,7 @@ void BaseOscillatorVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer
     {
         float env = adsr.getNextSample();
 
-        if (env < 0.001f)
+        if (!adsr.isActive())
         {
             clearCurrentNote();
             break;
