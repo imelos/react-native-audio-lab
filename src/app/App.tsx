@@ -1,19 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Pressable,
-  StyleSheet,
-  Text,
-  Button,
-  ScrollView,
-} from 'react-native';
+import { View, StyleSheet, Text, Button } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
+  // withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import NativeAudioModule from '../specs/NativeAudioModule';
+import { AnimatedView } from 'react-native-reanimated/lib/typescript/component/View';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -94,7 +88,7 @@ function generateScale(
   return notes;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+// const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface GridPadProps {
   note: number;
@@ -112,16 +106,16 @@ function GridPad({
   isInScale = true,
 }: GridPadProps) {
   const isActive = activeNotes.has(note);
-  const scale = useSharedValue(1);
+  // const scale = useSharedValue(1);
   const backgroundColor = useSharedValue(0);
 
   useEffect(() => {
-    scale.value = withSpring(isActive ? 1.05 : 1, {
-      damping: 15,
-      stiffness: 150,
-    });
+    // scale.value = withSpring(isActive ? 1.05 : 1, {
+    //   damping: 15,
+    //   stiffness: 150,
+    // });
     backgroundColor.value = withTiming(isActive ? 1 : 0, { duration: 0 });
-  }, [isActive]);
+  }, [isActive, backgroundColor]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     backgroundColor:
@@ -133,8 +127,8 @@ function GridPad({
   }));
 
   return (
-    <AnimatedPressable
-      ref={ref => setRef(index, ref as any)}
+    <Animated.View
+      ref={(ref: AnimatedView) => setRef(index, ref)}
       style={[styles.gridPad, animatedStyle]}
     >
       <Text
@@ -146,7 +140,7 @@ function GridPad({
       >
         {midiToNoteName(note)}
       </Text>
-    </AnimatedPressable>
+    </Animated.View>
   );
 }
 
@@ -338,7 +332,7 @@ export default function App() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.contentContainer}>
         <Text style={styles.title}>Grid Synth</Text>
 
@@ -430,7 +424,7 @@ export default function App() {
 
         <View style={{ height: 60 }} />
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
