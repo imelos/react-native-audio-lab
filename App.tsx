@@ -57,21 +57,15 @@ export default function App() {
         <View style={styles.buttonGroup}>
           <Button
             title="Pluck"
-            onPress={() =>
-              NativeAudioModule.setADSR(0.005, 0.1, 0.0, 0.2)
-            }
+            onPress={() => NativeAudioModule.setADSR(0.005, 0.1, 0.0, 0.2)}
           />
           <Button
             title="Pad"
-            onPress={() =>
-              NativeAudioModule.setADSR(0.3, 1.5, 0.7, 2.0)
-            }
+            onPress={() => NativeAudioModule.setADSR(0.3, 1.5, 0.7, 2.0)}
           />
           <Button
             title="Organ"
-            onPress={() =>
-              NativeAudioModule.setADSR(0.01, 0.05, 1.0, 0.4)
-            }
+            onPress={() => NativeAudioModule.setADSR(0.01, 0.05, 1.0, 0.4)}
           />
         </View>
       </View>
@@ -84,8 +78,6 @@ export default function App() {
             style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}
             onTouchStart={() => NativeAudioModule.noteOn(note, 0.85)}
             onTouchEnd={() => NativeAudioModule.noteOff(note)}
-            onPressIn={() => {}} // Empty handler to activate Pressable's press state
-            onPressOut={() => {}}
           >
             <Text style={styles.noteName}>{name}</Text>
           </Pressable>
