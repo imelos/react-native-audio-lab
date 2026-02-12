@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Pressable, StyleSheet, Text, Button } from 'react-native';
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  Text,
+  Button,
+  ScrollView,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -20,6 +27,73 @@ const GRID_CONFIGS = {
 
 type GridSize = keyof typeof GRID_CONFIGS;
 
+// Musical keys (root notes)
+const KEYS = [
+  'C',
+  'C#',
+  'D',
+  'D#',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'A#',
+  'B',
+] as const;
+type Key = (typeof KEYS)[number];
+
+// Scale types with their interval patterns (semitones from root)
+const SCALES = {
+  Major: [0, 2, 4, 5, 7, 9, 11],
+  Minor: [0, 2, 3, 5, 7, 8, 10],
+} as const;
+
+type ScaleType = keyof typeof SCALES;
+
+// Convert MIDI note number to note name
+function midiToNoteName(midiNote: number): string {
+  const noteNames = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+  ];
+  const octave = Math.floor(midiNote / 12) - 1;
+  const noteName = noteNames[midiNote % 12];
+  return `${noteName}${octave}`;
+}
+
+// Generate scale notes from a root note
+function generateScale(
+  rootNote: number,
+  scaleType: ScaleType,
+  count: number,
+): number[] {
+  const intervals = SCALES[scaleType];
+  const notes: number[] = [];
+
+  let octaveOffset = 0;
+  for (let i = 0; i < count; i++) {
+    const scaleIndex = i % intervals.length;
+    if (i > 0 && scaleIndex === 0) {
+      octaveOffset += 12;
+    }
+    notes.push(rootNote + intervals[scaleIndex] + octaveOffset);
+  }
+
+  return notes;
+}
+
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface GridPadProps {
@@ -27,9 +101,16 @@ interface GridPadProps {
   index: number;
   activeNotes: Set<number>;
   setRef: (index: number, ref: View | null) => void;
+  isInScale?: boolean;
 }
 
-function GridPad({ note, index, activeNotes, setRef }: GridPadProps) {
+function GridPad({
+  note,
+  index,
+  activeNotes,
+  setRef,
+  isInScale = true,
+}: GridPadProps) {
   const isActive = activeNotes.has(note);
   const scale = useSharedValue(1);
   const backgroundColor = useSharedValue(0);
@@ -43,8 +124,12 @@ function GridPad({ note, index, activeNotes, setRef }: GridPadProps) {
   }, [isActive]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    // transform: [{ scale: scale.value }],
-    backgroundColor: backgroundColor.value === 1 ? '#6200ee' : '#2a2a2a',
+    backgroundColor:
+      backgroundColor.value === 1
+        ? '#6200ee'
+        : isInScale
+        ? '#2a2a2a'
+        : '#1a1a1a',
   }));
 
   return (
@@ -52,7 +137,13 @@ function GridPad({ note, index, activeNotes, setRef }: GridPadProps) {
       ref={ref => setRef(index, ref as any)}
       style={[styles.gridPad, animatedStyle]}
     >
-      <Text style={[styles.noteText, isActive && styles.noteTextActive]}>
+      <Text
+        style={[
+          styles.noteText,
+          isActive && styles.noteTextActive,
+          !isInScale && styles.noteTextOutOfScale,
+        ]}
+      >
         {midiToNoteName(note)}
       </Text>
     </AnimatedPressable>
@@ -62,10 +153,12 @@ function GridPad({ note, index, activeNotes, setRef }: GridPadProps) {
 export default function App() {
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
   const [gridSize, setGridSize] = useState<GridSize>('5x5');
-  const [baseNote, setBaseNote] = useState(48); // C3
+  const [selectedKey, setSelectedKey] = useState<Key>('C');
+  const [scaleType, setScaleType] = useState<ScaleType>('Major');
+  const [useScale, setUseScale] = useState(true);
 
   // Track multiple active notes
-  const activeNotesRef = useRef<Map<string, number>>(new Map()); // touchId -> note
+  const activeNotesRef = useRef<Map<string, number>>(new Map());
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
 
   const keyRefsRef = useRef<Map<number, View>>(new Map());
@@ -76,8 +169,18 @@ export default function App() {
   const { rows, cols } = GRID_CONFIGS[gridSize];
   const totalPads = rows * cols;
 
-  // Generate notes for the grid
-  const gridNotes = Array.from({ length: totalPads }, (_, i) => baseNote + i);
+  // Calculate root note MIDI number (C3 = 48)
+  const baseOctave = 3;
+  const keyOffset = KEYS.indexOf(selectedKey);
+  const rootNote = 12 * (baseOctave + 1) + keyOffset; // C3 = 48
+
+  // Generate notes for the grid based on scale
+  const gridNotes = useScale
+    ? generateScale(rootNote, scaleType, totalPads)
+    : Array.from({ length: totalPads }, (_, i) => rootNote + i);
+
+  // For visual feedback on chromatic mode
+  const scaleNotes = new Set(generateScale(rootNote, scaleType, 88)); // All scale notes
 
   const changeWaveform = () => {
     const currentIndex = WAVEFORMS.indexOf(currentWaveform);
@@ -93,9 +196,22 @@ export default function App() {
     const currentIndex = sizes.indexOf(gridSize);
     const nextIndex = (currentIndex + 1) % sizes.length;
     setGridSize(sizes[nextIndex]);
-    // Clear measurements when grid changes
     keyLayoutsRef.current.clear();
     keyRefsRef.current.clear();
+  };
+
+  const changeKey = () => {
+    const currentIndex = KEYS.indexOf(selectedKey);
+    const nextIndex = (currentIndex + 1) % KEYS.length;
+    setSelectedKey(KEYS[nextIndex]);
+  };
+
+  const toggleScale = () => {
+    setScaleType(current => (current === 'Major' ? 'Minor' : 'Major'));
+  };
+
+  const toggleScaleMode = () => {
+    setUseScale(current => !current);
   };
 
   const measureKey = (index: number) => {
@@ -126,7 +242,6 @@ export default function App() {
   };
 
   const handleTouchStart = (event: any) => {
-    // Measure all pads on first touch
     if (keyLayoutsRef.current.size === 0) {
       gridNotes.forEach((_, index) => measureKey(index));
     }
@@ -141,7 +256,6 @@ export default function App() {
       if (note !== null) {
         const touchId = String(identifier);
 
-        // Only trigger if not already playing
         if (!activeNotesRef.current.has(touchId)) {
           NativeAudioModule.noteOn(note, 0.85);
           activeNotesRef.current.set(touchId, note);
@@ -154,8 +268,6 @@ export default function App() {
 
   const handleTouchMove = (event: any) => {
     const touches = event.nativeEvent.touches;
-
-    // Track which notes are currently being touched
     const currentTouchedNotes = new Map<string, number>();
 
     for (let i = 0; i < touches.length; i++) {
@@ -167,13 +279,10 @@ export default function App() {
         const touchId = String(identifier);
         const previousNote = activeNotesRef.current.get(touchId);
 
-        // Only trigger if this touch moved to a different note
         if (previousNote !== note) {
-          // Stop previous note for this touch
           if (previousNote !== undefined) {
             NativeAudioModule.noteOff(previousNote);
           }
-          // Start new note
           NativeAudioModule.noteOn(note, 0.85);
         }
 
@@ -181,7 +290,6 @@ export default function App() {
       }
     }
 
-    // Stop notes that are no longer being touched
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!currentTouchedNotes.has(touchId)) {
         NativeAudioModule.noteOff(note);
@@ -196,7 +304,6 @@ export default function App() {
     const touches = event.nativeEvent.touches;
     const remainingTouches = new Map<string, number>();
 
-    // Keep only the touches that are still active
     for (let i = 0; i < touches.length; i++) {
       const touch = touches[i];
       const { pageX, pageY, identifier } = touch;
@@ -207,7 +314,6 @@ export default function App() {
       }
     }
 
-    // Stop notes that are no longer being touched
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!remainingTouches.has(touchId)) {
         NativeAudioModule.noteOff(note);
@@ -232,106 +338,108 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Grid Synth</Text>
+    <ScrollView style={styles.container}>
+      <View style={styles.contentContainer}>
+        <Text style={styles.title}>Grid Synth</Text>
 
-      {/* Controls */}
-      <View style={styles.controlRow}>
-        <Text style={styles.label}>Grid: {gridSize}</Text>
-        <Button title="Change Grid" onPress={changeGridSize} color="#6200ee" />
-      </View>
+        {/* Scale Controls */}
+        <View style={styles.controlRow}>
+          <Text style={styles.label}>Key: {selectedKey}</Text>
+          <Button title="Change Key" onPress={changeKey} color="#6200ee" />
+        </View>
 
-      <View style={styles.controlRow}>
-        <Text style={styles.label}>Waveform: {currentWaveform}</Text>
-        <Button title="Change Wave" onPress={changeWaveform} color="#6200ee" />
-      </View>
+        <View style={styles.controlRow}>
+          <Text style={styles.label}>Scale: {scaleType}</Text>
+          <Button title="Major/Minor" onPress={toggleScale} color="#6200ee" />
+        </View>
 
-      <View style={styles.controlRow}>
-        <Text style={styles.label}>Base Note: {midiToNoteName(baseNote)}</Text>
-        <View style={styles.buttonGroup}>
+        <View style={styles.controlRow}>
+          <Text style={styles.label}>
+            Mode: {useScale ? 'Scale' : 'Chromatic'}
+          </Text>
           <Button
-            title="-12"
-            onPress={() => setBaseNote(n => Math.max(24, n - 12))}
-          />
-          <Button
-            title="+12"
-            onPress={() => setBaseNote(n => Math.min(84, n + 12))}
+            title="Toggle Mode"
+            onPress={toggleScaleMode}
+            color="#6200ee"
           />
         </View>
-      </View>
 
-      <View style={styles.controlRow}>
-        <Text style={styles.label}>Presets:</Text>
-        <View style={styles.buttonGroup}>
+        {/* Grid Controls */}
+        <View style={styles.controlRow}>
+          <Text style={styles.label}>Grid: {gridSize}</Text>
           <Button
-            title="Pluck"
-            onPress={() => NativeAudioModule.setADSR(0.005, 0.1, 0.0, 0.2)}
-          />
-          <Button
-            title="Pad"
-            onPress={() => NativeAudioModule.setADSR(0.3, 1.5, 0.7, 2.0)}
-          />
-          <Button
-            title="Organ"
-            onPress={() => NativeAudioModule.setADSR(0.01, 0.05, 1.0, 0.4)}
+            title="Change Grid"
+            onPress={changeGridSize}
+            color="#6200ee"
           />
         </View>
-      </View>
 
-      {/* Grid with flex layout */}
-      <View
-        style={styles.gridWrapper}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        {gridRows.map((rowPads, rowIndex) => (
-          <View key={`row-${rowIndex}`} style={styles.gridRow}>
-            {rowPads.map((note, colIndex) => {
-              const index = rowIndex * cols + colIndex;
-              return (
-                <GridPad
-                  key={`${gridSize}-${index}`}
-                  note={note}
-                  index={index}
-                  activeNotes={activeNotes}
-                  setRef={setRef}
-                />
-              );
-            })}
+        <View style={styles.controlRow}>
+          <Text style={styles.label}>Waveform: {currentWaveform}</Text>
+          <Button
+            title="Change Wave"
+            onPress={changeWaveform}
+            color="#6200ee"
+          />
+        </View>
+
+        <View style={styles.controlRow}>
+          <Text style={styles.label}>Presets:</Text>
+          <View style={styles.buttonGroup}>
+            <Button
+              title="Pluck"
+              onPress={() => NativeAudioModule.setADSR(0.005, 0.1, 0.0, 0.2)}
+            />
+            <Button
+              title="Pad"
+              onPress={() => NativeAudioModule.setADSR(0.3, 1.5, 0.7, 2.0)}
+            />
+            <Button
+              title="Organ"
+              onPress={() => NativeAudioModule.setADSR(0.01, 0.05, 1.0, 0.4)}
+            />
           </View>
-        ))}
+        </View>
+
+        {/* Grid */}
+        <View
+          style={styles.gridWrapper}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {gridRows.map((rowPads, rowIndex) => (
+            <View key={`row-${rowIndex}`} style={styles.gridRow}>
+              {rowPads.map((note, colIndex) => {
+                const index = rowIndex * cols + colIndex;
+                const isInScale = useScale || scaleNotes.has(note);
+                return (
+                  <GridPad
+                    key={`${gridSize}-${index}`}
+                    note={note}
+                    index={index}
+                    activeNotes={activeNotes}
+                    setRef={setRef}
+                    isInScale={isInScale}
+                  />
+                );
+              })}
+            </View>
+          ))}
+        </View>
+
+        <View style={{ height: 60 }} />
       </View>
-
-      <View style={{ height: 60 }} />
-    </View>
+    </ScrollView>
   );
-}
-
-function midiToNoteName(midiNote: number): string {
-  const noteNames = [
-    'C',
-    'C#',
-    'D',
-    'D#',
-    'E',
-    'F',
-    'F#',
-    'G',
-    'G#',
-    'A',
-    'A#',
-    'B',
-  ];
-  const octave = Math.floor(midiNote / 12) - 1;
-  const noteName = noteNames[midiNote % 12];
-  return `${noteName}${octave}`;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
+  },
+  contentContainer: {
     paddingTop: 60,
   },
   title: {
@@ -339,13 +447,13 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
   },
   controlRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     gap: 12,
     flexWrap: 'wrap',
     paddingHorizontal: 16,
@@ -360,11 +468,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   gridWrapper: {
-    // flex: 1,
     marginTop: 20,
     aspectRatio: 1,
     width: '100%',
-    // alignSelf: 'center',
   },
   gridRow: {
     flex: 1,
@@ -374,7 +480,7 @@ const styles = StyleSheet.create({
   },
   gridPad: {
     flex: 1,
-    aspectRatio: 1, // This ensures each pad is always square
+    aspectRatio: 1,
     borderRadius: 0,
     justifyContent: 'center',
     alignItems: 'center',
@@ -386,5 +492,8 @@ const styles = StyleSheet.create({
   },
   noteTextActive: {
     color: '#ffffff',
+  },
+  noteTextOutOfScale: {
+    color: '#666666',
   },
 });
