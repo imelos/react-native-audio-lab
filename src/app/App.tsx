@@ -1,12 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Pressable,
-  StyleSheet,
-  Text,
-  Button,
-  ScrollView,
-} from 'react-native';
+import { View, Pressable, StyleSheet, Text, Button } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -60,7 +53,7 @@ function GridPad({ note, index, activeNotes, setRef }: GridPadProps) {
       style={[styles.gridPad, animatedStyle]}
     >
       <Text style={[styles.noteText, isActive && styles.noteTextActive]}>
-        {note}
+        {midiToNoteName(note)}
       </Text>
     </AnimatedPressable>
   );
@@ -254,7 +247,7 @@ export default function App() {
       </View>
 
       <View style={styles.controlRow}>
-        <Text style={styles.label}>Base Note: {baseNote}</Text>
+        <Text style={styles.label}>Base Note: {midiToNoteName(baseNote)}</Text>
         <View style={styles.buttonGroup}>
           <Button
             title="-12"
@@ -313,6 +306,26 @@ export default function App() {
       <View style={{ height: 60 }} />
     </View>
   );
+}
+
+function midiToNoteName(midiNote: number): string {
+  const noteNames = [
+    'C',
+    'C#',
+    'D',
+    'D#',
+    'E',
+    'F',
+    'F#',
+    'G',
+    'G#',
+    'A',
+    'A#',
+    'B',
+  ];
+  const octave = Math.floor(midiNote / 12) - 1;
+  const noteName = noteNames[midiNote % 12];
+  return `${noteName}${octave}`;
 }
 
 const styles = StyleSheet.create({
