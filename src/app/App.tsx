@@ -214,8 +214,8 @@ export default function App() {
   };
   // Recording functions
   const startRecording = () => {
+    recordingStartTime.current = Date.now(); // Set ref first
     setCurrentRecording([]);
-    recordingStartTime.current = Date.now();
     setIsRecording(true);
     setShowRecordingButtons(true);
   };
@@ -402,7 +402,8 @@ export default function App() {
     note: number,
     velocity: number = 0.85,
   ) => {
-    if (!isRecording) return;
+    // Check if recording has started based on ref, not state
+    if (recordingStartTime.current === 0) return;
 
     const timestamp = Date.now() - recordingStartTime.current;
     const event: NoteEvent = {
