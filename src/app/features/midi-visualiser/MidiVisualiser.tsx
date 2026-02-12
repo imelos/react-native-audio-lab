@@ -13,11 +13,10 @@ export type VisualNote = {
 interface Props {
   width: number;
   height: number;
-  notesRef: React.RefObject<VisualNote[]>;
-  activeRef: React.RefObject<Map<number, VisualNote>>;
+  notesRef: React.MutableRefObject<VisualNote[]>;
 }
 
-export function MidiVisualizer({ width, height, notesRef, activeRef }: Props) {
+export function MidiVisualizer({ width, height, notesRef }: Props) {
   const rects = useSharedValue<any[]>([]);
   const recordingStartRef = useRef<number | null>(null);
 
@@ -26,9 +25,10 @@ export function MidiVisualizer({ width, height, notesRef, activeRef }: Props) {
 
     const loop = () => {
       const now = Date.now();
-      const all = [...notesRef.current, ...activeRef.current.values()];
+      const all = notesRef.current;
 
       if (all.length === 0) {
+        rects.value = [];
         raf = requestAnimationFrame(loop);
         return;
       }
@@ -68,14 +68,14 @@ export function MidiVisualizer({ width, height, notesRef, activeRef }: Props) {
 
     loop();
     return () => cancelAnimationFrame(raf);
-  }, [notesRef, activeRef, width, height]);
+  }, [width, height]);
 
   return (
     <View style={{ width, height }}>
       <Canvas style={{ flex: 1 }}>
         {rects.value.map((r, i) => (
           <Rect
-            key={`${r.note}-${i}`}
+            key={i}
             x={r.x}
             y={r.y}
             width={Math.max(1, r.w)}

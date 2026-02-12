@@ -187,7 +187,6 @@ export default function App() {
 
   const noteIdRef = useRef(0);
   const visualNotesRef = useRef<VisualNote[]>([]);
-  const activeVisualNotesRef = useRef<Map<number, VisualNote>>(new Map());
 
   const { rows, cols } = GRID_CONFIGS[gridSize];
   const totalPads = rows * cols;
@@ -208,13 +207,23 @@ export default function App() {
       note,
       startTime: Date.now(),
     };
-
-    visualNotesRef.current = [...visualNotesRef.current, vn];
-    activeVisualNotesRef.current.set(vn.id, vn);
+    visualNotesRef.current.push(vn);
   };
+
+  const endVisualNote = (note: number) => {
+    // Find the most recent active note with this pitch and close it
+    for (let i = visualNotesRef.current.length - 1; i >= 0; i--) {
+      const vn = visualNotesRef.current[i];
+      if (vn.note === note && vn.endTime == null) {
+        vn.endTime = Date.now();
+        break;
+      }
+    }
+  };
+
   // Recording functions
   const startRecording = () => {
-    recordingStartTime.current = Date.now(); // Set ref first
+    recordingStartTime.current = Date.now();
     setCurrentRecording([]);
     setIsRecording(true);
     setShowRecordingButtons(true);
@@ -266,8 +275,6 @@ export default function App() {
 
         if (event.type === 'noteOn') {
           NativeAudioModule.noteOn(event.note, event.velocity);
-
-          // visualNotesRef.current.push(vn);
           createVisualNote(event.note);
           playbackActiveNotes.current.add(event.note);
         } else {
@@ -312,12 +319,11 @@ export default function App() {
       endVisualNote(note);
     });
     playbackActiveNotes.current.clear();
-    updateActiveNotesDisplay(); // Update to show only manual notes if any
+    updateActiveNotesDisplay();
     setIsPlaying(false);
   };
 
   const deleteSequence = (index: number) => {
-    // Stop playback if currently playing
     if (isPlaying) {
       stopPlayback();
     }
@@ -402,7 +408,6 @@ export default function App() {
     note: number,
     velocity: number = 0.85,
   ) => {
-    // Check if recording has started based on ref, not state
     if (recordingStartTime.current === 0) return;
 
     const timestamp = Date.now() - recordingStartTime.current;
@@ -414,16 +419,6 @@ export default function App() {
     };
 
     setCurrentRecording(prev => [...prev, event]);
-  };
-
-  const endVisualNote = (note: number) => {
-    for (const [id, vn] of activeVisualNotesRef.current.entries()) {
-      if (vn.note === note && vn.endTime == null) {
-        vn.endTime = Date.now();
-        activeVisualNotesRef.current.delete(id);
-        break;
-      }
-    }
   };
 
   const handleTouchStart = (event: any) => {
@@ -452,7 +447,6 @@ export default function App() {
 
         if (!activeNotesRef.current.has(touchId)) {
           NativeAudioModule.noteOn(note, 0.85);
-          // visualNotesRef.current.push('dsdfds');
           createVisualNote(note);
           activeNotesRef.current.set(touchId, note);
           recordNoteEvent('noteOn', note, 0.85);
@@ -479,7 +473,7 @@ export default function App() {
         if (previousNote !== note) {
           if (previousNote !== undefined) {
             NativeAudioModule.noteOff(previousNote);
-            endVisualNote(note);
+            endVisualNote(previousNote);
             recordNoteEvent('noteOff', previousNote);
           }
           NativeAudioModule.noteOn(note, 0.85);
@@ -603,14 +597,15 @@ export default function App() {
             />
           </View>
         </View>
+
         <View style={styles.midiVisualiser}>
           <MidiVisualizer
             height={50}
             width={Dimensions.get('window').width}
             notesRef={visualNotesRef}
-            activeRef={activeVisualNotesRef}
           />
         </View>
+
         {/* Grid */}
         <View
           style={styles.gridWrapper}
