@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Text, Button } from 'react-native';
+import { View, StyleSheet, Text, Button, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  // withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import NativeAudioModule from '../specs/NativeAudioModule';
@@ -21,7 +20,6 @@ const GRID_CONFIGS = {
 
 type GridSize = keyof typeof GRID_CONFIGS;
 
-// Musical keys (root notes)
 const KEYS = [
   'C',
   'C#',
@@ -38,7 +36,6 @@ const KEYS = [
 ] as const;
 type Key = (typeof KEYS)[number];
 
-// Scale types with their interval patterns (semitones from root)
 const SCALES = {
   Major: [0, 2, 4, 5, 7, 9, 11],
   Minor: [0, 2, 3, 5, 7, 8, 10],
@@ -46,7 +43,20 @@ const SCALES = {
 
 type ScaleType = keyof typeof SCALES;
 
-// Convert MIDI note number to note name
+// Recording types
+interface NoteEvent {
+  type: 'noteOn' | 'noteOff';
+  note: number;
+  timestamp: number;
+  velocity: number;
+}
+
+interface RecordedSequence {
+  events: NoteEvent[];
+  duration: number;
+  name: string;
+}
+
 function midiToNoteName(midiNote: number): string {
   const noteNames = [
     'C',
@@ -67,7 +77,6 @@ function midiToNoteName(midiNote: number): string {
   return `${noteName}${octave}`;
 }
 
-// Generate scale notes from a root note
 function generateScale(
   rootNote: number,
   scaleType: ScaleType,
@@ -88,8 +97,6 @@ function generateScale(
   return notes;
 }
 
-// const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 interface GridPadProps {
   note: number;
   index: number;
@@ -106,14 +113,9 @@ function GridPad({
   isInScale = true,
 }: GridPadProps) {
   const isActive = activeNotes.has(note);
-  // const scale = useSharedValue(1);
   const backgroundColor = useSharedValue(0);
 
   useEffect(() => {
-    // scale.value = withSpring(isActive ? 1.05 : 1, {
-    //   damping: 15,
-    //   stiffness: 150,
-    // });
     backgroundColor.value = withTiming(isActive ? 1 : 0, { duration: 0 });
   }, [isActive, backgroundColor]);
 
@@ -155,6 +157,18 @@ export default function App() {
   const activeNotesRef = useRef<Map<string, number>>(new Map());
   const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
 
+  // Recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [savedSequences, setSavedSequences] = useState<RecordedSequence[]>([]);
+  const [currentRecording, setCurrentRecording] = useState<NoteEvent[]>([]);
+  const [showRecordingButtons, setShowRecordingButtons] = useState(false);
+
+  const recordingStartTime = useRef<number>(0);
+  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const playbackStartTime = useRef<number>(0);
+  const playbackActiveNotes = useRef<Set<number>>(new Set());
+
   const keyRefsRef = useRef<Map<number, View>>(new Map());
   const keyLayoutsRef = useRef<
     Map<number, { x: number; y: number; width: number; height: number }>
@@ -163,18 +177,130 @@ export default function App() {
   const { rows, cols } = GRID_CONFIGS[gridSize];
   const totalPads = rows * cols;
 
-  // Calculate root note MIDI number (C3 = 48)
   const baseOctave = 3;
   const keyOffset = KEYS.indexOf(selectedKey);
-  const rootNote = 12 * (baseOctave + 1) + keyOffset; // C3 = 48
+  const rootNote = 12 * (baseOctave + 1) + keyOffset;
 
-  // Generate notes for the grid based on scale
   const gridNotes = useScale
     ? generateScale(rootNote, scaleType, totalPads)
     : Array.from({ length: totalPads }, (_, i) => rootNote + i);
 
-  // For visual feedback on chromatic mode
-  const scaleNotes = new Set(generateScale(rootNote, scaleType, 88)); // All scale notes
+  const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
+
+  // Recording functions
+  const startRecording = () => {
+    setCurrentRecording([]);
+    recordingStartTime.current = Date.now();
+    setIsRecording(true);
+    setShowRecordingButtons(true);
+  };
+
+  const clearRecording = () => {
+    setCurrentRecording([]);
+    setIsRecording(false);
+    setShowRecordingButtons(false);
+  };
+
+  const addRecording = () => {
+    if (currentRecording.length === 0) return;
+
+    const duration = currentRecording[currentRecording.length - 1].timestamp;
+    const newSequence: RecordedSequence = {
+      events: [...currentRecording],
+      duration,
+      name: `Sequence ${savedSequences.length + 1}`,
+    };
+
+    setSavedSequences([...savedSequences, newSequence]);
+    setCurrentRecording([]);
+    setIsRecording(false);
+    setShowRecordingButtons(false);
+  };
+
+  const playSequence = (sequence: RecordedSequence) => {
+    if (isPlaying) {
+      stopPlayback();
+      return;
+    }
+
+    setIsPlaying(true);
+    playbackStartTime.current = Date.now();
+    playbackActiveNotes.current.clear();
+
+    let eventIndex = 0;
+
+    const playNextEvents = () => {
+      const currentTime = Date.now() - playbackStartTime.current;
+
+      // Play all events that should have triggered by now
+      while (
+        eventIndex < sequence.events.length &&
+        sequence.events[eventIndex].timestamp <= currentTime
+      ) {
+        const event = sequence.events[eventIndex];
+
+        if (event.type === 'noteOn') {
+          NativeAudioModule.noteOn(event.note, event.velocity);
+          playbackActiveNotes.current.add(event.note);
+        } else {
+          NativeAudioModule.noteOff(event.note);
+          playbackActiveNotes.current.delete(event.note);
+        }
+
+        eventIndex++;
+      }
+
+      // Update visual feedback (merges with manual notes)
+      updateActiveNotesDisplay();
+
+      // Loop when sequence ends
+      if (eventIndex >= sequence.events.length) {
+        // Stop all notes
+        playbackActiveNotes.current.forEach(note => {
+          NativeAudioModule.noteOff(note);
+        });
+        playbackActiveNotes.current.clear();
+
+        // Restart
+        eventIndex = 0;
+        playbackStartTime.current = Date.now();
+      }
+    };
+
+    playbackIntervalRef.current = setInterval(playNextEvents, 10);
+  };
+
+  const stopPlayback = () => {
+    if (playbackIntervalRef.current) {
+      clearInterval(playbackIntervalRef.current);
+      playbackIntervalRef.current = null;
+    }
+
+    // Stop all playing notes
+    playbackActiveNotes.current.forEach(note => {
+      NativeAudioModule.noteOff(note);
+    });
+    playbackActiveNotes.current.clear();
+    updateActiveNotesDisplay(); // Update to show only manual notes if any
+    setIsPlaying(false);
+  };
+
+  const deleteSequence = (index: number) => {
+    // Stop playback if currently playing
+    if (isPlaying) {
+      stopPlayback();
+    }
+    setSavedSequences(savedSequences.filter((_, i) => i !== index));
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (playbackIntervalRef.current) {
+        clearInterval(playbackIntervalRef.current);
+      }
+    };
+  }, []);
 
   const changeWaveform = () => {
     const currentIndex = WAVEFORMS.indexOf(currentWaveform);
@@ -232,10 +358,42 @@ export default function App() {
   };
 
   const updateActiveNotesDisplay = () => {
-    setActiveNotes(new Set(activeNotesRef.current.values()));
+    // Merge both manual notes and playback notes for display
+    const combinedNotes = new Set([
+      ...activeNotesRef.current.values(),
+      ...playbackActiveNotes.current,
+    ]);
+    setActiveNotes(combinedNotes);
+  };
+
+  const recordNoteEvent = (
+    type: 'noteOn' | 'noteOff',
+    note: number,
+    velocity: number = 0.85,
+  ) => {
+    if (!isRecording) return;
+
+    const timestamp = Date.now() - recordingStartTime.current;
+    const event: NoteEvent = {
+      type,
+      note,
+      timestamp,
+      velocity,
+    };
+
+    setCurrentRecording(prev => [...prev, event]);
   };
 
   const handleTouchStart = (event: any) => {
+    // Auto-start recording on first touch if not already recording and no saved sequences
+    if (
+      !isRecording &&
+      savedSequences.length === 0 &&
+      currentRecording.length === 0
+    ) {
+      startRecording();
+    }
+
     if (keyLayoutsRef.current.size === 0) {
       gridNotes.forEach((_, index) => measureKey(index));
     }
@@ -253,6 +411,7 @@ export default function App() {
         if (!activeNotesRef.current.has(touchId)) {
           NativeAudioModule.noteOn(note, 0.85);
           activeNotesRef.current.set(touchId, note);
+          recordNoteEvent('noteOn', note, 0.85);
         }
       }
     }
@@ -276,8 +435,10 @@ export default function App() {
         if (previousNote !== note) {
           if (previousNote !== undefined) {
             NativeAudioModule.noteOff(previousNote);
+            recordNoteEvent('noteOff', previousNote);
           }
           NativeAudioModule.noteOn(note, 0.85);
+          recordNoteEvent('noteOn', note, 0.85);
         }
 
         currentTouchedNotes.set(touchId, note);
@@ -287,6 +448,7 @@ export default function App() {
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!currentTouchedNotes.has(touchId)) {
         NativeAudioModule.noteOff(note);
+        recordNoteEvent('noteOff', note);
       }
     }
 
@@ -311,6 +473,7 @@ export default function App() {
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!remainingTouches.has(touchId)) {
         NativeAudioModule.noteOff(note);
+        recordNoteEvent('noteOff', note);
       }
     }
 
@@ -324,7 +487,6 @@ export default function App() {
     }
   };
 
-  // Create rows for flex layout
   const gridRows = [];
   for (let i = 0; i < rows; i++) {
     const rowPads = gridNotes.slice(i * cols, (i + 1) * cols);
@@ -342,7 +504,7 @@ export default function App() {
           <Button title="Change Key" onPress={changeKey} color="#6200ee" />
         </View>
 
-        <View style={styles.controlRow}>
+        {/* <View style={styles.controlRow}>
           <Text style={styles.label}>Scale: {scaleType}</Text>
           <Button title="Major/Minor" onPress={toggleScale} color="#6200ee" />
         </View>
@@ -358,7 +520,6 @@ export default function App() {
           />
         </View>
 
-        {/* Grid Controls */}
         <View style={styles.controlRow}>
           <Text style={styles.label}>Grid: {gridSize}</Text>
           <Button
@@ -366,7 +527,7 @@ export default function App() {
             onPress={changeGridSize}
             color="#6200ee"
           />
-        </View>
+        </View> */}
 
         <View style={styles.controlRow}>
           <Text style={styles.label}>Waveform: {currentWaveform}</Text>
@@ -422,7 +583,61 @@ export default function App() {
           ))}
         </View>
 
-        <View style={{ height: 60 }} />
+        {/* Footer with dynamic buttons */}
+        <View style={styles.footer}>
+          {showRecordingButtons && (
+            <View style={styles.footerButtons}>
+              {isRecording && (
+                <Text style={styles.recordingIndicator}>
+                  ● Recording... {currentRecording.length} events
+                </Text>
+              )}
+              <View style={styles.footerButtonRow}>
+                <TouchableOpacity
+                  style={[styles.footerButton, styles.addButton]}
+                  onPress={addRecording}
+                  disabled={currentRecording.length === 0}
+                >
+                  <Text style={styles.footerButtonText}>ADD</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.footerButton, styles.clearButton]}
+                  onPress={clearRecording}
+                >
+                  <Text style={styles.footerButtonText}>CLEAR</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {savedSequences.length > 0 && !showRecordingButtons && (
+            <View style={styles.footerButtons}>
+              <TouchableOpacity
+                style={[
+                  styles.footerButton,
+                  isPlaying ? styles.stopButton : styles.playButton,
+                ]}
+                onPress={() => {
+                  if (isPlaying) {
+                    stopPlayback();
+                  } else if (savedSequences.length > 0) {
+                    playSequence(savedSequences[savedSequences.length - 1]);
+                  }
+                }}
+              >
+                <Text style={styles.footerButtonText}>
+                  {isPlaying ? '■ STOP' : '▶ PLAY'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.footerButton, styles.deleteButton]}
+                onPress={() => deleteSequence(savedSequences.length - 1)}
+              >
+                <Text style={styles.footerButtonText}>DELETE</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -489,5 +704,54 @@ const styles = StyleSheet.create({
   },
   noteTextOutOfScale: {
     color: '#666666',
+  },
+  footer: {
+    minHeight: 100,
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 40,
+  },
+  footerButtons: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  footerButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  footerButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    minWidth: 140,
+    alignItems: 'center',
+  },
+  footerButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  addButton: {
+    backgroundColor: '#4caf50',
+  },
+  clearButton: {
+    backgroundColor: '#757575',
+  },
+  playButton: {
+    backgroundColor: '#4caf50',
+  },
+  stopButton: {
+    backgroundColor: '#f44336',
+  },
+  deleteButton: {
+    backgroundColor: '#d32f2f',
+  },
+  recordingIndicator: {
+    color: '#f44336',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
   },
 });
