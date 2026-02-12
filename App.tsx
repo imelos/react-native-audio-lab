@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Pressable,
@@ -6,29 +6,95 @@ import {
   Text,
   Button,
   ScrollView,
-  findNodeHandle,
+  Dimensions,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import NativeAudioModule from './src/specs/NativeAudioModule';
-
-const NOTES = [
-  { note: 60, name: 'C4' },
-  { note: 62, name: 'D4' },
-  { note: 64, name: 'E4' },
-  { note: 65, name: 'F4' },
-  { note: 67, name: 'G4' },
-  { note: 69, name: 'A4' },
-  { note: 71, name: 'B4' },
-  { note: 72, name: 'C5' },
-];
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
 
+const GRID_CONFIGS = {
+  '4x4': { rows: 4, cols: 4 },
+  '5x5': { rows: 5, cols: 5 },
+  '6x6': { rows: 6, cols: 6 },
+  '8x8': { rows: 8, cols: 8 },
+} as const;
+
+type GridSize = keyof typeof GRID_CONFIGS;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+interface GridPadProps {
+  note: number;
+  index: number;
+  onPress: (note: number) => void;
+  onRelease: () => void;
+  activeNote: number | null;
+  setRef: (index: number, ref: View | null) => void;
+}
+
+function GridPad({
+  note,
+  index,
+  onPress,
+  onRelease,
+  activeNote,
+  setRef,
+}: GridPadProps) {
+  const isActive = activeNote === note;
+  const scale = useSharedValue(1);
+  const backgroundColor = useSharedValue(0);
+
+  useEffect(() => {
+    scale.value = withSpring(isActive ? 1.05 : 1, {
+      damping: 15,
+      stiffness: 150,
+    });
+    backgroundColor.value = withTiming(isActive ? 1 : 0, { duration: 100 });
+  }, [isActive]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    backgroundColor: backgroundColor.value === 1 ? '#6200ee' : '#2a2a2a',
+  }));
+
+  return (
+    <AnimatedPressable
+      ref={ref => setRef(index, ref as any)}
+      style={[styles.gridPad, animatedStyle]}
+      onTouchStart={() => onPress(note)}
+      onTouchEnd={onRelease}
+    >
+      <Text style={[styles.noteText, isActive && styles.noteTextActive]}>
+        {note}
+      </Text>
+    </AnimatedPressable>
+  );
+}
+
 export default function App() {
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
+  const [gridSize, setGridSize] = useState<GridSize>('5x5');
+  const [baseNote, setBaseNote] = useState(48); // C3
+
   const activeNoteRef = useRef<number | null>(null);
+  const [activeNote, setActiveNote] = useState<number | null>(null);
   const keyRefsRef = useRef<Map<number, View>>(new Map());
-  const keyLayoutsRef = useRef<Map<number, { x: number; y: number; width: number; height: number }>>(new Map());
+  const keyLayoutsRef = useRef<
+    Map<number, { x: number; y: number; width: number; height: number }>
+  >(new Map());
+
+  const { rows, cols } = GRID_CONFIGS[gridSize];
+  const totalPads = rows * cols;
+
+  // Generate notes for the grid
+  const gridNotes = Array.from({ length: totalPads }, (_, i) => baseNote + i);
 
   const changeWaveform = () => {
     const currentIndex = WAVEFORMS.indexOf(currentWaveform);
@@ -39,33 +105,43 @@ export default function App() {
     NativeAudioModule.setWaveform(nextWave);
   };
 
-  const measureKey = (note: number) => {
-    const ref = keyRefsRef.current.get(note);
+  const changeGridSize = () => {
+    const sizes: GridSize[] = ['4x4', '5x5', '6x6', '8x8'];
+    const currentIndex = sizes.indexOf(gridSize);
+    const nextIndex = (currentIndex + 1) % sizes.length;
+    setGridSize(sizes[nextIndex]);
+    // Clear measurements when grid changes
+    keyLayoutsRef.current.clear();
+    keyRefsRef.current.clear();
+  };
+
+  const measureKey = (index: number) => {
+    const ref = keyRefsRef.current.get(index);
     if (ref) {
       ref.measure((x, y, width, height, pageX, pageY) => {
-        keyLayoutsRef.current.set(note, { x: pageX, y: pageY, width, height });
+        keyLayoutsRef.current.set(index, { x: pageX, y: pageY, width, height });
       });
     }
   };
 
   const findNoteAtPosition = (pageX: number, pageY: number): number | null => {
-    for (const [note, layout] of keyLayoutsRef.current.entries()) {
+    for (const [index, layout] of keyLayoutsRef.current.entries()) {
       if (
         pageX >= layout.x &&
         pageX <= layout.x + layout.width &&
         pageY >= layout.y &&
         pageY <= layout.y + layout.height
       ) {
-        return note;
+        return gridNotes[index];
       }
     }
     return null;
   };
 
   const handleTouchStart = (note: number) => {
-    // Measure all keys on first touch (lazy initialization)
+    // Measure all pads on first touch
     if (keyLayoutsRef.current.size === 0) {
-      NOTES.forEach(({ note }) => measureKey(note));
+      gridNotes.forEach((_, index) => measureKey(index));
     }
 
     if (activeNoteRef.current !== null) {
@@ -73,6 +149,7 @@ export default function App() {
     }
     NativeAudioModule.noteOn(note, 0.85);
     activeNoteRef.current = note;
+    setActiveNote(note);
   };
 
   const handleTouchMove = (event: any) => {
@@ -87,6 +164,7 @@ export default function App() {
       // Start new note
       NativeAudioModule.noteOn(note, 0.85);
       activeNoteRef.current = note;
+      setActiveNote(note);
     }
   };
 
@@ -94,20 +172,43 @@ export default function App() {
     if (activeNoteRef.current !== null) {
       NativeAudioModule.noteOff(activeNoteRef.current);
       activeNoteRef.current = null;
+      setActiveNote(null);
+    }
+  };
+
+  const setRef = (index: number, ref: View | null) => {
+    if (ref) {
+      keyRefsRef.current.set(index, ref);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>JUCE Synth</Text>
+      <Text style={styles.title}>Grid Synth</Text>
+
+      {/* Controls */}
+      <View style={styles.controlRow}>
+        <Text style={styles.label}>Grid: {gridSize}</Text>
+        <Button title="Change Grid" onPress={changeGridSize} color="#6200ee" />
+      </View>
 
       <View style={styles.controlRow}>
         <Text style={styles.label}>Waveform: {currentWaveform}</Text>
-        <Button
-          title="Change Waveform"
-          onPress={changeWaveform}
-          color="#6200ee"
-        />
+        <Button title="Change Wave" onPress={changeWaveform} color="#6200ee" />
+      </View>
+
+      <View style={styles.controlRow}>
+        <Text style={styles.label}>Base Note: {baseNote}</Text>
+        <View style={styles.buttonGroup}>
+          <Button
+            title="-12"
+            onPress={() => setBaseNote(n => Math.max(24, n - 12))}
+          />
+          <Button
+            title="+12"
+            onPress={() => setBaseNote(n => Math.min(84, n + 12))}
+          />
+        </View>
       </View>
 
       <View style={styles.controlRow}>
@@ -128,24 +229,22 @@ export default function App() {
         </View>
       </View>
 
-      <View 
-        style={styles.keyboard}
+      {/* Grid */}
+      <View
+        style={[styles.gridContainer]}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {NOTES.map(({ note, name }) => (
-          <Pressable
-            key={note}
-            ref={(ref) => {
-              if (ref) {
-                keyRefsRef.current.set(note, ref as any);
-              }
-            }}
-            style={({ pressed }) => [styles.key, pressed && styles.keyPressed]}
-            onTouchStart={() => handleTouchStart(note)}
-          >
-            <Text style={styles.noteName}>{name}</Text>
-          </Pressable>
+        {gridNotes.map((note, index) => (
+          <GridPad
+            key={`${gridSize}-${index}`}
+            note={note}
+            index={index}
+            onPress={handleTouchStart}
+            onRelease={handleTouchEnd}
+            activeNote={activeNote}
+            setRef={setRef}
+          />
         ))}
       </View>
 
@@ -171,7 +270,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
     gap: 12,
     flexWrap: 'wrap',
     paddingHorizontal: 16,
@@ -183,37 +282,35 @@ const styles = StyleSheet.create({
   },
   buttonGroup: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
   },
-  keyboard: {
+  gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
+    alignSelf: 'center',
     paddingHorizontal: 16,
-    gap: 10,
+    gap: 8,
     marginTop: 20,
   },
-  key: {
-    width: 54,
-    height: 180,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    justifyContent: 'flex-end',
+  gridPad: {
+    width: 70,
+    height: 70,
+    borderRadius: 12,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 5,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  keyPressed: {
-    backgroundColor: '#e0e0e0',
-    transform: [{ scale: 0.94 }],
-  },
-  noteName: {
-    fontSize: 18,
+  noteText: {
+    fontSize: 16,
     fontWeight: '700',
-    color: '#111111',
+    color: '#ffffff',
+  },
+  noteTextActive: {
+    color: '#ffffff',
   },
 });
