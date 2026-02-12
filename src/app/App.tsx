@@ -1,5 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, StyleSheet, Text, Button, TouchableOpacity } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  Text,
+  Button,
+  TouchableOpacity,
+  Dimensions,
+} from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -7,6 +14,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import NativeAudioModule from '../specs/NativeAudioModule';
 import { AnimatedView } from 'react-native-reanimated/lib/typescript/component/View';
+import {
+  MidiVisualizer,
+  VisualNote,
+} from './features/midi-visualiser/MidiVisualiser';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -174,6 +185,10 @@ export default function App() {
     Map<number, { x: number; y: number; width: number; height: number }>
   >(new Map());
 
+  const noteIdRef = useRef(0);
+  const visualNotesRef = useRef<VisualNote[]>([]);
+  const activeVisualNotesRef = useRef<Map<number, VisualNote>>(new Map());
+
   const { rows, cols } = GRID_CONFIGS[gridSize];
   const totalPads = rows * cols;
 
@@ -187,6 +202,16 @@ export default function App() {
 
   const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
 
+  const createVisualNote = (note: number) => {
+    const vn: VisualNote = {
+      id: ++noteIdRef.current,
+      note,
+      startTime: Date.now(),
+    };
+
+    visualNotesRef.current = [...visualNotesRef.current, vn];
+    activeVisualNotesRef.current.set(vn.id, vn);
+  };
   // Recording functions
   const startRecording = () => {
     setCurrentRecording([]);
@@ -241,9 +266,13 @@ export default function App() {
 
         if (event.type === 'noteOn') {
           NativeAudioModule.noteOn(event.note, event.velocity);
+
+          // visualNotesRef.current.push(vn);
+          createVisualNote(event.note);
           playbackActiveNotes.current.add(event.note);
         } else {
           NativeAudioModule.noteOff(event.note);
+          endVisualNote(event.note);
           playbackActiveNotes.current.delete(event.note);
         }
 
@@ -258,6 +287,7 @@ export default function App() {
         // Stop all notes
         playbackActiveNotes.current.forEach(note => {
           NativeAudioModule.noteOff(note);
+          endVisualNote(note);
         });
         playbackActiveNotes.current.clear();
 
@@ -279,6 +309,7 @@ export default function App() {
     // Stop all playing notes
     playbackActiveNotes.current.forEach(note => {
       NativeAudioModule.noteOff(note);
+      endVisualNote(note);
     });
     playbackActiveNotes.current.clear();
     updateActiveNotesDisplay(); // Update to show only manual notes if any
@@ -384,6 +415,16 @@ export default function App() {
     setCurrentRecording(prev => [...prev, event]);
   };
 
+  const endVisualNote = (note: number) => {
+    for (const [id, vn] of activeVisualNotesRef.current.entries()) {
+      if (vn.note === note && vn.endTime == null) {
+        vn.endTime = Date.now();
+        activeVisualNotesRef.current.delete(id);
+        break;
+      }
+    }
+  };
+
   const handleTouchStart = (event: any) => {
     // Auto-start recording on first touch if not already recording and no saved sequences
     if (
@@ -410,6 +451,8 @@ export default function App() {
 
         if (!activeNotesRef.current.has(touchId)) {
           NativeAudioModule.noteOn(note, 0.85);
+          // visualNotesRef.current.push('dsdfds');
+          createVisualNote(note);
           activeNotesRef.current.set(touchId, note);
           recordNoteEvent('noteOn', note, 0.85);
         }
@@ -435,9 +478,11 @@ export default function App() {
         if (previousNote !== note) {
           if (previousNote !== undefined) {
             NativeAudioModule.noteOff(previousNote);
+            endVisualNote(note);
             recordNoteEvent('noteOff', previousNote);
           }
           NativeAudioModule.noteOn(note, 0.85);
+          createVisualNote(note);
           recordNoteEvent('noteOn', note, 0.85);
         }
 
@@ -448,6 +493,7 @@ export default function App() {
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!currentTouchedNotes.has(touchId)) {
         NativeAudioModule.noteOff(note);
+        endVisualNote(note);
         recordNoteEvent('noteOff', note);
       }
     }
@@ -473,6 +519,7 @@ export default function App() {
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!remainingTouches.has(touchId)) {
         NativeAudioModule.noteOff(note);
+        endVisualNote(note);
         recordNoteEvent('noteOff', note);
       }
     }
@@ -504,7 +551,7 @@ export default function App() {
           <Button title="Change Key" onPress={changeKey} color="#6200ee" />
         </View>
 
-        {/* <View style={styles.controlRow}>
+        <View style={styles.controlRow}>
           <Text style={styles.label}>Scale: {scaleType}</Text>
           <Button title="Major/Minor" onPress={toggleScale} color="#6200ee" />
         </View>
@@ -527,7 +574,7 @@ export default function App() {
             onPress={changeGridSize}
             color="#6200ee"
           />
-        </View> */}
+        </View>
 
         <View style={styles.controlRow}>
           <Text style={styles.label}>Waveform: {currentWaveform}</Text>
@@ -555,7 +602,14 @@ export default function App() {
             />
           </View>
         </View>
-
+        <View style={styles.midiVisualiser}>
+          <MidiVisualizer
+            height={50}
+            width={Dimensions.get('window').width}
+            notesRef={visualNotesRef}
+            activeRef={activeVisualNotesRef}
+          />
+        </View>
         {/* Grid */}
         <View
           style={styles.gridWrapper}
@@ -644,6 +698,9 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  midiVisualiser: {
+    height: 50,
+  },
   container: {
     flex: 1,
     backgroundColor: '#121212',
@@ -666,6 +723,7 @@ const styles = StyleSheet.create({
     gap: 12,
     flexWrap: 'wrap',
     paddingHorizontal: 16,
+    display: 'none',
   },
   label: {
     color: '#ffffff',
