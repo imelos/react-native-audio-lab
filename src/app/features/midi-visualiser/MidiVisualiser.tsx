@@ -19,6 +19,8 @@ interface Props {
 export function MidiVisualizer({ width, height, notesRef }: Props) {
   const rects = useSharedValue<any[]>([]);
   const recordingStartRef = useRef<number | null>(null);
+  const pitchIndexRef = useRef<Map<number, number>>(new Map());
+  const prevNotesCount = useRef<number>(0);
 
   useEffect(() => {
     let raf: number;
@@ -29,8 +31,21 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
 
       if (all.length === 0) {
         rects.value = [];
+        recordingStartRef.current = null;
+        prevNotesCount.current = 0;
         raf = requestAnimationFrame(loop);
         return;
+      }
+
+      // Only recalculate pitch mapping when note count changes
+      if (all.length !== prevNotesCount.current) {
+        prevNotesCount.current = all.length;
+        
+        const uniquePitches = Array.from(new Set(all.map(n => n.note))).sort(
+          (a, b) => b - a
+        );
+        pitchIndexRef.current.clear();
+        uniquePitches.forEach((p, i) => pitchIndexRef.current.set(p, i));
       }
 
       // Keep earliest note start as reference
@@ -41,18 +56,12 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
       const end = Math.max(...all.map(n => n.endTime ?? now));
       const total = Math.max(1, end - start);
 
-      // Map pitches to fixed vertical positions
-      const uniquePitches = Array.from(new Set(all.map(n => n.note))).sort(
-        (a, b) => b - a,
-      );
-      const pitchIndex = new Map<number, number>();
-      uniquePitches.forEach((p, i) => pitchIndex.set(p, i));
-      const sliceH = height / uniquePitches.length;
+      const sliceH = height / Math.max(1, pitchIndexRef.current.size);
 
       // Build rectangles
       rects.value = all.map(n => {
         const noteEnd = n.endTime ?? now;
-        const yIndex = pitchIndex.get(n.note) ?? 0;
+        const yIndex = pitchIndexRef.current.get(n.note) ?? 0;
 
         return {
           x: ((n.startTime - start) / total) * width,
@@ -60,6 +69,7 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
           y: yIndex * sliceH,
           h: sliceH,
           active: !n.endTime,
+          id: n.id,
         };
       });
 
@@ -73,9 +83,9 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
   return (
     <View style={{ width, height }}>
       <Canvas style={{ flex: 1 }}>
-        {rects.value.map((r, i) => (
+        {rects.value.map(r => (
           <Rect
-            key={i}
+            key={r.id}
             x={r.x}
             y={r.y}
             width={Math.max(1, r.w)}
