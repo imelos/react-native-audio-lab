@@ -59,6 +59,8 @@ type ScaleType = keyof typeof SCALES;
 const FILTER_TYPES = ['LowPass', 'HighPass', 'BandPass'] as const;
 type FilterType = (typeof FILTER_TYPES)[number];
 
+type TabType = 'instrument' | 'filter' | 'fx';
+
 // Recording types
 interface NoteEvent {
   type: 'noteOn' | 'noteOff';
@@ -154,7 +156,7 @@ function GridPad({
     <Animated.View
       ref={(ref: AnimatedView) => setRef(index, ref)}
       style={[styles.gridPad, animatedStyle]}
-      onLayout={(event) => onLayout(index, event)}
+      onLayout={event => onLayout(index, event)}
     >
       <Text
         style={[
@@ -170,11 +172,14 @@ function GridPad({
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<TabType>('instrument');
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
   const [gridSize, setGridSize] = useState<GridSize>('5x5');
   const [selectedKey, setSelectedKey] = useState<Key>('C');
   const [scaleType, setScaleType] = useState<ScaleType>('Major');
   const [useScale, setUseScale] = useState(true);
+
+  // const insets = useSafeAreaInsets();
 
   // Filter state
   const [filterEnabled, setFilterEnabled] = useState(false);
@@ -219,7 +224,7 @@ export default function App() {
 
   const noteIdRef = useRef(0);
   const visualNotesRef = useRef<VisualNote[]>([]);
-  
+
   // Effect ID counter to ensure unique IDs
   const nextEffectIdRef = useRef(1);
 
@@ -240,10 +245,10 @@ export default function App() {
   useEffect(() => {
     // Create main instrument on channel 1
     NativeAudioModule.createInstrument(MAIN_CHANNEL, 'Main Synth', 16, 'sine');
-    
+
     // Set initial ADSR
     NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.1, 0.8, 0.3);
-    
+
     return () => {
       // Cleanup: stop all notes and remove instruments
       NativeAudioModule.allNotesOffAllChannels();
@@ -256,10 +261,25 @@ export default function App() {
       NativeAudioModule.addEffect(MAIN_CHANNEL, 'filter');
       const effectId = nextEffectIdRef.current++;
       filterEffectIdRef.current = effectId;
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'cutoff', filterCutoff);
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'resonance', filterResonance);
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'type', FILTER_TYPES.indexOf(filterType));
-      
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'cutoff',
+        filterCutoff,
+      );
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'resonance',
+        filterResonance,
+      );
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'type',
+        FILTER_TYPES.indexOf(filterType),
+      );
+
       setFilterEnabled(true);
     } else {
       if (filterEffectIdRef.current !== null) {
@@ -273,20 +293,35 @@ export default function App() {
   // Update filter parameters
   useEffect(() => {
     if (filterEnabled && filterEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, filterEffectIdRef.current, 'cutoff', filterCutoff);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        filterEffectIdRef.current,
+        'cutoff',
+        filterCutoff,
+      );
     }
   }, [filterCutoff, filterEnabled]);
 
   useEffect(() => {
     if (filterEnabled && filterEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, filterEffectIdRef.current, 'resonance', filterResonance);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        filterEffectIdRef.current,
+        'resonance',
+        filterResonance,
+      );
     }
   }, [filterResonance, filterEnabled]);
 
   useEffect(() => {
     if (filterEnabled && filterEffectIdRef.current !== null) {
       const typeIndex = FILTER_TYPES.indexOf(filterType);
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, filterEffectIdRef.current, 'type', typeIndex);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        filterEffectIdRef.current,
+        'type',
+        typeIndex,
+      );
     }
   }, [filterType, filterEnabled]);
 
@@ -296,10 +331,20 @@ export default function App() {
       NativeAudioModule.addEffect(MAIN_CHANNEL, 'reverb');
       const effectId = nextEffectIdRef.current++;
       reverbEffectIdRef.current = effectId;
-      
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'roomSize', reverbRoomSize);
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'wetLevel', reverbWetLevel);
-      
+
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'roomSize',
+        reverbRoomSize,
+      );
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'wetLevel',
+        reverbWetLevel,
+      );
+
       setReverbEnabled(true);
     } else {
       if (reverbEffectIdRef.current !== null) {
@@ -313,13 +358,23 @@ export default function App() {
   // Update reverb parameters
   useEffect(() => {
     if (reverbEnabled && reverbEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, reverbEffectIdRef.current, 'roomSize', reverbRoomSize);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        reverbEffectIdRef.current,
+        'roomSize',
+        reverbRoomSize,
+      );
     }
   }, [reverbRoomSize, reverbEnabled]);
 
   useEffect(() => {
     if (reverbEnabled && reverbEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, reverbEffectIdRef.current, 'wetLevel', reverbWetLevel);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        reverbEffectIdRef.current,
+        'wetLevel',
+        reverbWetLevel,
+      );
     }
   }, [reverbWetLevel, reverbEnabled]);
 
@@ -329,11 +384,26 @@ export default function App() {
       NativeAudioModule.addEffect(MAIN_CHANNEL, 'delay');
       const effectId = nextEffectIdRef.current++;
       delayEffectIdRef.current = effectId;
-      
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'delayTime', delayTime);
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'feedback', delayFeedback);
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'wetLevel', delayWetLevel);
-      
+
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'delayTime',
+        delayTime,
+      );
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'feedback',
+        delayFeedback,
+      );
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        effectId,
+        'wetLevel',
+        delayWetLevel,
+      );
+
       setDelayEnabled(true);
     } else {
       if (delayEffectIdRef.current !== null) {
@@ -347,19 +417,34 @@ export default function App() {
   // Update delay parameters
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, delayEffectIdRef.current, 'delayTime', delayTime);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        delayEffectIdRef.current,
+        'delayTime',
+        delayTime,
+      );
     }
   }, [delayTime, delayEnabled]);
 
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, delayEffectIdRef.current, 'feedback', delayFeedback);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        delayEffectIdRef.current,
+        'feedback',
+        delayFeedback,
+      );
     }
   }, [delayFeedback, delayEnabled]);
 
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, delayEffectIdRef.current, 'wetLevel', delayWetLevel);
+      NativeAudioModule.setEffectParameter(
+        MAIN_CHANNEL,
+        delayEffectIdRef.current,
+        'wetLevel',
+        delayWetLevel,
+      );
     }
   }, [delayWetLevel, delayEnabled]);
 
@@ -441,11 +526,9 @@ export default function App() {
 
         if (event.type === 'noteOn') {
           NativeAudioModule.noteOn(MAIN_CHANNEL, event.note, event.velocity);
-          // createVisualNote(event.note);
           playbackActiveNotes.current.add(event.note);
         } else {
           NativeAudioModule.noteOff(MAIN_CHANNEL, event.note);
-          // endVisualNote(event.note);
           playbackActiveNotes.current.delete(event.note);
         }
 
@@ -513,7 +596,6 @@ export default function App() {
     const currentIndex = sizes.indexOf(gridSize);
     const nextIndex = (currentIndex + 1) % sizes.length;
     setGridSize(sizes[nextIndex]);
-    // Layout will auto-remeasure on next render
   };
 
   const changeKey = () => {
@@ -532,15 +614,14 @@ export default function App() {
 
   const measureKey = (index: number, event: any) => {
     const { x, y, width, height } = event.nativeEvent.layout;
-    // Get absolute position on screen
     const ref = keyRefsRef.current.get(index);
     if (ref) {
       ref.measureInWindow((pageX, pageY) => {
-        keyLayoutsRef.current.set(index, { 
-          x: pageX, 
-          y: pageY, 
-          width, 
-          height 
+        keyLayoutsRef.current.set(index, {
+          x: pageX,
+          y: pageY,
+          width,
+          height,
         });
       });
     }
@@ -695,86 +776,112 @@ export default function App() {
     gridRows.push(rowPads);
   }
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.contentContainer}>
-        <Text style={styles.title}>Grid Synth</Text>
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'instrument':
+        return (
+          <ScrollView
+            style={styles.tabContent}
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled={true}
+          >
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Key: {selectedKey}</Text>
+              <Button title="Change Key" onPress={changeKey} color="#6200ee" />
+            </View>
 
-        {/* Scrollable Effects Panel */}
-        <ScrollView 
-          style={styles.effectsScrollView}
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled={true}
-        >
-          {/* Scale Controls */}
-          <View style={styles.controlRow}>
-            <Text style={styles.label}>Key: {selectedKey}</Text>
-            <Button title="Change Key" onPress={changeKey} color="#6200ee" />
-          </View>
-
-          <View style={styles.controlRow}>
-            <Text style={styles.label}>Scale: {scaleType}</Text>
-            <Button title="Major/Minor" onPress={toggleScale} color="#6200ee" />
-          </View>
-
-          <View style={styles.controlRow}>
-            <Text style={styles.label}>
-              Mode: {useScale ? 'Scale' : 'Chromatic'}
-            </Text>
-            <Button
-              title="Toggle Mode"
-              onPress={toggleScaleMode}
-              color="#6200ee"
-            />
-          </View>
-
-          <View style={styles.controlRow}>
-            <Text style={styles.label}>Grid: {gridSize}</Text>
-            <Button
-              title="Change Grid"
-              onPress={changeGridSize}
-              color="#6200ee"
-            />
-          </View>
-
-          <View style={styles.controlRow}>
-            <Text style={styles.label}>Waveform: {currentWaveform}</Text>
-            <Button
-              title="Change Wave"
-              onPress={changeWaveform}
-              color="#6200ee"
-            />
-          </View>
-
-          <View style={styles.controlRow}>
-            <Text style={styles.label}>Presets:</Text>
-            <View style={styles.buttonGroup}>
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Scale: {scaleType}</Text>
               <Button
-                title="Pluck"
-                onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.005, 0.1, 0.0, 0.2)}
-              />
-              <Button
-                title="Pad"
-                onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)}
-              />
-              <Button
-                title="Organ"
-                onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.05, 1.0, 0.4)}
+                title="Major/Minor"
+                onPress={toggleScale}
+                color="#6200ee"
               />
             </View>
-          </View>
 
-          {/* Filter Controls */}
-          <View style={styles.effectSection}>
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>
+                Mode: {useScale ? 'Scale' : 'Chromatic'}
+              </Text>
+              <Button
+                title="Toggle Mode"
+                onPress={toggleScaleMode}
+                color="#6200ee"
+              />
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Grid: {gridSize}</Text>
+              <Button
+                title="Change Grid"
+                onPress={changeGridSize}
+                color="#6200ee"
+              />
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Waveform: {currentWaveform}</Text>
+              <Button
+                title="Change Wave"
+                onPress={changeWaveform}
+                color="#6200ee"
+              />
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Presets:</Text>
+              <View style={styles.buttonGroup}>
+                <Button
+                  title="Pluck"
+                  onPress={() =>
+                    NativeAudioModule.setADSR(
+                      MAIN_CHANNEL,
+                      0.005,
+                      0.1,
+                      0.0,
+                      0.2,
+                    )
+                  }
+                />
+                <Button
+                  title="Pad"
+                  onPress={() =>
+                    NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)
+                  }
+                />
+                <Button
+                  title="Organ"
+                  onPress={() =>
+                    NativeAudioModule.setADSR(
+                      MAIN_CHANNEL,
+                      0.01,
+                      0.05,
+                      1.0,
+                      0.4,
+                    )
+                  }
+                />
+              </View>
+            </View>
+          </ScrollView>
+        );
+
+      case 'filter':
+        return (
+          <ScrollView
+            style={styles.tabContent}
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled={true}
+          >
             <View style={styles.effectHeader}>
               <Text style={styles.effectTitle}>Filter</Text>
-              <Button 
+              <Button
                 title={filterEnabled ? 'ON' : 'OFF'}
                 onPress={toggleFilter}
                 color={filterEnabled ? '#4caf50' : '#757575'}
               />
             </View>
-            
+
             {filterEnabled && (
               <>
                 <View style={styles.controlRow}>
@@ -785,7 +892,7 @@ export default function App() {
                     color="#6200ee"
                   />
                 </View>
-                
+
                 <View style={styles.sliderContainer}>
                   <Text style={styles.sliderLabel}>
                     Cutoff: {Math.round(filterCutoff)} Hz
@@ -800,7 +907,7 @@ export default function App() {
                     maximumTrackTintColor="#444"
                   />
                 </View>
-                
+
                 <View style={styles.sliderContainer}>
                   <Text style={styles.sliderLabel}>
                     Resonance: {filterResonance.toFixed(2)}
@@ -817,115 +924,177 @@ export default function App() {
                 </View>
               </>
             )}
-          </View>
+          </ScrollView>
+        );
 
-          {/* Reverb Controls */}
-          <View style={styles.effectSection}>
-            <View style={styles.effectHeader}>
-              <Text style={styles.effectTitle}>Reverb</Text>
-              <Button 
-                title={reverbEnabled ? 'ON' : 'OFF'}
-                onPress={toggleReverb}
-                color={reverbEnabled ? '#4caf50' : '#757575'}
-              />
-            </View>
-            
-            {reverbEnabled && (
-              <>
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    Room Size: {(reverbRoomSize * 100).toFixed(0)}%
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={0}
-                    maximumValue={1}
-                    value={reverbRoomSize}
-                    onValueChange={setReverbRoomSize}
-                    minimumTrackTintColor="#6200ee"
-                    maximumTrackTintColor="#444"
-                  />
-                </View>
-                
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    Wet: {(reverbWetLevel * 100).toFixed(0)}%
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={0}
-                    maximumValue={1}
-                    value={reverbWetLevel}
-                    onValueChange={setReverbWetLevel}
-                    minimumTrackTintColor="#6200ee"
-                    maximumTrackTintColor="#444"
-                  />
-                </View>
-              </>
-            )}
-          </View>
+      case 'fx':
+        return (
+          <ScrollView
+            style={styles.tabContent}
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled={true}
+          >
+            {/* Reverb */}
+            <View style={styles.effectSection}>
+              <View style={styles.effectHeader}>
+                <Text style={styles.effectTitle}>Reverb</Text>
+                <Button
+                  title={reverbEnabled ? 'ON' : 'OFF'}
+                  onPress={toggleReverb}
+                  color={reverbEnabled ? '#4caf50' : '#757575'}
+                />
+              </View>
 
-          {/* Delay Controls */}
-          <View style={styles.effectSection}>
-            <View style={styles.effectHeader}>
-              <Text style={styles.effectTitle}>Delay</Text>
-              <Button 
-                title={delayEnabled ? 'ON' : 'OFF'}
-                onPress={toggleDelay}
-                color={delayEnabled ? '#4caf50' : '#757575'}
-              />
+              {reverbEnabled && (
+                <>
+                  <View style={styles.sliderContainer}>
+                    <Text style={styles.sliderLabel}>
+                      Room Size: {(reverbRoomSize * 100).toFixed(0)}%
+                    </Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={1}
+                      value={reverbRoomSize}
+                      onValueChange={setReverbRoomSize}
+                      minimumTrackTintColor="#6200ee"
+                      maximumTrackTintColor="#444"
+                    />
+                  </View>
+
+                  <View style={styles.sliderContainer}>
+                    <Text style={styles.sliderLabel}>
+                      Wet: {(reverbWetLevel * 100).toFixed(0)}%
+                    </Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={1}
+                      value={reverbWetLevel}
+                      onValueChange={setReverbWetLevel}
+                      minimumTrackTintColor="#6200ee"
+                      maximumTrackTintColor="#444"
+                    />
+                  </View>
+                </>
+              )}
             </View>
-            
-            {delayEnabled && (
-              <>
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    Delay Time: {Math.round(delayTime)} ms
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={1}
-                    maximumValue={2000}
-                    value={delayTime}
-                    onValueChange={setDelayTime}
-                    minimumTrackTintColor="#6200ee"
-                    maximumTrackTintColor="#444"
-                  />
-                </View>
-                
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    Feedback: {(delayFeedback * 100).toFixed(0)}%
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={0}
-                    maximumValue={0.95}
-                    value={delayFeedback}
-                    onValueChange={setDelayFeedback}
-                    minimumTrackTintColor="#6200ee"
-                    maximumTrackTintColor="#444"
-                  />
-                </View>
-                
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    Wet: {(delayWetLevel * 100).toFixed(0)}%
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={0}
-                    maximumValue={1}
-                    value={delayWetLevel}
-                    onValueChange={setDelayWetLevel}
-                    minimumTrackTintColor="#6200ee"
-                    maximumTrackTintColor="#444"
-                  />
-                </View>
-              </>
-            )}
-          </View>
-        </ScrollView>
+
+            {/* Delay */}
+            <View style={styles.effectSection}>
+              <View style={styles.effectHeader}>
+                <Text style={styles.effectTitle}>Delay</Text>
+                <Button
+                  title={delayEnabled ? 'ON' : 'OFF'}
+                  onPress={toggleDelay}
+                  color={delayEnabled ? '#4caf50' : '#757575'}
+                />
+              </View>
+
+              {delayEnabled && (
+                <>
+                  <View style={styles.sliderContainer}>
+                    <Text style={styles.sliderLabel}>
+                      Delay Time: {Math.round(delayTime)} ms
+                    </Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={1}
+                      maximumValue={2000}
+                      value={delayTime}
+                      onValueChange={setDelayTime}
+                      minimumTrackTintColor="#6200ee"
+                      maximumTrackTintColor="#444"
+                    />
+                  </View>
+
+                  <View style={styles.sliderContainer}>
+                    <Text style={styles.sliderLabel}>
+                      Feedback: {(delayFeedback * 100).toFixed(0)}%
+                    </Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={0.95}
+                      value={delayFeedback}
+                      onValueChange={setDelayFeedback}
+                      minimumTrackTintColor="#6200ee"
+                      maximumTrackTintColor="#444"
+                    />
+                  </View>
+
+                  <View style={styles.sliderContainer}>
+                    <Text style={styles.sliderLabel}>
+                      Wet: {(delayWetLevel * 100).toFixed(0)}%
+                    </Text>
+                    <Slider
+                      style={styles.slider}
+                      minimumValue={0}
+                      maximumValue={1}
+                      value={delayWetLevel}
+                      onValueChange={setDelayWetLevel}
+                      minimumTrackTintColor="#6200ee"
+                      maximumTrackTintColor="#444"
+                    />
+                  </View>
+                </>
+              )}
+            </View>
+          </ScrollView>
+        );
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={styles.contentContainer}>
+        <Text style={styles.title}>Grid Synth</Text>
+
+        {/* Tab Navigation */}
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'instrument' && styles.activeTab]}
+            onPress={() => setActiveTab('instrument')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'instrument' && styles.activeTabText,
+              ]}
+            >
+              Instrument
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'filter' && styles.activeTab]}
+            onPress={() => setActiveTab('filter')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'filter' && styles.activeTabText,
+              ]}
+            >
+              Filter
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'fx' && styles.activeTab]}
+            onPress={() => setActiveTab('fx')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'fx' && styles.activeTabText,
+              ]}
+            >
+              FX
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Tab Content */}
+        <View style={styles.tabContentContainer}>{renderTabContent()}</View>
 
         <View style={styles.midiVisualiser}>
           <MidiVisualizer
@@ -966,14 +1135,14 @@ export default function App() {
         </View>
 
         {/* Footer with absolute positioning */}
-        <View style={styles.footer} pointerEvents="box-none">
+        <View style={[styles.footer]} pointerEvents="box-none">
           {showRecordingButtons && (
             <View style={styles.footerButtons} pointerEvents="auto">
-              {isRecording && (
+              {/* {isRecording && (
                 <Text style={styles.recordingIndicator}>
                   ● Recording... {currentRecording.length} events
                 </Text>
-              )}
+              )} */}
               <View style={styles.footerButtonRow}>
                 <TouchableOpacity
                   style={[styles.footerButton, styles.addButton]}
@@ -1037,16 +1206,45 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 60,
   },
-  effectsScrollView: {
-    maxHeight: 300, // Fixed height so grid doesn't move
-    marginBottom: 8,
-  },
   title: {
     fontSize: 36,
     color: '#ffffff',
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 16,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  activeTab: {
+    borderBottomColor: '#6200ee',
+  },
+  tabText: {
+    color: '#888',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  activeTabText: {
+    color: '#ffffff',
+  },
+  tabContentContainer: {
+    height: 150,
+  },
+  tabContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
   controlRow: {
     flexDirection: 'row',
@@ -1055,7 +1253,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 12,
     flexWrap: 'wrap',
-    paddingHorizontal: 16,
   },
   label: {
     color: '#ffffff',
@@ -1070,7 +1267,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1e1e1e',
     borderRadius: 8,
     padding: 16,
-    marginHorizontal: 16,
     marginBottom: 16,
   },
   effectHeader: {
@@ -1097,7 +1293,7 @@ const styles = StyleSheet.create({
     height: 40,
   },
   gridContainer: {
-    flex: 1, // Takes remaining space
+    width: '100%',
     marginTop: 8,
     aspectRatio: 1,
   },
@@ -1129,19 +1325,22 @@ const styles = StyleSheet.create({
     color: '#666666',
   },
   footer: {
-    position: 'absolute',
+    // position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 120,
+    height: 50,
     paddingHorizontal: 16,
-    paddingVertical: 20,
+    // paddingVertical: 20,
     justifyContent: 'center',
-    backgroundColor: 'transparent', // Transparent so grid shows through
+    backgroundColor: 'transparent',
+    // marginBottom: 16
   },
   footerButtons: {
     alignItems: 'center',
     gap: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   footerButtonRow: {
     flexDirection: 'row',
@@ -1151,7 +1350,7 @@ const styles = StyleSheet.create({
   },
   footerButton: {
     paddingHorizontal: 32,
-    paddingVertical: 16,
+    // paddingVertical: 16,
     borderRadius: 12,
     minWidth: 140,
     alignItems: 'center',
