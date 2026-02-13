@@ -10,6 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@react-native-community/slider": "^5.1.2",
     "@react-native/new-app-screen": "0.83.1",
     "@shopify/react-native-skia": "^2.4.21",
     "react": "19.2.0",
