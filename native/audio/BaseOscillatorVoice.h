@@ -1,7 +1,7 @@
 #pragma once
 #include "JuceHeader.h"
-#include <juce_audio_basics/juce_audio_basics.h>
-#include <juce_dsp/juce_dsp.h>
+//#include <juce_audio_basics/juce_audio_basics.h>
+//#include <juce_dsp/juce_dsp.h>
 
 // Forward declaration (so we can use it in canPlaySound without including the full header)
 class BasicSynthSound;

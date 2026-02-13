@@ -16,4 +16,9 @@ namespace juce
 #include <juce_events/juce_events.mm>
 #include <juce_audio_basics/juce_audio_basics.mm>
 #include <juce_audio_devices/juce_audio_devices.mm>
+
+#include <juce_dsp/juce_dsp.mm>
+//#include <juce_audio_utils/juce_audio_utils.mm>
+//#include <juce_gui_extra/juce_gui_extra.mm>
+//#include <juce_gui_basics/juce_gui_basics.mm>
 //#include <juce_data_structures/juce_data_structures.mm>

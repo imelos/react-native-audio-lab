@@ -68,6 +68,10 @@ interface RecordedSequence {
   name: string;
 }
 
+// CHANNEL CONSTANTS - Define which channel to use
+const MAIN_CHANNEL = 1; // Main instrument on channel 1
+const PLAYBACK_CHANNEL = 2; // Playback on channel 2 (optional - can use same channel)
+
 function midiToNoteName(midiNote: number): string {
   const noteNames = [
     'C',
@@ -201,6 +205,23 @@ export default function App() {
 
   const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
 
+  // Initialize audio engine on mount
+  useEffect(() => {
+    // Create main instrument on channel 1
+    NativeAudioModule.createInstrument(MAIN_CHANNEL, 'Main Synth', 16, 'sine');
+    
+    // Optionally create a separate channel for playback with different sound
+    // NativeAudioModule.createInstrument(PLAYBACK_CHANNEL, 'Playback', 8, 'sine');
+    
+    // Set initial ADSR
+    NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.1, 0.8, 0.3);
+    
+    return () => {
+      // Cleanup: stop all notes and remove instruments
+      NativeAudioModule.allNotesOffAllChannels();
+    };
+  }, []);
+
   const createVisualNote = (note: number) => {
     const vn: VisualNote = {
       id: ++noteIdRef.current,
@@ -211,7 +232,6 @@ export default function App() {
   };
 
   const endVisualNote = (note: number) => {
-    // Find the most recent active note with this pitch and close it
     for (let i = visualNotesRef.current.length - 1; i >= 0; i--) {
       const vn = visualNotesRef.current[i];
       if (vn.note === note && vn.endTime == null) {
@@ -266,7 +286,6 @@ export default function App() {
     const playNextEvents = () => {
       const currentTime = Date.now() - playbackStartTime.current;
 
-      // Play all events that should have triggered by now
       while (
         eventIndex < sequence.events.length &&
         sequence.events[eventIndex].timestamp <= currentTime
@@ -274,11 +293,12 @@ export default function App() {
         const event = sequence.events[eventIndex];
 
         if (event.type === 'noteOn') {
-          NativeAudioModule.noteOn(event.note, event.velocity);
+          // Use MAIN_CHANNEL for playback (or PLAYBACK_CHANNEL if you want different sound)
+          NativeAudioModule.noteOn(MAIN_CHANNEL, event.note, event.velocity);
           createVisualNote(event.note);
           playbackActiveNotes.current.add(event.note);
         } else {
-          NativeAudioModule.noteOff(event.note);
+          NativeAudioModule.noteOff(MAIN_CHANNEL, event.note);
           endVisualNote(event.note);
           playbackActiveNotes.current.delete(event.note);
         }
@@ -286,19 +306,15 @@ export default function App() {
         eventIndex++;
       }
 
-      // Update visual feedback (merges with manual notes)
       updateActiveNotesDisplay();
 
-      // Loop when sequence ends
       if (eventIndex >= sequence.events.length) {
-        // Stop all notes
         playbackActiveNotes.current.forEach(note => {
-          NativeAudioModule.noteOff(note);
+          NativeAudioModule.noteOff(MAIN_CHANNEL, note);
           endVisualNote(note);
         });
         playbackActiveNotes.current.clear();
 
-        // Restart
         eventIndex = 0;
         playbackStartTime.current = Date.now();
       }
@@ -313,9 +329,8 @@ export default function App() {
       playbackIntervalRef.current = null;
     }
 
-    // Stop all playing notes
     playbackActiveNotes.current.forEach(note => {
-      NativeAudioModule.noteOff(note);
+      NativeAudioModule.noteOff(MAIN_CHANNEL, note);
       endVisualNote(note);
     });
     playbackActiveNotes.current.clear();
@@ -330,7 +345,6 @@ export default function App() {
     setSavedSequences(savedSequences.filter((_, i) => i !== index));
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (playbackIntervalRef.current) {
@@ -345,7 +359,8 @@ export default function App() {
     const nextWave = WAVEFORMS[nextIndex];
 
     setCurrentWaveform(nextWave);
-    NativeAudioModule.setWaveform(nextWave);
+    // Update waveform on the main channel
+    NativeAudioModule.setWaveform(MAIN_CHANNEL, nextWave);
   };
 
   const changeGridSize = () => {
@@ -395,7 +410,6 @@ export default function App() {
   };
 
   const updateActiveNotesDisplay = () => {
-    // Merge both manual notes and playback notes for display
     const combinedNotes = new Set([
       ...activeNotesRef.current.values(),
       ...playbackActiveNotes.current,
@@ -422,7 +436,6 @@ export default function App() {
   };
 
   const handleTouchStart = (event: any) => {
-    // Auto-start recording on first touch if not already recording and no saved sequences
     if (
       !isRecording &&
       savedSequences.length === 0 &&
@@ -446,7 +459,8 @@ export default function App() {
         const touchId = String(identifier);
 
         if (!activeNotesRef.current.has(touchId)) {
-          NativeAudioModule.noteOn(note, 0.85);
+          // Play note on MAIN_CHANNEL
+          NativeAudioModule.noteOn(MAIN_CHANNEL, note, 0.85);
           createVisualNote(note);
           activeNotesRef.current.set(touchId, note);
           recordNoteEvent('noteOn', note, 0.85);
@@ -472,11 +486,11 @@ export default function App() {
 
         if (previousNote !== note) {
           if (previousNote !== undefined) {
-            NativeAudioModule.noteOff(previousNote);
+            NativeAudioModule.noteOff(MAIN_CHANNEL, previousNote);
             endVisualNote(previousNote);
             recordNoteEvent('noteOff', previousNote);
           }
-          NativeAudioModule.noteOn(note, 0.85);
+          NativeAudioModule.noteOn(MAIN_CHANNEL, note, 0.85);
           createVisualNote(note);
           recordNoteEvent('noteOn', note, 0.85);
         }
@@ -487,7 +501,7 @@ export default function App() {
 
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!currentTouchedNotes.has(touchId)) {
-        NativeAudioModule.noteOff(note);
+        NativeAudioModule.noteOff(MAIN_CHANNEL, note);
         endVisualNote(note);
         recordNoteEvent('noteOff', note);
       }
@@ -513,7 +527,7 @@ export default function App() {
 
     for (const [touchId, note] of activeNotesRef.current.entries()) {
       if (!remainingTouches.has(touchId)) {
-        NativeAudioModule.noteOff(note);
+        NativeAudioModule.noteOff(MAIN_CHANNEL, note);
         endVisualNote(note);
         recordNoteEvent('noteOff', note);
       }
@@ -585,15 +599,15 @@ export default function App() {
           <View style={styles.buttonGroup}>
             <Button
               title="Pluck"
-              onPress={() => NativeAudioModule.setADSR(0.005, 0.1, 0.0, 0.2)}
+              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.005, 0.1, 0.0, 0.2)}
             />
             <Button
               title="Pad"
-              onPress={() => NativeAudioModule.setADSR(0.3, 1.5, 0.7, 2.0)}
+              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)}
             />
             <Button
               title="Organ"
-              onPress={() => NativeAudioModule.setADSR(0.01, 0.05, 1.0, 0.4)}
+              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.05, 1.0, 0.4)}
             />
           </View>
         </View>
@@ -719,7 +733,6 @@ const styles = StyleSheet.create({
     gap: 12,
     flexWrap: 'wrap',
     paddingHorizontal: 16,
-    display: 'none',
   },
   label: {
     color: '#ffffff',
