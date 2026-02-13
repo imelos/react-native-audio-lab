@@ -40,9 +40,9 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
       // Only recalculate pitch mapping when note count changes
       if (all.length !== prevNotesCount.current) {
         prevNotesCount.current = all.length;
-        
+
         const uniquePitches = Array.from(new Set(all.map(n => n.note))).sort(
-          (a, b) => b - a
+          (a, b) => b - a,
         );
         pitchIndexRef.current.clear();
         uniquePitches.forEach((p, i) => pitchIndexRef.current.set(p, i));
@@ -78,7 +78,7 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
 
     loop();
     return () => cancelAnimationFrame(raf);
-  }, [width, height]);
+  }, [width, height, notesRef, rects]);
 
   return (
     <View style={{ width, height }}>

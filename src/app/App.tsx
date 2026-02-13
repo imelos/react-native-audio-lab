@@ -70,7 +70,7 @@ interface RecordedSequence {
 
 // CHANNEL CONSTANTS - Define which channel to use
 const MAIN_CHANNEL = 1; // Main instrument on channel 1
-const PLAYBACK_CHANNEL = 2; // Playback on channel 2 (optional - can use same channel)
+// const PLAYBACK_CHANNEL = 2; // Playback on channel 2 (optional - can use same channel)
 
 function midiToNoteName(midiNote: number): string {
   const noteNames = [
@@ -180,10 +180,11 @@ export default function App() {
   const [showRecordingButtons, setShowRecordingButtons] = useState(false);
 
   const recordingStartTime = useRef<number>(0);
-  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const playbackIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const playbackStartTime = useRef<number>(0);
   const playbackActiveNotes = useRef<Set<number>>(new Set());
-
   const keyRefsRef = useRef<Map<number, View>>(new Map());
   const keyLayoutsRef = useRef<
     Map<number, { x: number; y: number; width: number; height: number }>
@@ -209,13 +210,13 @@ export default function App() {
   useEffect(() => {
     // Create main instrument on channel 1
     NativeAudioModule.createInstrument(MAIN_CHANNEL, 'Main Synth', 16, 'sine');
-    
+
     // Optionally create a separate channel for playback with different sound
     // NativeAudioModule.createInstrument(PLAYBACK_CHANNEL, 'Playback', 8, 'sine');
-    
+
     // Set initial ADSR
     NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.1, 0.8, 0.3);
-    
+
     return () => {
       // Cleanup: stop all notes and remove instruments
       NativeAudioModule.allNotesOffAllChannels();
@@ -599,15 +600,21 @@ export default function App() {
           <View style={styles.buttonGroup}>
             <Button
               title="Pluck"
-              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.005, 0.1, 0.0, 0.2)}
+              onPress={() =>
+                NativeAudioModule.setADSR(MAIN_CHANNEL, 0.005, 0.1, 0.0, 0.2)
+              }
             />
             <Button
               title="Pad"
-              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)}
+              onPress={() =>
+                NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)
+              }
             />
             <Button
               title="Organ"
-              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.05, 1.0, 0.4)}
+              onPress={() =>
+                NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.05, 1.0, 0.4)
+              }
             />
           </View>
         </View>
