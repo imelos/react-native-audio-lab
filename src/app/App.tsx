@@ -6,7 +6,6 @@ import {
   Button,
   TouchableOpacity,
   Dimensions,
-  ScrollView,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -175,20 +174,20 @@ export default function App() {
 
   // Filter state
   const [filterEnabled, setFilterEnabled] = useState(false);
-  const [filterEffectId, setFilterEffectId] = useState<number | null>(null);
+  const filterEffectIdRef = useRef<number | null>(null);
   const [filterType, setFilterType] = useState<FilterType>('LowPass');
   const [filterCutoff, setFilterCutoff] = useState(1000); // 20 - 20000 Hz
   const [filterResonance, setFilterResonance] = useState(0.7); // 0.1 - 10
 
   // Reverb state
   const [reverbEnabled, setReverbEnabled] = useState(false);
-  const [reverbEffectId, setReverbEffectId] = useState<number | null>(null);
+  const reverbEffectIdRef = useRef<number | null>(null);
   const [reverbRoomSize, setReverbRoomSize] = useState(0.5); // 0 - 1
   const [reverbWetLevel, setReverbWetLevel] = useState(0.33); // 0 - 1
 
   // Delay state
   const [delayEnabled, setDelayEnabled] = useState(false);
-  const [delayEffectId, setDelayEffectId] = useState<number | null>(null);
+  const delayEffectIdRef = useRef<number | null>(null);
   const [delayTime, setDelayTime] = useState(500); // 1 - 2000 ms
   const [delayFeedback, setDelayFeedback] = useState(0.4); // 0 - 0.95
   const [delayWetLevel, setDelayWetLevel] = useState(0.5); // 0 - 1
@@ -234,10 +233,10 @@ export default function App() {
   useEffect(() => {
     // Create main instrument on channel 1
     NativeAudioModule.createInstrument(MAIN_CHANNEL, 'Main Synth', 16, 'sine');
-
+    
     // Set initial ADSR
     NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.1, 0.8, 0.3);
-
+    
     return () => {
       // Cleanup: stop all notes and remove instruments
       NativeAudioModule.allNotesOffAllChannels();
@@ -247,203 +246,135 @@ export default function App() {
   // Toggle Filter
   const toggleFilter = () => {
     if (!filterEnabled) {
+      console.log('🎛️ Adding filter effect...');
       // Add filter effect
       NativeAudioModule.addEffect(MAIN_CHANNEL, 'filter');
-      // Note: In real implementation, addEffect should return the effectId
-      // For now, we'll use a placeholder
-      setFilterEffectId(1);
-
+      // Store effect ID (in real implementation, addEffect should return this)
+      // For now we'll use a counter approach
+      const effectId = 1;
+      filterEffectIdRef.current = effectId;
+      
+      console.log(`✅ Filter added with ID: ${effectId}`);
+      console.log(`Setting filter: Type=${FILTER_TYPES.indexOf(filterType)}, Cutoff=${filterCutoff}Hz, Resonance=${filterResonance}`);
+      
       // Set initial filter parameters
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        1,
-        'cutoff',
-        filterCutoff,
-      );
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        1,
-        'resonance',
-        filterResonance,
-      );
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        1,
-        'type',
-        FILTER_TYPES.indexOf(filterType),
-      );
-
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'cutoff', filterCutoff);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'resonance', filterResonance);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'type', FILTER_TYPES.indexOf(filterType));
+      
       setFilterEnabled(true);
     } else {
+      console.log('🔇 Removing filter effect...');
       // Remove filter effect
-      if (filterEffectId !== null) {
-        NativeAudioModule.removeEffect(MAIN_CHANNEL, filterEffectId);
+      if (filterEffectIdRef.current !== null) {
+        NativeAudioModule.removeEffect(MAIN_CHANNEL, filterEffectIdRef.current);
       }
       setFilterEnabled(false);
-      setFilterEffectId(null);
+      filterEffectIdRef.current = null;
     }
   };
 
   // Update filter parameters
   useEffect(() => {
-    if (filterEnabled && filterEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        filterEffectId,
-        'cutoff',
-        filterCutoff,
-      );
+    if (filterEnabled && filterEffectIdRef.current !== null) {
+      console.log(`🎚️ Updating filter cutoff: ${filterCutoff}Hz`);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, filterEffectIdRef.current, 'cutoff', filterCutoff);
     }
-  }, [filterCutoff, filterEnabled, filterEffectId]);
+  }, [filterCutoff, filterEnabled]);
 
   useEffect(() => {
-    if (filterEnabled && filterEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        filterEffectId,
-        'resonance',
-        filterResonance,
-      );
+    if (filterEnabled && filterEffectIdRef.current !== null) {
+      console.log(`🎚️ Updating filter resonance: ${filterResonance}`);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, filterEffectIdRef.current, 'resonance', filterResonance);
     }
-  }, [filterResonance, filterEnabled, filterEffectId]);
+  }, [filterResonance, filterEnabled]);
 
   useEffect(() => {
-    if (filterEnabled && filterEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        filterEffectId,
-        'type',
-        FILTER_TYPES.indexOf(filterType),
-      );
+    if (filterEnabled && filterEffectIdRef.current !== null) {
+      const typeIndex = FILTER_TYPES.indexOf(filterType);
+      console.log(`🎚️ Updating filter type: ${filterType} (${typeIndex})`);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, filterEffectIdRef.current, 'type', typeIndex);
     }
-  }, [filterType, filterEnabled, filterEffectId]);
+  }, [filterType, filterEnabled]);
 
   // Toggle Reverb
   const toggleReverb = () => {
     if (!reverbEnabled) {
-      // Add reverb effect
+      console.log('🌊 Adding reverb effect...');
       NativeAudioModule.addEffect(MAIN_CHANNEL, 'reverb');
-      setReverbEffectId(2); // Different ID from filter
-
-      // Set initial reverb parameters
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        2,
-        'roomSize',
-        reverbRoomSize,
-      );
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        2,
-        'wetLevel',
-        reverbWetLevel,
-      );
-
+      const effectId = 2;
+      reverbEffectIdRef.current = effectId;
+      
+      console.log(`✅ Reverb added with ID: ${effectId}`);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'roomSize', reverbRoomSize);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'wetLevel', reverbWetLevel);
+      
       setReverbEnabled(true);
     } else {
-      // Remove reverb effect
-      if (reverbEffectId !== null) {
-        NativeAudioModule.removeEffect(MAIN_CHANNEL, reverbEffectId);
+      console.log('🔇 Removing reverb effect...');
+      if (reverbEffectIdRef.current !== null) {
+        NativeAudioModule.removeEffect(MAIN_CHANNEL, reverbEffectIdRef.current);
       }
       setReverbEnabled(false);
-      setReverbEffectId(null);
+      reverbEffectIdRef.current = null;
     }
   };
 
   // Update reverb parameters
   useEffect(() => {
-    if (reverbEnabled && reverbEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        reverbEffectId,
-        'roomSize',
-        reverbRoomSize,
-      );
+    if (reverbEnabled && reverbEffectIdRef.current !== null) {
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, reverbEffectIdRef.current, 'roomSize', reverbRoomSize);
     }
-  }, [reverbRoomSize, reverbEnabled, reverbEffectId]);
+  }, [reverbRoomSize, reverbEnabled]);
 
   useEffect(() => {
-    if (reverbEnabled && reverbEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        reverbEffectId,
-        'wetLevel',
-        reverbWetLevel,
-      );
+    if (reverbEnabled && reverbEffectIdRef.current !== null) {
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, reverbEffectIdRef.current, 'wetLevel', reverbWetLevel);
     }
-  }, [reverbWetLevel, reverbEnabled, reverbEffectId]);
+  }, [reverbWetLevel, reverbEnabled]);
 
   // Toggle Delay
   const toggleDelay = () => {
     if (!delayEnabled) {
-      // Add delay effect
+      console.log('🔁 Adding delay effect...');
       NativeAudioModule.addEffect(MAIN_CHANNEL, 'delay');
-      setDelayEffectId(3); // Different ID from filter and reverb
-
-      // Set initial delay parameters
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        3,
-        'delayTime',
-        delayTime,
-      );
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        3,
-        'feedback',
-        delayFeedback,
-      );
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        3,
-        'wetLevel',
-        delayWetLevel,
-      );
-
+      const effectId = 3;
+      delayEffectIdRef.current = effectId;
+      
+      console.log(`✅ Delay added with ID: ${effectId}`);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'delayTime', delayTime);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'feedback', delayFeedback);
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, effectId, 'wetLevel', delayWetLevel);
+      
       setDelayEnabled(true);
     } else {
-      // Remove delay effect
-      if (delayEffectId !== null) {
-        NativeAudioModule.removeEffect(MAIN_CHANNEL, delayEffectId);
+      console.log('🔇 Removing delay effect...');
+      if (delayEffectIdRef.current !== null) {
+        NativeAudioModule.removeEffect(MAIN_CHANNEL, delayEffectIdRef.current);
       }
       setDelayEnabled(false);
-      setDelayEffectId(null);
+      delayEffectIdRef.current = null;
     }
   };
 
   // Update delay parameters
   useEffect(() => {
-    if (delayEnabled && delayEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        delayEffectId,
-        'delayTime',
-        delayTime,
-      );
+    if (delayEnabled && delayEffectIdRef.current !== null) {
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, delayEffectIdRef.current, 'delayTime', delayTime);
     }
-  }, [delayTime, delayEnabled, delayEffectId]);
+  }, [delayTime, delayEnabled]);
 
   useEffect(() => {
-    if (delayEnabled && delayEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        delayEffectId,
-        'feedback',
-        delayFeedback,
-      );
+    if (delayEnabled && delayEffectIdRef.current !== null) {
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, delayEffectIdRef.current, 'feedback', delayFeedback);
     }
-  }, [delayFeedback, delayEnabled, delayEffectId]);
+  }, [delayFeedback, delayEnabled]);
 
   useEffect(() => {
-    if (delayEnabled && delayEffectId !== null) {
-      NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
-        delayEffectId,
-        'wetLevel',
-        delayWetLevel,
-      );
+    if (delayEnabled && delayEffectIdRef.current !== null) {
+      NativeAudioModule.setEffectParameter(MAIN_CHANNEL, delayEffectIdRef.current, 'wetLevel', delayWetLevel);
     }
-  }, [delayWetLevel, delayEnabled, delayEffectId]);
+  }, [delayWetLevel, delayEnabled]);
 
   const changeFilterType = () => {
     const currentIndex = FILTER_TYPES.indexOf(filterType);
@@ -776,7 +707,7 @@ export default function App() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.contentContainer}>
         <Text style={styles.title}>Grid Synth</Text>
 
@@ -825,21 +756,15 @@ export default function App() {
           <View style={styles.buttonGroup}>
             <Button
               title="Pluck"
-              onPress={() =>
-                NativeAudioModule.setADSR(MAIN_CHANNEL, 0.005, 0.1, 0.0, 0.2)
-              }
+              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.005, 0.1, 0.0, 0.2)}
             />
             <Button
               title="Pad"
-              onPress={() =>
-                NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)
-              }
+              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)}
             />
             <Button
               title="Organ"
-              onPress={() =>
-                NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.05, 1.0, 0.4)
-              }
+              onPress={() => NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.05, 1.0, 0.4)}
             />
           </View>
         </View>
@@ -848,13 +773,13 @@ export default function App() {
         <View style={styles.effectSection}>
           <View style={styles.effectHeader}>
             <Text style={styles.effectTitle}>Filter</Text>
-            <Button
+            <Button 
               title={filterEnabled ? 'ON' : 'OFF'}
               onPress={toggleFilter}
               color={filterEnabled ? '#4caf50' : '#757575'}
             />
           </View>
-
+          
           {filterEnabled && (
             <>
               <View style={styles.controlRow}>
@@ -865,7 +790,7 @@ export default function App() {
                   color="#6200ee"
                 />
               </View>
-
+              
               <View style={styles.sliderContainer}>
                 <Text style={styles.sliderLabel}>
                   Cutoff: {Math.round(filterCutoff)} Hz
@@ -880,7 +805,7 @@ export default function App() {
                   maximumTrackTintColor="#444"
                 />
               </View>
-
+              
               <View style={styles.sliderContainer}>
                 <Text style={styles.sliderLabel}>
                   Resonance: {filterResonance.toFixed(2)}
@@ -903,13 +828,13 @@ export default function App() {
         <View style={styles.effectSection}>
           <View style={styles.effectHeader}>
             <Text style={styles.effectTitle}>Reverb</Text>
-            <Button
+            <Button 
               title={reverbEnabled ? 'ON' : 'OFF'}
               onPress={toggleReverb}
               color={reverbEnabled ? '#4caf50' : '#757575'}
             />
           </View>
-
+          
           {reverbEnabled && (
             <>
               <View style={styles.sliderContainer}>
@@ -926,7 +851,7 @@ export default function App() {
                   maximumTrackTintColor="#444"
                 />
               </View>
-
+              
               <View style={styles.sliderContainer}>
                 <Text style={styles.sliderLabel}>
                   Wet: {(reverbWetLevel * 100).toFixed(0)}%
@@ -949,13 +874,13 @@ export default function App() {
         <View style={styles.effectSection}>
           <View style={styles.effectHeader}>
             <Text style={styles.effectTitle}>Delay</Text>
-            <Button
+            <Button 
               title={delayEnabled ? 'ON' : 'OFF'}
               onPress={toggleDelay}
               color={delayEnabled ? '#4caf50' : '#757575'}
             />
           </View>
-
+          
           {delayEnabled && (
             <>
               <View style={styles.sliderContainer}>
@@ -972,7 +897,7 @@ export default function App() {
                   maximumTrackTintColor="#444"
                 />
               </View>
-
+              
               <View style={styles.sliderContainer}>
                 <Text style={styles.sliderLabel}>
                   Feedback: {(delayFeedback * 100).toFixed(0)}%
@@ -987,7 +912,7 @@ export default function App() {
                   maximumTrackTintColor="#444"
                 />
               </View>
-
+              
               <View style={styles.sliderContainer}>
                 <Text style={styles.sliderLabel}>
                   Wet: {(delayWetLevel * 100).toFixed(0)}%
@@ -1097,7 +1022,7 @@ export default function App() {
           )}
         </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
