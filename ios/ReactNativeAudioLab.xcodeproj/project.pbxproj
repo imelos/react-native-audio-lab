@@ -17,6 +17,9 @@
 		778F03162F3CE20800F4C534 /* BasicSynthSound.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03152F3CE20800F4C534 /* BasicSynthSound.cpp */; };
 		778F03332F3F24EE00F4C534 /* Instrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03322F3F24EE00F4C534 /* Instrument.cpp */; };
 		778F033E2F3F374E00F4C534 /* JuceModules2.mm in Sources */ = {isa = PBXBuildFile; fileRef = 778F033D2F3F374E00F4C534 /* JuceModules2.mm */; settings = {COMPILER_FLAGS = "-fno-objc-arc"; }; };
+		778F03472F407B5700F4C534 /* MultisamplerVoice.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03462F407B5700F4C534 /* MultisamplerVoice.cpp */; };
+		778F034A2F407B9E00F4C534 /* MultisamplerSound.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03492F407B9E00F4C534 /* MultisamplerSound.cpp */; };
+		778F034C2F407BC500F4C534 /* MultisamplerInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F034B2F407BC500F4C534 /* MultisamplerInstrument.cpp */; };
 		778FB0882F3B6CE500F4C534 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB0872F3B6CE500F4C534 /* AVFoundation.framework */; };
 		778FB08A2F3B6CEE00F4C534 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB0892F3B6CEE00F4C534 /* CoreAudio.framework */; };
 		778FB08C2F3B6CF400F4C534 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB08B2F3B6CF300F4C534 /* Accelerate.framework */; };
@@ -712,6 +715,12 @@
 		778F03322F3F24EE00F4C534 /* Instrument.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Instrument.cpp; sourceTree = "<group>"; };
 		778F03342F3F257700F4C534 /* SimpleEffects.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SimpleEffects.h; sourceTree = "<group>"; };
 		778F033D2F3F374E00F4C534 /* JuceModules2.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = JuceModules2.mm; sourceTree = "<group>"; };
+		778F03452F407B4000F4C534 /* MultisamplerVoice.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MultisamplerVoice.h; sourceTree = "<group>"; };
+		778F03462F407B5700F4C534 /* MultisamplerVoice.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MultisamplerVoice.cpp; sourceTree = "<group>"; };
+		778F03482F407B7000F4C534 /* MultisamplerSound.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MultisamplerSound.h; sourceTree = "<group>"; };
+		778F03492F407B9E00F4C534 /* MultisamplerSound.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MultisamplerSound.cpp; sourceTree = "<group>"; };
+		778F034B2F407BC500F4C534 /* MultisamplerInstrument.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MultisamplerInstrument.cpp; sourceTree = "<group>"; };
+		778F034D2F407BDE00F4C534 /* MultisamplerInstrument.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MultisamplerInstrument.h; sourceTree = "<group>"; };
 		778FB0872F3B6CE500F4C534 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		778FB0892F3B6CEE00F4C534 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		778FB08B2F3B6CF300F4C534 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
@@ -4689,6 +4698,9 @@
 				778FB0B02F3BA17600F4C534 /* AudioEngine.cpp */,
 				778F03322F3F24EE00F4C534 /* Instrument.cpp */,
 				778F030C2F3CC1E500F4C534 /* JuceMetadata.cpp */,
+				778F03462F407B5700F4C534 /* MultisamplerVoice.cpp */,
+				778F03492F407B9E00F4C534 /* MultisamplerSound.cpp */,
+				778F034B2F407BC500F4C534 /* MultisamplerInstrument.cpp */,
 				778F03122F3CE14500F4C534 /* BaseOscillatorVoice.cpp */,
 				778F03152F3CE20800F4C534 /* BasicSynthSound.cpp */,
 				778F02FA2F3BD8BB00F4C534 /* JuceConfig.h */,
@@ -4698,6 +4710,9 @@
 				778F03142F3CE1C600F4C534 /* BasicSynthSound.h */,
 				778F03312F3F24B200F4C534 /* Instrument.h */,
 				778F03342F3F257700F4C534 /* SimpleEffects.h */,
+				778F03452F407B4000F4C534 /* MultisamplerVoice.h */,
+				778F03482F407B7000F4C534 /* MultisamplerSound.h */,
+				778F034D2F407BDE00F4C534 /* MultisamplerInstrument.h */,
 			);
 			path = audio;
 			sourceTree = "<group>";
@@ -9275,6 +9290,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				778F03472F407B5700F4C534 /* MultisamplerVoice.cpp in Sources */,
 				778F030D2F3CC1E500F4C534 /* JuceMetadata.cpp in Sources */,
 				778FC17E2F3BA17700F4C534 /* AudioEngine.cpp in Sources */,
 				778F03052F3C840300F4C534 /* JuceModules.mm in Sources */,
@@ -9282,6 +9298,8 @@
 				778F033E2F3F374E00F4C534 /* JuceModules2.mm in Sources */,
 				778F03162F3CE20800F4C534 /* BasicSynthSound.cpp in Sources */,
 				778F03132F3CE14500F4C534 /* BaseOscillatorVoice.cpp in Sources */,
+				778F034A2F407B9E00F4C534 /* MultisamplerSound.cpp in Sources */,
+				778F034C2F407BC500F4C534 /* MultisamplerInstrument.cpp in Sources */,
 				77BE82272F3B3FF100E9C167 /* AudioModule.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

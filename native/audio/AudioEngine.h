@@ -1,16 +1,24 @@
 #pragma once
 #include "JuceHeader.h"
 #include "Instrument.h"
+#include "MultiSamplerInstrument.h"
 #include <map>
 #include <memory>
+#include <variant>
 
 /**
  * Enhanced AudioEngine with multi-channel instrument support.
- * Each channel can have its own Instrument with independent configuration and effects.
+ * Each channel can have either an Oscillator-based Instrument or a MultiSamplerInstrument.
  */
 class AudioEngine : public juce::AudioIODeviceCallback
 {
 public:
+    enum class InstrumentType
+    {
+        Oscillator,
+        MultiSampler
+    };
+    
     AudioEngine();
     ~AudioEngine();
 
@@ -25,18 +33,22 @@ public:
     // ──────────────────────────────────────────
     
     /**
-     * Create a new instrument on a specific channel.
-     * If an instrument already exists on this channel, it will be replaced.
+     * Create an oscillator-based instrument on a specific channel.
      * @param channel Channel number (1-16)
      * @param config Instrument configuration
      * @return true if successful
      */
-  bool createInstrument(int channel, const Config& config);
+    bool createOscillatorInstrument(int channel, const Config& config);
+    bool createOscillatorInstrument(int channel);
     
     /**
-     * Create an instrument with default configuration
+     * Create a multi-sampler instrument on a specific channel.
+     * @param channel Channel number (1-16)
+     * @param config MultiSampler configuration
+     * @return true if successful
      */
-    bool createInstrument(int channel);
+    bool createMultiSamplerInstrument(int channel, const MultiSamplerConfig::Config& config);
+    bool createMultiSamplerInstrument(int channel);
     
     /**
      * Remove an instrument from a channel
@@ -54,9 +66,30 @@ public:
     bool hasInstrument(int channel) const;
     
     /**
-     * Get an instrument by channel (returns nullptr if not found)
+     * Get instrument type for a channel
      */
-    Instrument* getInstrument(int channel);
+    InstrumentType getInstrumentType(int channel) const;
+    
+    /**
+     * Get oscillator instrument by channel (returns nullptr if not oscillator type)
+     */
+    Instrument* getOscillatorInstrument(int channel);
+    
+    /**
+     * Get multi-sampler instrument by channel (returns nullptr if not sampler type)
+     */
+    MultiSamplerInstrument* getMultiSamplerInstrument(int channel);
+
+    // ──────────────────────────────────────────
+    // Sample loading (for MultiSampler instruments)
+    // ──────────────────────────────────────────
+    bool loadSample(int channel, int slotIndex, const juce::String& filePath,
+                   const MultiSamplerConfig::SampleConfig& config);
+    bool loadSampleFromBase64(int channel, int slotIndex, const juce::String& base64Data,
+                             double sampleRate, int numChannels,
+                             const MultiSamplerConfig::SampleConfig& config);
+    void clearSample(int channel, int slotIndex);
+    void clearAllSamples(int channel);
 
     // ──────────────────────────────────────────
     // Note control (per channel)
@@ -67,16 +100,20 @@ public:
     void allNotesOffAllChannels();
 
     // ──────────────────────────────────────────
-    // Instrument parameter control
+    // Oscillator parameter control (only affects oscillator instruments)
     // ──────────────────────────────────────────
     void setWaveform(int channel, BaseOscillatorVoice::Waveform waveform);
-    void setADSR(int channel, float attack, float decay, float sustain, float release);
-    void setVolume(int channel, float volume);
-    void setPan(int channel, float pan);
     void setDetune(int channel, float cents);
 
     // ──────────────────────────────────────────
-    // Effects management
+    // Common parameter control (works for both instrument types)
+    // ──────────────────────────────────────────
+    void setADSR(int channel, float attack, float decay, float sustain, float release);
+    void setVolume(int channel, float volume);
+    void setPan(int channel, float pan);
+
+    // ──────────────────────────────────────────
+    // Effects management (only for oscillator instruments)
     // ──────────────────────────────────────────
     int addEffect(int channel, Instrument::EffectType type);
     void removeEffect(int channel, int effectId);
@@ -112,12 +149,32 @@ public:
 
 private:
     // ──────────────────────────────────────────
+    // Instrument wrapper to hold either type
+    // ──────────────────────────────────────────
+    struct InstrumentWrapper
+    {
+        InstrumentType type;
+        std::variant<std::unique_ptr<Instrument>,
+                    std::unique_ptr<MultiSamplerInstrument>> instrument;
+        
+        InstrumentWrapper(std::unique_ptr<Instrument> osc)
+            : type(InstrumentType::Oscillator)
+            , instrument(std::move(osc))
+        {}
+        
+        InstrumentWrapper(std::unique_ptr<MultiSamplerInstrument> sampler)
+            : type(InstrumentType::MultiSampler)
+            , instrument(std::move(sampler))
+        {}
+    };
+
+    // ──────────────────────────────────────────
     // Members
     // ──────────────────────────────────────────
     juce::AudioDeviceManager deviceManager;
     
-    // Map of channel number to Instrument
-    std::map<int, std::unique_ptr<Instrument>> instruments;
+    // Map of channel number to InstrumentWrapper
+    std::map<int, std::unique_ptr<InstrumentWrapper>> instruments;
     
     // Thread safety
     juce::CriticalSection instrumentLock;
@@ -138,5 +195,6 @@ private:
     // ──────────────────────────────────────────
     // Helper methods
     // ──────────────────────────────────────────
-    void prepareInstrument(Instrument* instrument);
+    void prepareInstrumentWrapper(InstrumentWrapper* wrapper);
+    InstrumentWrapper* getInstrumentWrapper(int channel);
 };

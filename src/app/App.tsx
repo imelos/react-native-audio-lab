@@ -244,7 +244,7 @@ export default function App() {
   // Initialize audio engine on mount
   useEffect(() => {
     // Create main instrument on channel 1
-    NativeAudioModule.createInstrument(MAIN_CHANNEL, 'Main Synth', 16, 'sine');
+    NativeAudioModule.createOscillatorInstrument(MAIN_CHANNEL, 'Main Synth', 16, 'sine');
 
     // Set initial ADSR
     NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.1, 0.8, 0.3);

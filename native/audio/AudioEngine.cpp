@@ -39,7 +39,7 @@ void AudioEngine::shutdown()
 // Instrument management
 // ──────────────────────────────────────────
 
-bool AudioEngine::createInstrument(int channel, const Config& config)
+bool AudioEngine::createOscillatorInstrument(int channel, const Config& config)
 {
     if (channel < 1 || channel > 16)
         return false;
@@ -54,13 +54,37 @@ bool AudioEngine::createInstrument(int channel, const Config& config)
         instrument->prepareToPlay(currentSampleRate, currentBlockSize);
     }
     
-    instruments[channel] = std::move(instrument);
+    instruments[channel] = std::make_unique<InstrumentWrapper>(std::move(instrument));
     return true;
 }
 
-bool AudioEngine::createInstrument(int channel)
+bool AudioEngine::createOscillatorInstrument(int channel)
 {
-    return createInstrument(channel, Config());
+    return createOscillatorInstrument(channel, Config());
+}
+
+bool AudioEngine::createMultiSamplerInstrument(int channel, const MultiSamplerConfig::Config& config)
+{
+    if (channel < 1 || channel > 16)
+        return false;
+    
+    juce::ScopedLock lock(instrumentLock);
+    
+    auto instrument = std::make_unique<MultiSamplerInstrument>(config);
+    
+    // Prepare if we're already playing
+    if (currentSampleRate > 0.0)
+    {
+        instrument->prepareToPlay(currentSampleRate, currentBlockSize);
+    }
+    
+    instruments[channel] = std::make_unique<InstrumentWrapper>(std::move(instrument));
+    return true;
+}
+
+bool AudioEngine::createMultiSamplerInstrument(int channel)
+{
+    return createMultiSamplerInstrument(channel, MultiSamplerConfig::Config());
 }
 
 void AudioEngine::removeInstrument(int channel)
@@ -81,11 +105,144 @@ bool AudioEngine::hasInstrument(int channel) const
     return instruments.find(channel) != instruments.end();
 }
 
-Instrument* AudioEngine::getInstrument(int channel)
+AudioEngine::InstrumentType AudioEngine::getInstrumentType(int channel) const
+{
+    juce::ScopedLock lock(instrumentLock);
+    auto it = instruments.find(channel);
+    if (it != instruments.end())
+        return it->second->type;
+    return InstrumentType::Oscillator; // Default
+}
+
+AudioEngine::InstrumentWrapper* AudioEngine::getInstrumentWrapper(int channel)
 {
     juce::ScopedLock lock(instrumentLock);
     auto it = instruments.find(channel);
     return (it != instruments.end()) ? it->second.get() : nullptr;
+}
+
+Instrument* AudioEngine::getOscillatorInstrument(int channel)
+{
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (wrapper && wrapper->type == InstrumentType::Oscillator)
+    {
+        return std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+    }
+    return nullptr;
+}
+
+MultiSamplerInstrument* AudioEngine::getMultiSamplerInstrument(int channel)
+{
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (wrapper && wrapper->type == InstrumentType::MultiSampler)
+    {
+        return std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+    }
+    return nullptr;
+}
+
+// ──────────────────────────────────────────
+// Sample loading
+// ──────────────────────────────────────────
+
+bool AudioEngine::loadSample(int channel, int slotIndex, const juce::String& filePath,
+                            const MultiSamplerConfig::SampleConfig& config)
+{
+    auto* sampler = getMultiSamplerInstrument(channel);
+    if (!sampler)
+        return false;
+    
+    return sampler->loadSample(slotIndex, filePath, config);
+}
+
+bool AudioEngine::loadSampleFromBase64(int channel, int slotIndex, const juce::String& base64Data,
+                                      double sampleRate, int numChannels,
+                                      const MultiSamplerConfig::SampleConfig& config)
+{
+    auto* sampler = getMultiSamplerInstrument(channel);
+    if (!sampler)
+        return false;
+    
+    // Decode base64 to memory block
+    juce::MemoryOutputStream outputStream;
+    if (!juce::Base64::convertFromBase64(outputStream, base64Data))
+    {
+        DBG("Failed to decode base64 data");
+        return false;
+    }
+    
+    juce::MemoryBlock memoryBlock = outputStream.getMemoryBlock();
+    
+    // Try to load as an audio file format (WAV, AIFF, etc.)
+    auto memoryInputStream = std::make_unique<juce::MemoryInputStream>(memoryBlock, false);
+    
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+    
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        formatManager.createReaderFor(std::move(memoryInputStream))
+    );
+    
+    if (reader != nullptr)
+    {
+        // Successfully loaded as an audio file
+        juce::AudioBuffer<float> audioData(
+            static_cast<int>(reader->numChannels),
+            static_cast<int>(reader->lengthInSamples)
+        );
+        
+        reader->read(&audioData, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
+        
+        return sampler->loadSampleFromBuffer(slotIndex, audioData, reader->sampleRate, config);
+    }
+    else
+    {
+        // Assume raw float data (fallback for raw PCM)
+        if (numChannels <= 0 || sampleRate <= 0.0)
+        {
+            DBG("Invalid sample rate or channel count for raw PCM data");
+            return false;
+        }
+        
+        const int numSamples = static_cast<int>(memoryBlock.getSize() / sizeof(float) / numChannels);
+        
+        if (numSamples <= 0)
+        {
+            DBG("Invalid sample count calculated from data size");
+            return false;
+        }
+        
+        juce::AudioBuffer<float> audioData(numChannels, numSamples);
+        
+        const float* sourceData = static_cast<const float*>(memoryBlock.getData());
+        
+        // Interleaved to planar conversion
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            for (int i = 0; i < numSamples; ++i)
+            {
+                audioData.setSample(ch, i, sourceData[i * numChannels + ch]);
+            }
+        }
+        
+        return sampler->loadSampleFromBuffer(slotIndex, audioData, sampleRate, config);
+    }
+}
+
+void AudioEngine::clearSample(int channel, int slotIndex)
+{
+    if (auto* sampler = getMultiSamplerInstrument(channel))
+    {
+        sampler->clearSample(slotIndex);
+    }
+}
+
+void AudioEngine::clearAllSamples(int channel)
+{
+    if (auto* sampler = getMultiSamplerInstrument(channel))
+    {
+        sampler->clearAllSamples();
+    }
 }
 
 // ──────────────────────────────────────────
@@ -94,25 +251,55 @@ Instrument* AudioEngine::getInstrument(int channel)
 
 void AudioEngine::noteOn(int channel, int midiNote, float velocity)
 {
-    if (auto* instrument = getInstrument(channel))
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (!wrapper)
+        return;
+    
+    if (wrapper->type == InstrumentType::Oscillator)
     {
-        instrument->noteOn(midiNote, velocity);
+        auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+        osc->noteOn(midiNote, velocity);
+    }
+    else if (wrapper->type == InstrumentType::MultiSampler)
+    {
+        auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+        sampler->noteOn(midiNote, velocity);
     }
 }
 
 void AudioEngine::noteOff(int channel, int midiNote)
 {
-    if (auto* instrument = getInstrument(channel))
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (!wrapper)
+        return;
+    
+    if (wrapper->type == InstrumentType::Oscillator)
     {
-        instrument->noteOff(midiNote);
+        auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+        osc->noteOff(midiNote);
+    }
+    else if (wrapper->type == InstrumentType::MultiSampler)
+    {
+        auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+        sampler->noteOff(midiNote);
     }
 }
 
 void AudioEngine::allNotesOff(int channel)
 {
-    if (auto* instrument = getInstrument(channel))
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (!wrapper)
+        return;
+    
+    if (wrapper->type == InstrumentType::Oscillator)
     {
-        instrument->allNotesOff();
+        auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+        osc->allNotesOff();
+    }
+    else if (wrapper->type == InstrumentType::MultiSampler)
+    {
+        auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+        sampler->allNotesOff();
     }
 }
 
@@ -121,62 +308,107 @@ void AudioEngine::allNotesOffAllChannels()
     juce::ScopedLock lock(instrumentLock);
     for (auto& pair : instruments)
     {
-        pair.second->allNotesOff();
+        auto* wrapper = pair.second.get();
+        if (wrapper->type == InstrumentType::Oscillator)
+        {
+            auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+            osc->allNotesOff();
+        }
+        else if (wrapper->type == InstrumentType::MultiSampler)
+        {
+            auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+            sampler->allNotesOff();
+        }
     }
 }
 
 // ──────────────────────────────────────────
-// Parameter control
+// Oscillator parameter control
 // ──────────────────────────────────────────
 
 void AudioEngine::setWaveform(int channel, BaseOscillatorVoice::Waveform waveform)
 {
-    if (auto* instrument = getInstrument(channel))
+    if (auto* instrument = getOscillatorInstrument(channel))
     {
         instrument->setWaveform(waveform);
     }
 }
 
-void AudioEngine::setADSR(int channel, float attack, float decay, float sustain, float release)
-{
-    if (auto* instrument = getInstrument(channel))
-    {
-        juce::ADSR::Parameters params { attack, decay, sustain, release };
-        instrument->setADSR(params);
-    }
-}
-
-void AudioEngine::setVolume(int channel, float volume)
-{
-    if (auto* instrument = getInstrument(channel))
-    {
-        instrument->setVolume(volume);
-    }
-}
-
-void AudioEngine::setPan(int channel, float pan)
-{
-    if (auto* instrument = getInstrument(channel))
-    {
-        instrument->setPan(pan);
-    }
-}
-
 void AudioEngine::setDetune(int channel, float cents)
 {
-    if (auto* instrument = getInstrument(channel))
+    if (auto* instrument = getOscillatorInstrument(channel))
     {
         instrument->setDetune(cents);
     }
 }
 
 // ──────────────────────────────────────────
-// Effects management
+// Common parameter control
+// ──────────────────────────────────────────
+
+void AudioEngine::setADSR(int channel, float attack, float decay, float sustain, float release)
+{
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (!wrapper)
+        return;
+    
+    juce::ADSR::Parameters params { attack, decay, sustain, release };
+    
+    if (wrapper->type == InstrumentType::Oscillator)
+    {
+        auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+        osc->setADSR(params);
+    }
+    else if (wrapper->type == InstrumentType::MultiSampler)
+    {
+        auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+        sampler->setADSR(params);
+    }
+}
+
+void AudioEngine::setVolume(int channel, float volume)
+{
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (!wrapper)
+        return;
+    
+    if (wrapper->type == InstrumentType::Oscillator)
+    {
+        auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+        osc->setVolume(volume);
+    }
+    else if (wrapper->type == InstrumentType::MultiSampler)
+    {
+        auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+        sampler->setVolume(volume);
+    }
+}
+
+void AudioEngine::setPan(int channel, float pan)
+{
+    auto* wrapper = getInstrumentWrapper(channel);
+    if (!wrapper)
+        return;
+    
+    if (wrapper->type == InstrumentType::Oscillator)
+    {
+        auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+        osc->setPan(pan);
+    }
+    else if (wrapper->type == InstrumentType::MultiSampler)
+    {
+        auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+        sampler->setPan(pan);
+    }
+}
+
+// ──────────────────────────────────────────
+// Effects management (oscillator only)
 // ──────────────────────────────────────────
 
 int AudioEngine::addEffect(int channel, Instrument::EffectType type)
 {
-    if (auto* instrument = getInstrument(channel))
+    if (auto* instrument = getOscillatorInstrument(channel))
     {
         return instrument->addEffect(type);
     }
@@ -185,7 +417,7 @@ int AudioEngine::addEffect(int channel, Instrument::EffectType type)
 
 void AudioEngine::removeEffect(int channel, int effectId)
 {
-    if (auto* instrument = getInstrument(channel))
+    if (auto* instrument = getOscillatorInstrument(channel))
     {
         instrument->removeEffect(effectId);
     }
@@ -193,7 +425,7 @@ void AudioEngine::removeEffect(int channel, int effectId)
 
 void AudioEngine::clearEffects(int channel)
 {
-    if (auto* instrument = getInstrument(channel))
+    if (auto* instrument = getOscillatorInstrument(channel))
     {
         instrument->clearEffects();
     }
@@ -201,7 +433,7 @@ void AudioEngine::clearEffects(int channel)
 
 void AudioEngine::setEffectEnabled(int channel, int effectId, bool enabled)
 {
-    if (auto* instrument = getInstrument(channel))
+    if (auto* instrument = getOscillatorInstrument(channel))
     {
         instrument->setEffectEnabled(effectId, enabled);
     }
@@ -210,7 +442,7 @@ void AudioEngine::setEffectEnabled(int channel, int effectId, bool enabled)
 void AudioEngine::setEffectParameter(int channel, int effectId,
                                      const juce::String& paramName, float value)
 {
-    if (auto* instrument = getInstrument(channel))
+    if (auto* instrument = getOscillatorInstrument(channel))
     {
         instrument->setEffectParameter(effectId, paramName, value);
     }
@@ -262,7 +494,7 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     juce::ScopedLock lock(instrumentLock);
     for (auto& pair : instruments)
     {
-        pair.second->prepareToPlay(currentSampleRate, currentBlockSize);
+        prepareInstrumentWrapper(pair.second.get());
     }
 }
 
@@ -288,13 +520,22 @@ void AudioEngine::audioDeviceIOCallbackWithContext(
         
         for (auto& pair : instruments)
         {
-            Instrument* instrument = pair.second.get();
+            auto* wrapper = pair.second.get();
             
             // Clear mix buffer
             mixBuffer.clear();
             
-            // Render this instrument
-            instrument->renderNextBlock(mixBuffer, midiBuffer, 0, numSamples);
+            // Render based on instrument type
+            if (wrapper->type == InstrumentType::Oscillator)
+            {
+                auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+                osc->renderNextBlock(mixBuffer, midiBuffer, 0, numSamples);
+            }
+            else if (wrapper->type == InstrumentType::MultiSampler)
+            {
+                auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+                sampler->renderNextBlock(mixBuffer, midiBuffer, 0, numSamples);
+            }
             
             // Add to output (mix)
             for (int ch = 0; ch < juce::jmin(numOutputChannels, mixBuffer.getNumChannels()); ++ch)
@@ -316,10 +557,19 @@ void AudioEngine::audioDeviceStopped()
     // Clean up if needed
 }
 
-void AudioEngine::prepareInstrument(Instrument* instrument)
+void AudioEngine::prepareInstrumentWrapper(InstrumentWrapper* wrapper)
 {
-    if (instrument && currentSampleRate > 0.0)
+    if (!wrapper || currentSampleRate <= 0.0)
+        return;
+    
+    if (wrapper->type == InstrumentType::Oscillator)
     {
-        instrument->prepareToPlay(currentSampleRate, currentBlockSize);
+        auto* osc = std::get<std::unique_ptr<Instrument>>(wrapper->instrument).get();
+        osc->prepareToPlay(currentSampleRate, currentBlockSize);
+    }
+    else if (wrapper->type == InstrumentType::MultiSampler)
+    {
+        auto* sampler = std::get<std::unique_ptr<MultiSamplerInstrument>>(wrapper->instrument).get();
+        sampler->prepareToPlay(currentSampleRate, currentBlockSize);
     }
 }

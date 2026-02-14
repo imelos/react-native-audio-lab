@@ -1,7 +1,8 @@
-// AudioModule.mm
+// AudioModuleV2.mm
 #import "AudioModule.h"
 #import "AudioEngine.h"
 #import "BaseOscillatorVoice.h"
+#import "MultiSamplerInstrument.h"
 #import <Foundation/Foundation.h>
 
 @implementation AudioModule
@@ -41,13 +42,12 @@
 
 // ────────────────────────────────────────────────
 // Instrument Management
-// Method names MUST match exactly what is in NativeAudioModuleSpec
 // ────────────────────────────────────────────────
 
-- (void)createInstrument:(double)channel
-                    name:(NSString *)name
-               polyphony:(double)polyphony
-                waveform:(NSString *)waveform {
+- (void)createOscillatorInstrument:(double)channel
+                              name:(NSString *)name
+                         polyphony:(double)polyphony
+                          waveform:(NSString *)waveform {
     if (!_audioEngine) return;
     
     Config config;
@@ -65,7 +65,19 @@
         config.waveform = BaseOscillatorVoice::Waveform::Triangle;
     }
     
-    _audioEngine->createInstrument(static_cast<int>(channel), config);
+    _audioEngine->createOscillatorInstrument(static_cast<int>(channel), config);
+}
+
+- (void)createMultiSamplerInstrument:(double)channel
+                                name:(NSString *)name
+                           polyphony:(double)polyphony {
+    if (!_audioEngine) return;
+    
+    MultiSamplerConfig::Config config;
+    config.polyphony = static_cast<int>(polyphony);
+    config.name = juce::String([name UTF8String]);
+    
+    _audioEngine->createMultiSamplerInstrument(static_cast<int>(channel), config);
 }
 
 - (void)removeInstrument:(double)channel {
@@ -77,6 +89,106 @@
 - (void)clearAllInstruments {
     if (_audioEngine) {
         _audioEngine->clearAllInstruments();
+    }
+}
+
+- (NSString *)getInstrumentType:(double)channel {
+    if (!_audioEngine) return @"none";
+    
+    if (!_audioEngine->hasInstrument(static_cast<int>(channel))) {
+        return @"none";
+    }
+    
+    auto type = _audioEngine->getInstrumentType(static_cast<int>(channel));
+    if (type == AudioEngine::InstrumentType::Oscillator) {
+        return @"oscillator";
+    } else if (type == AudioEngine::InstrumentType::MultiSampler) {
+        return @"sampler";
+    }
+    
+    return @"none";
+}
+
+// ────────────────────────────────────────────────
+// Sample Loading
+// ────────────────────────────────────────────────
+
+- (void)loadSample:(double)channel
+         slotIndex:(double)slotIndex
+          filePath:(NSString *)filePath
+              name:(NSString *)name
+          rootNote:(double)rootNote
+           minNote:(double)minNote
+           maxNote:(double)maxNote {
+    if (!_audioEngine) return;
+    
+    MultiSamplerConfig::SampleConfig config;
+    config.name = juce::String([name UTF8String]);
+    config.rootNote = static_cast<int>(rootNote);
+    config.minNote = static_cast<int>(minNote);
+    config.maxNote = static_cast<int>(maxNote);
+    
+    juce::String path([filePath UTF8String]);
+    
+    bool success = _audioEngine->loadSample(
+        static_cast<int>(channel),
+        static_cast<int>(slotIndex),
+        path,
+        config
+    );
+    
+    if (success) {
+        NSLog(@"[AudioModule] Loaded sample '%@' in channel %d slot %d", name, (int)channel, (int)slotIndex);
+    } else {
+        NSLog(@"[AudioModule] Failed to load sample '%@'", name);
+    }
+}
+
+- (void)loadSampleFromBase64:(double)channel
+                   slotIndex:(double)slotIndex
+                  base64Data:(NSString *)base64Data
+                  sampleRate:(double)sampleRate
+                 numChannels:(double)numChannels
+                        name:(NSString *)name
+                    rootNote:(double)rootNote
+                     minNote:(double)minNote
+                     maxNote:(double)maxNote {
+    if (!_audioEngine) return;
+    
+    MultiSamplerConfig::SampleConfig config;
+    config.name = juce::String([name UTF8String]);
+    config.rootNote = static_cast<int>(rootNote);
+    config.minNote = static_cast<int>(minNote);
+    config.maxNote = static_cast<int>(maxNote);
+    
+    juce::String base64([base64Data UTF8String]);
+    
+    bool success = _audioEngine->loadSampleFromBase64(
+        static_cast<int>(channel),
+        static_cast<int>(slotIndex),
+        base64,
+        sampleRate,
+        static_cast<int>(numChannels),
+        config
+    );
+    
+    if (success) {
+        NSLog(@"[AudioModule] Loaded sample from base64 in channel %d slot %d", (int)channel, (int)slotIndex);
+    } else {
+        NSLog(@"[AudioModule] Failed to load sample from base64");
+    }
+}
+
+- (void)clearSample:(double)channel
+          slotIndex:(double)slotIndex {
+    if (_audioEngine) {
+        _audioEngine->clearSample(static_cast<int>(channel), static_cast<int>(slotIndex));
+    }
+}
+
+- (void)clearAllSamples:(double)channel {
+    if (_audioEngine) {
+        _audioEngine->clearAllSamples(static_cast<int>(channel));
     }
 }
 
@@ -115,31 +227,8 @@
 }
 
 // ────────────────────────────────────────────────
-// Instrument Parameters
+// Common Parameters
 // ────────────────────────────────────────────────
-
-- (void)setWaveform:(double)channel
-               type:(NSString *)type {
-    if (!_audioEngine) return;
-    
-    NSString *lowerType = [type lowercaseString];
-    
-    if ([lowerType isEqualToString:@"sine"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Sine);
-    } else if ([lowerType isEqualToString:@"saw"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Saw);
-    } else if ([lowerType isEqualToString:@"square"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Square);
-    } else if ([lowerType isEqualToString:@"triangle"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Triangle);
-    } else {
-        NSLog(@"[AudioModule] Unknown waveform type: %@", type);
-    }
-}
 
 - (void)setADSR:(double)channel
          attack:(double)attack
@@ -168,6 +257,31 @@
     if (_audioEngine) {
         _audioEngine->setPan(static_cast<int>(channel),
                             static_cast<float>(pan));
+    }
+}
+
+// ────────────────────────────────────────────────
+// Oscillator-Specific Parameters
+// ────────────────────────────────────────────────
+
+- (void)setWaveform:(double)channel
+               type:(NSString *)type {
+    if (!_audioEngine) return;
+    
+    NSString *lowerType = [type lowercaseString];
+    
+    if ([lowerType isEqualToString:@"sine"]) {
+        _audioEngine->setWaveform(static_cast<int>(channel),
+                                 BaseOscillatorVoice::Waveform::Sine);
+    } else if ([lowerType isEqualToString:@"saw"]) {
+        _audioEngine->setWaveform(static_cast<int>(channel),
+                                 BaseOscillatorVoice::Waveform::Saw);
+    } else if ([lowerType isEqualToString:@"square"]) {
+        _audioEngine->setWaveform(static_cast<int>(channel),
+                                 BaseOscillatorVoice::Waveform::Square);
+    } else if ([lowerType isEqualToString:@"triangle"]) {
+        _audioEngine->setWaveform(static_cast<int>(channel),
+                                 BaseOscillatorVoice::Waveform::Triangle);
     }
 }
 
