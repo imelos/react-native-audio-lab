@@ -9,11 +9,24 @@ AudioEngine::~AudioEngine()
 
 bool AudioEngine::initialize()
 {
+    // Ensure we're on the message thread
+    if (!juce::MessageManager::getInstance()->isThisTheMessageThread())
+    {
+        DBG("Warning: AudioEngine::initialize() called on non-message thread");
+    }
+    
+    // Disable MIDI input devices to prevent CoreMIDI assertions
+    // We control notes programmatically, don't need MIDI input
+    deviceManager.setMidiInputDeviceEnabled("", false);
+    
+    // Initialize audio device with no MIDI inputs
     juce::String error = deviceManager.initialise(
-        0,              // inputs
-        2,              // outputs (stereo)
+        0,              // audio inputs
+        2,              // audio outputs (stereo)
         nullptr,        // xml config (use default)
-        true            // try default device on failure
+        true,           // try default device on failure
+        juce::String(), // preferred default output device
+        nullptr         // preferred setup options
     );
 
     if (error.isNotEmpty())
@@ -23,6 +36,8 @@ bool AudioEngine::initialize()
     }
 
     deviceManager.addAudioCallback(this);
+    
+    DBG("AudioEngine initialized successfully");
     return true;
 }
 

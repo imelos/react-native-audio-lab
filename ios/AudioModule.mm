@@ -3,16 +3,33 @@
 #import "AudioEngine.h"
 #import "BaseOscillatorVoice.h"
 #import "MultiSamplerInstrument.h"
+#import "JuceInitializer.h"
 #import <Foundation/Foundation.h>
 
 @implementation AudioModule
 
 - (instancetype)init {
     if (self = [super init]) {
+        NSLog(@"[AudioModule] Initializing...");
+        
+        // Ensure JUCE is initialized on the main thread
+        if (![NSThread isMainThread]) {
+            NSLog(@"[AudioModule] Warning: init called on background thread");
+            dispatch_sync(dispatch_get_main_queue(), ^{
+                JuceInitializer::initializeJuce();
+            });
+        } else {
+            JuceInitializer::initializeJuce();
+        }
+        
+        // Create and initialize audio engine
         _audioEngine = new AudioEngine();
         bool success = _audioEngine->initialize();
+        
         if (!success) {
-            NSLog(@"[AudioModule] AudioEngine initialization failed");
+            NSLog(@"[AudioModule] ❌ AudioEngine initialization failed");
+        } else {
+            NSLog(@"[AudioModule] ✅ AudioEngine initialized successfully");
         }
     }
     return self;
@@ -24,6 +41,8 @@
         delete _audioEngine;
         _audioEngine = nullptr;
     }
+    
+    // Note: Don't delete MessageManager as other parts of the app might be using it
 }
 
 // ────────────────────────────────────────────────
@@ -297,9 +316,9 @@
 // Effects Management
 // ────────────────────────────────────────────────
 
-- (void)addEffect:(double)channel
-             type:(NSString *)type {
-    if (!_audioEngine) return;
+- (NSNumber *)addEffect:(double)channel
+                   type:(NSString *)type {
+    if (!_audioEngine) return @(-1);
     
     NSString *lowerType = [type lowercaseString];
     Instrument::EffectType effectType;
@@ -318,11 +337,13 @@
         effectType = Instrument::EffectType::Compressor;
     } else {
         NSLog(@"[AudioModule] Unknown effect type: %@", type);
-        return;
+        return @(-1);
     }
     
     int effectId = _audioEngine->addEffect(static_cast<int>(channel), effectType);
     NSLog(@"[AudioModule] Added effect '%@' to channel %d with ID %d", type, (int)channel, effectId);
+    
+    return @(effectId);
 }
 
 - (void)removeEffect:(double)channel

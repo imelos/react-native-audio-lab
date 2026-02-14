@@ -96,7 +96,7 @@ export interface Spec extends TurboModule {
   // ────────────────────────────────────────────────
   // Effects Management (Oscillator only)
   // ────────────────────────────────────────────────
-  addEffect(channel: number, type: string): void;
+  addEffect(channel: number, type: string): number;  // Returns effect ID
   removeEffect(channel: number, effectId: number): void;
   clearEffects(channel: number): void;
   setEffectEnabled(channel: number, effectId: number, enabled: boolean): void;

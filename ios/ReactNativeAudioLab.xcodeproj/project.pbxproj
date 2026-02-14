@@ -20,6 +20,7 @@
 		778F03472F407B5700F4C534 /* MultisamplerVoice.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03462F407B5700F4C534 /* MultisamplerVoice.cpp */; };
 		778F034A2F407B9E00F4C534 /* MultisamplerSound.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F03492F407B9E00F4C534 /* MultisamplerSound.cpp */; };
 		778F034C2F407BC500F4C534 /* MultisamplerInstrument.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F034B2F407BC500F4C534 /* MultisamplerInstrument.cpp */; };
+		778F036B2F41366600F4C534 /* JuceInitializer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 778F036A2F41366600F4C534 /* JuceInitializer.cpp */; };
 		778FB0882F3B6CE500F4C534 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB0872F3B6CE500F4C534 /* AVFoundation.framework */; };
 		778FB08A2F3B6CEE00F4C534 /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB0892F3B6CEE00F4C534 /* CoreAudio.framework */; };
 		778FB08C2F3B6CF400F4C534 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 778FB08B2F3B6CF300F4C534 /* Accelerate.framework */; };
@@ -721,6 +722,8 @@
 		778F03492F407B9E00F4C534 /* MultisamplerSound.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MultisamplerSound.cpp; sourceTree = "<group>"; };
 		778F034B2F407BC500F4C534 /* MultisamplerInstrument.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MultisamplerInstrument.cpp; sourceTree = "<group>"; };
 		778F034D2F407BDE00F4C534 /* MultisamplerInstrument.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MultisamplerInstrument.h; sourceTree = "<group>"; };
+		778F036A2F41366600F4C534 /* JuceInitializer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = JuceInitializer.cpp; sourceTree = "<group>"; };
+		778F036C2F4136B600F4C534 /* JuceInitializer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = JuceInitializer.h; sourceTree = "<group>"; };
 		778FB0872F3B6CE500F4C534 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		778FB0892F3B6CEE00F4C534 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		778FB08B2F3B6CF300F4C534 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
@@ -4697,6 +4700,7 @@
 				778FB0AF2F3BA17600F4C534 /* AudioEngine.h */,
 				778FB0B02F3BA17600F4C534 /* AudioEngine.cpp */,
 				778F03322F3F24EE00F4C534 /* Instrument.cpp */,
+				778F036A2F41366600F4C534 /* JuceInitializer.cpp */,
 				778F030C2F3CC1E500F4C534 /* JuceMetadata.cpp */,
 				778F03462F407B5700F4C534 /* MultisamplerVoice.cpp */,
 				778F03492F407B9E00F4C534 /* MultisamplerSound.cpp */,
@@ -4709,6 +4713,7 @@
 				778F03112F3CE07000F4C534 /* BaseOscillatorVoice.h */,
 				778F03142F3CE1C600F4C534 /* BasicSynthSound.h */,
 				778F03312F3F24B200F4C534 /* Instrument.h */,
+				778F036C2F4136B600F4C534 /* JuceInitializer.h */,
 				778F03342F3F257700F4C534 /* SimpleEffects.h */,
 				778F03452F407B4000F4C534 /* MultisamplerVoice.h */,
 				778F03482F407B7000F4C534 /* MultisamplerSound.h */,
@@ -9256,9 +9261,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -9273,9 +9282,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-ReactNativeAudioLab/Pods-ReactNativeAudioLab-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -9289,6 +9302,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				778F036B2F41366600F4C534 /* JuceInitializer.cpp in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 				778F03472F407B5700F4C534 /* MultisamplerVoice.cpp in Sources */,
 				778F030D2F3CC1E500F4C534 /* JuceMetadata.cpp in Sources */,

@@ -20,6 +20,7 @@ import {
   VisualNote,
 } from './features/midi-visualiser/MidiVisualiser';
 import Slider from '@react-native-community/slider';
+import Oscillator from './features/instruments/oscillator/Oscillator';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -1049,7 +1050,7 @@ export default function App() {
     <View style={styles.container}>
       <View style={styles.contentContainer}>
         <Text style={styles.title}>Grid Synth</Text>
-
+        <Oscillator channel={2}/>
         {/* Tab Navigation */}
         <View style={styles.tabBar}>
           <TouchableOpacity
