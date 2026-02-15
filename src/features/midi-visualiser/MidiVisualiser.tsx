@@ -24,17 +24,18 @@ const inactivePaint = Skia.Paint();
 inactivePaint.setColor(Skia.Color('#60a5fa'));
 
 export function MidiVisualizer({ width, height, notesRef }: Props) {
-  const tick = useSharedValue(0);
   const recordingStartRef = useRef<number | null>(null);
   const pitchIndexRef = useRef<Map<number, number>>(new Map());
   const prevNotesCount = useRef(0);
-  const rectsData = useSharedValue<Array<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    active: boolean;
-  }>>([]);
+  const rectsData = useSharedValue<
+    Array<{
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      active: boolean;
+    }>
+  >([]);
 
   useEffect(() => {
     let raf: number;
@@ -46,7 +47,6 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
         rectsData.value = [];
         recordingStartRef.current = null;
         prevNotesCount.current = 0;
-        tick.value = now;
         raf = requestAnimationFrame(loop);
         return;
       }
@@ -84,19 +84,16 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
         };
       });
 
-      tick.value = now;
       raf = requestAnimationFrame(loop);
     };
     loop();
     return () => cancelAnimationFrame(raf);
-  }, [width, height, notesRef, rectsData, tick]);
+  }, [width, height, notesRef, rectsData]);
 
   const picture = useDerivedValue(() => {
     'worklet';
-    
-    const canvas = recorder.beginRecording(
-      Skia.XYWHRect(0, 0, width, height)
-    );
+
+    const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, width, height));
 
     const rects = rectsData.value;
 
