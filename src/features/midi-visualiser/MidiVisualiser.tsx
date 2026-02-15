@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from 'react';
-import { View } from 'react-native';
 import { Canvas, Picture, Skia } from '@shopify/react-native-skia';
 import { useDerivedValue, useSharedValue } from 'react-native-reanimated';
 
@@ -23,19 +22,19 @@ activePaint.setColor(Skia.Color('#3b82f6'));
 const inactivePaint = Skia.Paint();
 inactivePaint.setColor(Skia.Color('#60a5fa'));
 
+type RectData = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  active: boolean;
+};
+
 export function MidiVisualizer({ width, height, notesRef }: Props) {
   const recordingStartRef = useRef<number | null>(null);
   const pitchIndexRef = useRef<Map<number, number>>(new Map());
   const prevNotesCount = useRef(0);
-  const rectsData = useSharedValue<
-    Array<{
-      x: number;
-      y: number;
-      w: number;
-      h: number;
-      active: boolean;
-    }>
-  >([]);
+  const rectsData = useSharedValue<RectData[]>([]);
 
   useEffect(() => {
     let raf: number;
@@ -69,7 +68,7 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
       const start = recordingStartRef.current;
       const end = Math.max(...all.map(n => n.endTime ?? now));
       const total = Math.max(1, end - start);
-      const sliceH = height / Math.max(1, pitchIndexRef.current.size);
+      const sliceH = height / pitchIndexRef.current.size;
 
       // Build rectangles
       rectsData.value = all.map(n => {
@@ -92,24 +91,21 @@ export function MidiVisualizer({ width, height, notesRef }: Props) {
 
   const picture = useDerivedValue(() => {
     'worklet';
-
     const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, width, height));
 
-    const rects = rectsData.value;
-
-    rects.forEach(r => {
-      const paint = r.active ? activePaint : inactivePaint;
-      canvas.drawRect(Skia.XYWHRect(r.x, r.y, r.w, r.h), paint);
+    rectsData.value.forEach(r => {
+      canvas.drawRect(
+        Skia.XYWHRect(r.x, r.y, r.w, r.h),
+        r.active ? activePaint : inactivePaint,
+      );
     });
 
     return recorder.finishRecordingAsPicture();
   }, [width, height]);
 
   return (
-    <View style={{ width, height }}>
-      <Canvas style={{ flex: 1 }}>
-        <Picture picture={picture} />
-      </Canvas>
-    </View>
+    <Canvas style={{ width, height }}>
+      <Picture picture={picture} />
+    </Canvas>
   );
 }
