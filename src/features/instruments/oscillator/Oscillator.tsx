@@ -32,7 +32,6 @@ const Oscillator: React.FC<OsclillatorProps> = ({ channel }) => {
         step={1}
         min={0}
         max={100}
-        ani
         borderRadius={5}
         minimumTrackTintColor="#2979FF"
         maximumTrackTintColor="#D1D1D6"
