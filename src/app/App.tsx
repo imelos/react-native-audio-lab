@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
   StyleSheet,
@@ -20,7 +20,6 @@ import {
   VisualNote,
 } from './features/midi-visualiser/MidiVisualiser';
 import Slider from '@react-native-community/slider';
-import Oscillator from './features/instruments/oscillator/Oscillator';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -120,59 +119,59 @@ function generateScale(
   return notes;
 }
 
+interface GridPadHandle {
+  setActive: (active: boolean) => void;
+}
+
 interface GridPadProps {
   note: number;
   index: number;
-  activeNotesRef: React.MutableRefObject<Set<number>>;
   setRef: (index: number, ref: View | null) => void;
   onLayout: (index: number, event: any) => void;
   isInScale?: boolean;
-  forceUpdateTrigger: number; // Used to force re-render when needed
 }
 
-function GridPad({
-  note,
-  index,
-  activeNotesRef,
-  setRef,
-  onLayout,
-  isInScale = true,
-  forceUpdateTrigger,
-}: GridPadProps) {
-  const isActive = activeNotesRef.current.has(note);
-  const backgroundColor = useSharedValue(0);
+const GridPad = forwardRef<GridPadHandle, GridPadProps>(
+  ({ note, index, setRef, onLayout, isInScale = true }, ref) => {
+    const backgroundColor = useSharedValue(0);
+    const viewRef = useRef<View>(null);
 
-  useEffect(() => {
-    backgroundColor.value = withTiming(isActive ? 1 : 0, { duration: 0 });
-  }, [isActive, backgroundColor, forceUpdateTrigger]);
+    useImperativeHandle(ref, () => ({
+      setActive: (active: boolean) => {
+        backgroundColor.value = withTiming(active ? 1 : 0, { duration: 0 });
+      },
+    }));
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    backgroundColor:
-      backgroundColor.value === 1
-        ? '#6200ee'
-        : isInScale
-        ? '#2a2a2a'
-        : '#1a1a1a',
-  }));
+    const animatedStyle = useAnimatedStyle(() => ({
+      backgroundColor:
+        backgroundColor.value === 1
+          ? '#6200ee'
+          : isInScale
+          ? '#2a2a2a'
+          : '#1a1a1a',
+    }));
 
-  return (
-    <Animated.View
-      ref={(ref: AnimatedView) => setRef(index, ref)}
-      style={[styles.gridPad, animatedStyle]}
-      onLayout={event => onLayout(index, event)}
-    >
-      <Text
-        style={[
-          styles.noteText,
-          isActive && styles.noteTextActive,
-          !isInScale && styles.noteTextOutOfScale,
-        ]}
+    return (
+      <Animated.View
+        ref={(r: AnimatedView) => {
+          viewRef.current = r;
+          setRef(index, r);
+        }}
+        style={[styles.gridPad, animatedStyle]}
+        onLayout={event => onLayout(index, event)}
       >
-        {midiToNoteName(note)}
-      </Text>
-    </Animated.View>
-  );
-}
+        <Text
+          style={[
+            styles.noteText,
+            !isInScale && styles.noteTextOutOfScale,
+          ]}
+        >
+          {midiToNoteName(note)}
+        </Text>
+      </Animated.View>
+    );
+  }
+);
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('instrument');
@@ -202,14 +201,14 @@ export default function App() {
   const [delayFeedback, setDelayFeedback] = useState(0.4); // 0 - 0.95
   const [delayWetLevel, setDelayWetLevel] = useState(0.5); // 0 - 1
 
-  // OPTIMIZED: Single ref for all active notes (both user and playback)
+  // Track active notes for audio state
   const activeNotesRef = useRef<Set<number>>(new Set());
   
   // Track touches to notes mapping
   const touchNotesRef = useRef<Map<string, number>>(new Map());
   
-  // Force update trigger for grid pads
-  const [forceUpdateTrigger, setForceUpdateTrigger] = useState(0);
+  // Store refs to GridPad handles for visual updates
+  const gridPadHandlesRef = useRef<Map<number, GridPadHandle>>(new Map());
 
   // Recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -245,6 +244,14 @@ export default function App() {
     : Array.from({ length: totalPads }, (_, i) => rootNote + i);
 
   const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
+
+  // Update visual state only
+  const updatePadActive = useCallback((note: number, active: boolean) => {
+    const handle = gridPadHandlesRef.current.get(note);
+    if (handle) {
+      handle.setActive(active);
+    }
+  }, []);
 
   // Initialize audio engine on mount
   useEffect(() => {
@@ -478,11 +485,6 @@ export default function App() {
     }
   }, []);
 
-  // OPTIMIZED: Force update only when needed
-  const forceGridUpdate = useCallback(() => {
-    setForceUpdateTrigger(prev => prev + 1);
-  }, []);
-
   // Recording functions
   const startRecording = () => {
     recordingStartTime.current = Date.now();
@@ -537,22 +539,23 @@ export default function App() {
           NativeAudioModule.noteOn(MAIN_CHANNEL, event.note, event.velocity);
           activeNotesRef.current.add(event.note);
           createVisualNote(event.note);
+          updatePadActive(event.note, true);
         } else {
           NativeAudioModule.noteOff(MAIN_CHANNEL, event.note);
           activeNotesRef.current.delete(event.note);
           endVisualNote(event.note);
+          updatePadActive(event.note, false);
         }
 
         eventIndex++;
       }
-
-      forceGridUpdate();
 
       if (eventIndex >= sequence.events.length) {
         // Stop all remaining notes
         activeNotesRef.current.forEach(note => {
           NativeAudioModule.noteOff(MAIN_CHANNEL, note);
           endVisualNote(note);
+          updatePadActive(note, false);
         });
         activeNotesRef.current.clear();
 
@@ -563,7 +566,7 @@ export default function App() {
     };
 
     playbackIntervalRef.current = setInterval(playNextEvents, 10);
-  }, [isPlaying, createVisualNote, endVisualNote, forceGridUpdate]);
+  }, [isPlaying, createVisualNote, endVisualNote, updatePadActive]);
 
   const stopPlayback = useCallback(() => {
     if (playbackIntervalRef.current) {
@@ -574,11 +577,11 @@ export default function App() {
     activeNotesRef.current.forEach(note => {
       NativeAudioModule.noteOff(MAIN_CHANNEL, note);
       endVisualNote(note);
+      updatePadActive(note, false);
     });
     activeNotesRef.current.clear();
-    forceGridUpdate();
     setIsPlaying(false);
-  }, [endVisualNote, forceGridUpdate]);
+  }, [endVisualNote, updatePadActive]);
 
   const deleteSequence = (index: number) => {
     if (isPlaying) {
@@ -692,17 +695,21 @@ export default function App() {
         const touchId = String(identifier);
 
         if (!touchNotesRef.current.has(touchId)) {
+          // Audio
           NativeAudioModule.noteOn(MAIN_CHANNEL, note, 0.85);
-          createVisualNote(note);
           activeNotesRef.current.add(note);
+          
+          // Visual
+          createVisualNote(note);
+          updatePadActive(note, true);
+          
+          // Tracking
           touchNotesRef.current.set(touchId, note);
           recordNoteEvent('noteOn', note, 0.85);
         }
       }
     }
-
-    forceGridUpdate();
-  }, [isRecording, savedSequences.length, currentRecording.length, findNoteAtPosition, createVisualNote, recordNoteEvent, forceGridUpdate]);
+  }, [isRecording, savedSequences.length, currentRecording.length, findNoteAtPosition, createVisualNote, recordNoteEvent, updatePadActive]);
 
   const handleTouchMove = useCallback((event: any) => {
     const touches = event.nativeEvent.touches;
@@ -719,14 +726,18 @@ export default function App() {
 
         if (previousNote !== note) {
           if (previousNote !== undefined) {
+            // Turn off previous note
             NativeAudioModule.noteOff(MAIN_CHANNEL, previousNote);
-            endVisualNote(previousNote);
             activeNotesRef.current.delete(previousNote);
+            endVisualNote(previousNote);
+            updatePadActive(previousNote, false);
             recordNoteEvent('noteOff', previousNote);
           }
+          // Turn on new note
           NativeAudioModule.noteOn(MAIN_CHANNEL, note, 0.85);
-          createVisualNote(note);
           activeNotesRef.current.add(note);
+          createVisualNote(note);
+          updatePadActive(note, true);
           recordNoteEvent('noteOn', note, 0.85);
         }
 
@@ -734,18 +745,19 @@ export default function App() {
       }
     }
 
+    // Clean up notes that are no longer touched
     for (const [touchId, note] of touchNotesRef.current.entries()) {
       if (!currentTouchedNotes.has(touchId)) {
         NativeAudioModule.noteOff(MAIN_CHANNEL, note);
-        endVisualNote(note);
         activeNotesRef.current.delete(note);
+        endVisualNote(note);
+        updatePadActive(note, false);
         recordNoteEvent('noteOff', note);
       }
     }
 
     touchNotesRef.current = currentTouchedNotes;
-    forceGridUpdate();
-  }, [findNoteAtPosition, endVisualNote, createVisualNote, recordNoteEvent, forceGridUpdate]);
+  }, [findNoteAtPosition, endVisualNote, createVisualNote, recordNoteEvent, updatePadActive]);
 
   const handleTouchEnd = useCallback((event: any) => {
     const touches = event.nativeEvent.touches;
@@ -764,21 +776,28 @@ export default function App() {
     for (const [touchId, note] of touchNotesRef.current.entries()) {
       if (!remainingTouches.has(touchId)) {
         NativeAudioModule.noteOff(MAIN_CHANNEL, note);
-        endVisualNote(note);
         activeNotesRef.current.delete(note);
+        endVisualNote(note);
+        updatePadActive(note, false);
         recordNoteEvent('noteOff', note);
       }
     }
 
     touchNotesRef.current = remainingTouches;
-    forceGridUpdate();
-  }, [findNoteAtPosition, endVisualNote, recordNoteEvent, forceGridUpdate]);
+  }, [findNoteAtPosition, endVisualNote, recordNoteEvent, updatePadActive]);
 
   const setRef = useCallback((index: number, ref: View | null) => {
     if (ref) {
       keyRefsRef.current.set(index, ref);
     }
   }, []);
+
+  const setGridPadRef = useCallback((index: number, handle: GridPadHandle | null) => {
+    if (handle) {
+      const note = gridNotes[index];
+      gridPadHandlesRef.current.set(note, handle);
+    }
+  }, [gridNotes]);
 
   const gridRows = [];
   for (let i = 0; i < rows; i++) {
@@ -1059,7 +1078,7 @@ export default function App() {
     <View style={styles.container}>
       <View style={styles.contentContainer}>
         <Text style={styles.title}>Grid Synth</Text>
-        {/* <Oscillator channel={2}/> */}
+
         {/* Tab Navigation */}
         <View style={styles.tabBar}>
           <TouchableOpacity
@@ -1129,14 +1148,13 @@ export default function App() {
                   const isInScale = useScale || scaleNotes.has(note);
                   return (
                     <GridPad
+                      ref={(handle) => setGridPadRef(index, handle)}
                       key={`${gridSize}-${index}`}
                       note={note}
                       index={index}
-                      activeNotesRef={activeNotesRef}
                       setRef={setRef}
                       onLayout={measureKey}
                       isInScale={isInScale}
-                      forceUpdateTrigger={forceUpdateTrigger}
                     />
                   );
                 })}
