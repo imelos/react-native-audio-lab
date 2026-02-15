@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -210,11 +210,11 @@ export default function App() {
   // Store refs to GridPad handles for visual updates
   const gridPadHandlesRef = useRef<Map<number, GridPadHandle>>(new Map());
 
-  // Recording state
+  // Recording state - USE REFS TO AVOID RERENDERS
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [savedSequences, setSavedSequences] = useState<RecordedSequence[]>([]);
-  const [currentRecording, setCurrentRecording] = useState<NoteEvent[]>([]);
+  const currentRecordingRef = useRef<NoteEvent[]>([]); // ✅ Changed from useState to useRef
   const [showRecordingButtons, setShowRecordingButtons] = useState(false);
 
   const recordingStartTime = useRef<number>(0);
@@ -488,29 +488,29 @@ export default function App() {
   // Recording functions
   const startRecording = () => {
     recordingStartTime.current = Date.now();
-    setCurrentRecording([]);
+    currentRecordingRef.current = []; // ✅ No state update
     setIsRecording(true);
     setShowRecordingButtons(true);
   };
 
   const clearRecording = () => {
-    setCurrentRecording([]);
+    currentRecordingRef.current = []; // ✅ No state update
     setIsRecording(false);
     setShowRecordingButtons(false);
   };
 
   const addRecording = () => {
-    if (currentRecording.length === 0) return;
+    if (currentRecordingRef.current.length === 0) return; // ✅ Check ref
 
-    const duration = currentRecording[currentRecording.length - 1].timestamp;
+    const duration = currentRecordingRef.current[currentRecordingRef.current.length - 1].timestamp;
     const newSequence: RecordedSequence = {
-      events: [...currentRecording],
+      events: [...currentRecordingRef.current], // ✅ Copy from ref
       duration,
       name: `Sequence ${savedSequences.length + 1}`,
     };
 
     setSavedSequences([...savedSequences, newSequence]);
-    setCurrentRecording([]);
+    currentRecordingRef.current = []; // ✅ No state update
     setIsRecording(false);
     setShowRecordingButtons(false);
   };
@@ -672,14 +672,14 @@ export default function App() {
       velocity,
     };
 
-    setCurrentRecording(prev => [...prev, event]);
+    currentRecordingRef.current.push(event); // ✅ Direct mutation, no rerender!
   }, []);
 
   const handleTouchStart = useCallback((event: any) => {
     if (
       !isRecording &&
       savedSequences.length === 0 &&
-      currentRecording.length === 0
+      currentRecordingRef.current.length === 0 // ✅ Check ref
     ) {
       startRecording();
     }
@@ -709,7 +709,7 @@ export default function App() {
         }
       }
     }
-  }, [isRecording, savedSequences.length, currentRecording.length, findNoteAtPosition, createVisualNote, recordNoteEvent, updatePadActive]);
+  }, [isRecording, savedSequences.length, findNoteAtPosition, createVisualNote, recordNoteEvent, updatePadActive]);
 
   const handleTouchMove = useCallback((event: any) => {
     const touches = event.nativeEvent.touches;
@@ -804,6 +804,18 @@ export default function App() {
     const rowPads = gridNotes.slice(i * cols, (i + 1) * cols);
     gridRows.push(rowPads);
   }
+
+  // ✅ Memoize MidiVisualizer to prevent unnecessary rerenders
+  const MemoizedVisualizer = useMemo(
+    () => (
+      <MidiVisualizer
+        height={50}
+        width={Dimensions.get('window').width}
+        notesRef={visualNotesRef}
+      />
+    ),
+    [] // Only create once - notesRef is stable
+  );
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -1125,12 +1137,9 @@ export default function App() {
         {/* Tab Content */}
         <View style={styles.tabContentContainer}>{renderTabContent()}</View>
 
+        {/* ✅ Use memoized visualizer */}
         <View style={styles.midiVisualiser}>
-          <MidiVisualizer
-            height={50}
-            width={Dimensions.get('window').width}
-            notesRef={visualNotesRef}
-          />
+          {MemoizedVisualizer}
         </View>
 
         {/* Grid - Fixed position container */}
@@ -1171,7 +1180,7 @@ export default function App() {
                 <TouchableOpacity
                   style={[styles.footerButton, styles.addButton]}
                   onPress={addRecording}
-                  disabled={currentRecording.length === 0}
+                  disabled={currentRecordingRef.current.length === 0}
                 >
                   <Text style={styles.footerButtonText}>ADD</Text>
                 </TouchableOpacity>
