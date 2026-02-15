@@ -483,7 +483,8 @@ export default function SynthScreen() {
       note,
       startTime: Date.now(),
     };
-    visualNotesRef.current.push(vn);
+    // visualNotesRef.current.push(vn);
+    visualNotesRef.current = [...visualNotesRef.current, vn]
   }, []);
 
   const endVisualNote = useCallback((note: number) => {
