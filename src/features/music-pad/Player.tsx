@@ -67,6 +67,7 @@ export default function Player({
     null,
   );
   const playbackStartTime = useRef<number>(0);
+  const playbackRafRef = useRef<number | null>(null);
 
   // Visual notes
   const noteIdRef = useRef(0);
@@ -179,8 +180,8 @@ export default function Player({
   );
 
   const stopPlayback = useCallback(() => {
-    if (playbackIntervalRef.current) {
-      cancelAnimationFrame(playbackIntervalRef.current);
+    if (playbackRafRef.current !== null) {
+      cancelAnimationFrame(playbackRafRef.current);
       playbackIntervalRef.current = null;
     }
 
@@ -201,14 +202,12 @@ export default function Player({
       }
 
       setIsPlaying(true);
-      let startTime = performance.now(); // Capture start timestamp
+      let startTime = performance.now();
       let eventIndex = 0;
-      let rafId: number;
 
       const tick = () => {
-        const elapsed = performance.now() - startTime; // Calculate elapsed time
+        const elapsed = performance.now() - startTime;
 
-        // Process all events that should have fired by now
         while (
           eventIndex < sequence.events.length &&
           sequence.events[eventIndex].timestamp <= elapsed
@@ -230,9 +229,7 @@ export default function Player({
           eventIndex++;
         }
 
-        // Check if sequence is complete
         if (eventIndex >= sequence.events.length) {
-          // Clean up any hanging notes
           activeNotesRef.current.forEach(n => {
             NativeAudioModule.noteOff(channel, n);
             endVisualNote(n);
@@ -240,16 +237,14 @@ export default function Player({
           });
           activeNotesRef.current.clear();
 
-          // Loop: restart with NEW start time
           eventIndex = 0;
-          startTime = performance.now(); // Reset start time for loop
+          startTime = performance.now();
         }
 
-        rafId = requestAnimationFrame(tick);
+        playbackRafRef.current = requestAnimationFrame(tick);
       };
 
-      rafId = requestAnimationFrame(tick);
-      playbackIntervalRef.current = rafId as any;
+      playbackRafRef.current = requestAnimationFrame(tick);
     },
     [channel, isPlaying, createVisualNote, endVisualNote, stopPlayback],
   );
