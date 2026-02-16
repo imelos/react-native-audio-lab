@@ -62,7 +62,9 @@ export default function Player({
   const [showRecordingButtons, setShowRecordingButtons] = useState(false);
 
   const recordingStartTime = useRef<number>(0);
-  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const playbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const playbackStartTime = useRef<number>(0);
 
   // Visual notes
@@ -118,6 +120,8 @@ export default function Player({
     currentRecordingRef.current = [];
     setIsRecording(false);
     setShowRecordingButtons(false);
+
+    playSequence(newSequence);
   };
 
   const recordNoteEvent = useCallback(
@@ -173,6 +177,21 @@ export default function Player({
     [channel, endVisualNote, recordNoteEvent],
   );
 
+  const stopPlayback = useCallback(() => {
+    if (playbackIntervalRef.current) {
+      clearInterval(playbackIntervalRef.current);
+      playbackIntervalRef.current = null;
+    }
+
+    activeNotesRef.current.forEach(note => {
+      NativeAudioModule.noteOff(channel, note);
+      endVisualNote(note);
+      gridRef.current?.setPadActive(note, false);
+    });
+    activeNotesRef.current.clear();
+    setIsPlaying(false);
+  }, [channel, endVisualNote]);
+
   const playSequence = useCallback(
     (sequence: RecordedSequence) => {
       if (isPlaying) {
@@ -226,23 +245,8 @@ export default function Player({
 
       playbackIntervalRef.current = setInterval(playNextEvents, 10);
     },
-    [channel, isPlaying, createVisualNote, endVisualNote],
+    [channel, isPlaying, createVisualNote, endVisualNote, stopPlayback],
   );
-
-  const stopPlayback = useCallback(() => {
-    if (playbackIntervalRef.current) {
-      clearInterval(playbackIntervalRef.current);
-      playbackIntervalRef.current = null;
-    }
-
-    activeNotesRef.current.forEach(note => {
-      NativeAudioModule.noteOff(channel, note);
-      endVisualNote(note);
-      gridRef.current?.setPadActive(note, false);
-    });
-    activeNotesRef.current.clear();
-    setIsPlaying(false);
-  }, [channel, endVisualNote]);
 
   const deleteSequence = (index: number) => {
     if (isPlaying) {
