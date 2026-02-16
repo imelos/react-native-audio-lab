@@ -66,7 +66,6 @@ export default function Player({
   const playbackIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
-  const playbackStartTime = useRef<number>(0);
   const playbackRafRef = useRef<number | null>(null);
 
   // Visual notes
