@@ -13,11 +13,8 @@ import {
   Dimensions,
 } from 'react-native';
 import NativeAudioModule from '../../specs/NativeAudioModule';
-import {
-  MidiVisualizer,
-  VisualNote,
-} from './midi-visualiser/MidiVisualiser';
-import Grid, {GridHandle} from './grid/Grid';
+import { MidiVisualizer, VisualNote } from './midi-visualiser/MidiVisualiser';
+import Grid, { GridHandle } from './grid/Grid';
 
 interface NoteEvent {
   type: 'noteOn' | 'noteOff';
@@ -157,7 +154,13 @@ export default function Player({
       createVisualNote(note);
       recordNoteEvent('noteOn', note, velocity);
     },
-    [channel, isRecording, savedSequences.length, createVisualNote, recordNoteEvent],
+    [
+      channel,
+      isRecording,
+      savedSequences.length,
+      createVisualNote,
+      recordNoteEvent,
+    ],
   );
 
   const handleNoteOff = useCallback(
@@ -246,6 +249,11 @@ export default function Player({
       stopPlayback();
     }
     setSavedSequences(savedSequences.filter((_, i) => i !== index));
+    if (savedSequences.length === 1) {
+      currentRecordingRef.current = [];
+      recordingStartTime.current = 0;
+      setShowRecordingButtons(false);
+    }
   };
 
   useEffect(() => {
@@ -290,12 +298,14 @@ export default function Player({
               <TouchableOpacity
                 style={[styles.footerButton, styles.addButton]}
                 onPress={addRecording}
-                disabled={currentRecordingRef.current.length === 0}>
+                disabled={currentRecordingRef.current.length === 0}
+              >
                 <Text style={styles.footerButtonText}>ADD</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.footerButton, styles.clearButton]}
-                onPress={clearRecording}>
+                onPress={clearRecording}
+              >
                 <Text style={styles.footerButtonText}>CLEAR</Text>
               </TouchableOpacity>
             </View>
@@ -315,14 +325,16 @@ export default function Player({
                 } else if (savedSequences.length > 0) {
                   playSequence(savedSequences[savedSequences.length - 1]);
                 }
-              }}>
+              }}
+            >
               <Text style={styles.footerButtonText}>
                 {isPlaying ? '■ STOP' : '▶ PLAY'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.footerButton, styles.deleteButton]}
-              onPress={() => deleteSequence(savedSequences.length - 1)}>
+              onPress={() => deleteSequence(savedSequences.length - 1)}
+            >
               <Text style={styles.footerButtonText}>DELETE</Text>
             </TouchableOpacity>
           </View>
