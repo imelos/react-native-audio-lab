@@ -26,7 +26,7 @@ import { AnimatedView } from 'react-native-reanimated/lib/typescript/component/V
 import {
   MidiVisualizer,
   VisualNote,
-} from '../features/midi-visualiser/MidiVisualiser';
+} from '../features/music-pad/midi-visualiser/MidiVisualiser';
 import Slider from '@react-native-community/slider';
 import Oscillator from '../features/instruments/oscillator/Oscillator';
 
