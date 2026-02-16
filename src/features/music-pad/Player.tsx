@@ -15,6 +15,7 @@ import {
 import NativeAudioModule from '../../specs/NativeAudioModule';
 import { MidiVisualizer, VisualNote } from './midi-visualiser/MidiVisualiser';
 import Grid, { GridHandle } from './grid/Grid';
+import performance from 'react-native-performance';
 
 interface NoteEvent {
   type: 'noteOn' | 'noteOff';
@@ -179,7 +180,7 @@ export default function Player({
 
   const stopPlayback = useCallback(() => {
     if (playbackIntervalRef.current) {
-      clearInterval(playbackIntervalRef.current);
+      cancelAnimationFrame(playbackIntervalRef.current);
       playbackIntervalRef.current = null;
     }
 
@@ -200,16 +201,17 @@ export default function Player({
       }
 
       setIsPlaying(true);
-      playbackStartTime.current = Date.now();
-
+      let startTime = performance.now(); // Capture start timestamp
       let eventIndex = 0;
+      let rafId: number;
 
-      const playNextEvents = () => {
-        const currentTime = Date.now() - playbackStartTime.current;
+      const tick = () => {
+        const elapsed = performance.now() - startTime; // Calculate elapsed time
 
+        // Process all events that should have fired by now
         while (
           eventIndex < sequence.events.length &&
-          sequence.events[eventIndex].timestamp <= currentTime
+          sequence.events[eventIndex].timestamp <= elapsed
         ) {
           const event = sequence.events[eventIndex];
 
@@ -228,8 +230,9 @@ export default function Player({
           eventIndex++;
         }
 
+        // Check if sequence is complete
         if (eventIndex >= sequence.events.length) {
-          // Stop all remaining notes
+          // Clean up any hanging notes
           activeNotesRef.current.forEach(n => {
             NativeAudioModule.noteOff(channel, n);
             endVisualNote(n);
@@ -237,13 +240,16 @@ export default function Player({
           });
           activeNotesRef.current.clear();
 
-          // Loop: restart
+          // Loop: restart with NEW start time
           eventIndex = 0;
-          playbackStartTime.current = Date.now();
+          startTime = performance.now(); // Reset start time for loop
         }
+
+        rafId = requestAnimationFrame(tick);
       };
 
-      playbackIntervalRef.current = setInterval(playNextEvents, 10);
+      rafId = requestAnimationFrame(tick);
+      playbackIntervalRef.current = rafId as any;
     },
     [channel, isPlaying, createVisualNote, endVisualNote, stopPlayback],
   );
