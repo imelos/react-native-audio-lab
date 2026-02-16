@@ -2,10 +2,6 @@ import React, {
   useState,
   useRef,
   useEffect,
-  useCallback,
-  forwardRef,
-  useImperativeHandle,
-  useMemo,
 } from 'react';
 import {
   View,
@@ -13,22 +9,11 @@ import {
   Text,
   Button,
   TouchableOpacity,
-  Dimensions,
   ScrollView,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-} from 'react-native-reanimated';
 import NativeAudioModule from '../specs/NativeAudioModule';
-import { AnimatedView } from 'react-native-reanimated/lib/typescript/component/View';
-import {
-  MidiVisualizer,
-  VisualNote,
-} from '../features/music-pad/midi-visualiser/MidiVisualiser';
 import Slider from '@react-native-community/slider';
-import Oscillator from '../features/instruments/oscillator/Oscillator';
+import Player from '../features/music-pad/Player';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -70,43 +55,8 @@ type FilterType = (typeof FILTER_TYPES)[number];
 
 type TabType = 'instrument' | 'filter' | 'fx';
 
-// Recording types
-interface NoteEvent {
-  type: 'noteOn' | 'noteOff';
-  note: number;
-  timestamp: number;
-  velocity: number;
-}
-
-interface RecordedSequence {
-  events: NoteEvent[];
-  duration: number;
-  name: string;
-}
-
 // CHANNEL CONSTANTS - Define which channel to use
 const MAIN_CHANNEL = 1; // Main instrument on channel 1
-const PLAYBACK_CHANNEL = 2; // Playback on channel 2 (optional - can use same channel)
-
-function midiToNoteName(midiNote: number): string {
-  const noteNames = [
-    'C',
-    'C#',
-    'D',
-    'D#',
-    'E',
-    'F',
-    'F#',
-    'G',
-    'G#',
-    'A',
-    'A#',
-    'B',
-  ];
-  const octave = Math.floor(midiNote / 12) - 1;
-  const noteName = noteNames[midiNote % 12];
-  return `${noteName}${octave}`;
-}
 
 function generateScale(
   rootNote: number,
@@ -127,57 +77,6 @@ function generateScale(
 
   return notes;
 }
-
-interface GridPadHandle {
-  setActive: (active: boolean) => void;
-  view: View | null; // Add this
-}
-
-interface GridPadProps {
-  note: number;
-  index: number;
-  onLayout: (index: number, event: any) => void;
-  isInScale?: boolean;
-}
-
-const GridPad = forwardRef<GridPadHandle, GridPadProps>(
-  ({ note, index, onLayout, isInScale = true }, ref) => {
-    const backgroundColor = useSharedValue(0);
-    const viewRef = useRef<View>(null);
-
-    useImperativeHandle(ref, () => ({
-      setActive: (active: boolean) => {
-        backgroundColor.value = withTiming(active ? 1 : 0, { duration: 0 });
-      },
-      view: viewRef.current, // Expose the view ref
-    }));
-
-    const animatedStyle = useAnimatedStyle(() => ({
-      backgroundColor:
-        backgroundColor.value === 1
-          ? '#6200ee'
-          : isInScale
-          ? '#2a2a2a'
-          : '#1a1a1a',
-    }));
-
-    return (
-      <Animated.View
-        ref={(r: AnimatedView) => {
-          viewRef.current = r;
-        }}
-        style={[styles.gridPad, animatedStyle]}
-        onLayout={event => onLayout(index, event)}
-      >
-        <Text
-          style={[styles.noteText, !isInScale && styles.noteTextOutOfScale]}
-        >
-          {midiToNoteName(note)}
-        </Text>
-      </Animated.View>
-    );
-  },
-);
 
 export default function SynthScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('instrument');
@@ -207,34 +106,6 @@ export default function SynthScreen() {
   const [delayFeedback, setDelayFeedback] = useState(0.4); // 0 - 0.95
   const [delayWetLevel, setDelayWetLevel] = useState(0.5); // 0 - 1
 
-  // Track active notes for audio state
-  const activeNotesRef = useRef<Set<number>>(new Set());
-
-  // Track touches to notes mapping
-  const touchNotesRef = useRef<Map<string, number>>(new Map());
-
-  // Store refs to GridPad handles for visual updates
-  const gridPadHandlesRef = useRef<Map<number, GridPadHandle>>(new Map());
-
-  // Recording state - USE REFS TO AVOID RERENDERS
-  const [isRecording, setIsRecording] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [savedSequences, setSavedSequences] = useState<RecordedSequence[]>([]);
-  const currentRecordingRef = useRef<NoteEvent[]>([]); // ✅ Changed from useState to useRef
-  const [showRecordingButtons, setShowRecordingButtons] = useState(false);
-
-  const recordingStartTime = useRef<number>(0);
-  const playbackIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const playbackStartTime = useRef<number>(0);
-
-  // const keyRefsRef = useRef<Map<number, View>>(new Map());
-  const keyLayoutsRef = useRef<
-    Map<number, { x: number; y: number; width: number; height: number }>
-  >(new Map());
-
-  const noteIdRef = useRef(0);
-  const visualNotesRef = useRef<VisualNote[]>([]);
-
   // Effect ID counter to ensure unique IDs
   const nextEffectIdRef = useRef(1);
 
@@ -250,14 +121,6 @@ export default function SynthScreen() {
     : Array.from({ length: totalPads }, (_, i) => rootNote + i);
 
   const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
-
-  // Update visual state only
-  const updatePadActive = useCallback((note: number, active: boolean) => {
-    const handle = gridPadHandlesRef.current.get(note);
-    if (handle) {
-      handle.setActive(active);
-    }
-  }, []);
 
   // Initialize audio engine on mount
   useEffect(() => {
@@ -477,144 +340,6 @@ export default function SynthScreen() {
     setFilterType(FILTER_TYPES[nextIndex]);
   };
 
-  const createVisualNote = useCallback((note: number) => {
-    const vn: VisualNote = {
-      id: ++noteIdRef.current,
-      note,
-      startTime: Date.now(),
-    };
-    // visualNotesRef.current.push(vn);
-    visualNotesRef.current = [...visualNotesRef.current, vn]
-  }, []);
-
-  const endVisualNote = useCallback((note: number) => {
-    for (let i = visualNotesRef.current.length - 1; i >= 0; i--) {
-      const vn = visualNotesRef.current[i];
-      if (vn.note === note && vn.endTime == null) {
-        vn.endTime = Date.now();
-        break;
-      }
-    }
-  }, []);
-
-  // Recording functions
-  const startRecording = () => {
-    recordingStartTime.current = Date.now();
-    currentRecordingRef.current = []; // ✅ No state update
-    setIsRecording(true);
-    setShowRecordingButtons(true);
-  };
-
-  const clearRecording = () => {
-    currentRecordingRef.current = []; // ✅ No state update
-    setIsRecording(false);
-    setShowRecordingButtons(false);
-  };
-
-  const addRecording = () => {
-    if (currentRecordingRef.current.length === 0) return; // ✅ Check ref
-
-    const duration =
-      currentRecordingRef.current[currentRecordingRef.current.length - 1]
-        .timestamp;
-    const newSequence: RecordedSequence = {
-      events: [...currentRecordingRef.current], // ✅ Copy from ref
-      duration,
-      name: `Sequence ${savedSequences.length + 1}`,
-    };
-
-    setSavedSequences([...savedSequences, newSequence]);
-    currentRecordingRef.current = []; // ✅ No state update
-    setIsRecording(false);
-    setShowRecordingButtons(false);
-  };
-
-  const playSequence = useCallback(
-    (sequence: RecordedSequence) => {
-      if (isPlaying) {
-        stopPlayback();
-        return;
-      }
-
-      setIsPlaying(true);
-      playbackStartTime.current = Date.now();
-
-      let eventIndex = 0;
-
-      const playNextEvents = () => {
-        const currentTime = Date.now() - playbackStartTime.current;
-
-        while (
-          eventIndex < sequence.events.length &&
-          sequence.events[eventIndex].timestamp <= currentTime
-        ) {
-          const event = sequence.events[eventIndex];
-
-          if (event.type === 'noteOn') {
-            NativeAudioModule.noteOn(MAIN_CHANNEL, event.note, event.velocity);
-            activeNotesRef.current.add(event.note);
-            createVisualNote(event.note);
-            updatePadActive(event.note, true);
-          } else {
-            NativeAudioModule.noteOff(MAIN_CHANNEL, event.note);
-            activeNotesRef.current.delete(event.note);
-            endVisualNote(event.note);
-            updatePadActive(event.note, false);
-          }
-
-          eventIndex++;
-        }
-
-        if (eventIndex >= sequence.events.length) {
-          // Stop all remaining notes
-          activeNotesRef.current.forEach(note => {
-            NativeAudioModule.noteOff(MAIN_CHANNEL, note);
-            endVisualNote(note);
-            updatePadActive(note, false);
-          });
-          activeNotesRef.current.clear();
-
-          // Loop: restart
-          eventIndex = 0;
-          playbackStartTime.current = Date.now();
-        }
-      };
-
-      playbackIntervalRef.current = setInterval(playNextEvents, 10);
-    },
-    [isPlaying, createVisualNote, endVisualNote, updatePadActive],
-  );
-
-  const stopPlayback = useCallback(() => {
-    if (playbackIntervalRef.current) {
-      clearInterval(playbackIntervalRef.current);
-      playbackIntervalRef.current = null;
-    }
-
-    activeNotesRef.current.forEach(note => {
-      NativeAudioModule.noteOff(MAIN_CHANNEL, note);
-      endVisualNote(note);
-      updatePadActive(note, false);
-    });
-    activeNotesRef.current.clear();
-    setIsPlaying(false);
-  }, [endVisualNote, updatePadActive]);
-
-  const deleteSequence = (index: number) => {
-    if (isPlaying) {
-      stopPlayback();
-    }
-    setSavedSequences(savedSequences.filter((_, i) => i !== index));
-  };
-
-  useEffect(() => {
-    return () => {
-      if (playbackIntervalRef.current) {
-        clearInterval(playbackIntervalRef.current);
-      }
-    };
-  }, []);
-
   const changeWaveform = () => {
     const currentIndex = WAVEFORMS.indexOf(currentWaveform);
     const nextIndex = (currentIndex + 1) % WAVEFORMS.length;
@@ -644,224 +369,6 @@ export default function SynthScreen() {
   const toggleScaleMode = () => {
     setUseScale(current => !current);
   };
-
-  const measureKey = (index: number, event: any) => {
-    const { x, y, width, height } = event.nativeEvent.layout;
-    const note = gridNotes[index];
-    const handle = gridPadHandlesRef.current.get(note);
-
-    if (handle?.view) {
-      handle.view.measureInWindow((pageX, pageY) => {
-        keyLayoutsRef.current.set(index, {
-          x: pageX,
-          y: pageY,
-          width,
-          height,
-        });
-      });
-    }
-  };
-
-  const findNoteAtPosition = useCallback(
-    (pageX: number, pageY: number): number | null => {
-      for (const [index, layout] of keyLayoutsRef.current.entries()) {
-        if (
-          pageX >= layout.x &&
-          pageX <= layout.x + layout.width &&
-          pageY >= layout.y &&
-          pageY <= layout.y + layout.height
-        ) {
-          return gridNotes[index];
-        }
-      }
-      return null;
-    },
-    [gridNotes],
-  );
-
-  const recordNoteEvent = useCallback(
-    (type: 'noteOn' | 'noteOff', note: number, velocity: number = 0.85) => {
-      if (recordingStartTime.current === 0) return;
-
-      const timestamp = Date.now() - recordingStartTime.current;
-      const event: NoteEvent = {
-        type,
-        note,
-        timestamp,
-        velocity,
-      };
-
-      currentRecordingRef.current.push(event); // ✅ Direct mutation, no rerender!
-    },
-    [],
-  );
-
-  const handleTouchStart = useCallback(
-    (event: any) => {
-      if (
-        !isRecording &&
-        savedSequences.length === 0 &&
-        currentRecordingRef.current.length === 0 // ✅ Check ref
-      ) {
-        startRecording();
-      }
-
-      const touches = event.nativeEvent.touches;
-
-      for (let i = 0; i < touches.length; i++) {
-        const touch = touches[i];
-        const { pageX, pageY, identifier } = touch;
-        const note = findNoteAtPosition(pageX, pageY);
-
-        if (note !== null) {
-          const touchId = String(identifier);
-
-          if (!touchNotesRef.current.has(touchId)) {
-            // Audio
-            NativeAudioModule.noteOn(MAIN_CHANNEL, note, 0.85);
-            activeNotesRef.current.add(note);
-
-            // Visual
-            createVisualNote(note);
-            updatePadActive(note, true);
-
-            // Tracking
-            touchNotesRef.current.set(touchId, note);
-            recordNoteEvent('noteOn', note, 0.85);
-          }
-        }
-      }
-    },
-    [
-      isRecording,
-      savedSequences.length,
-      findNoteAtPosition,
-      createVisualNote,
-      recordNoteEvent,
-      updatePadActive,
-    ],
-  );
-
-  const handleTouchMove = useCallback(
-    (event: any) => {
-      const touches = event.nativeEvent.touches;
-      const currentTouchedNotes = new Map<string, number>();
-
-      for (let i = 0; i < touches.length; i++) {
-        const touch = touches[i];
-        const { pageX, pageY, identifier } = touch;
-        const note = findNoteAtPosition(pageX, pageY);
-
-        if (note !== null) {
-          const touchId = String(identifier);
-          const previousNote = touchNotesRef.current.get(touchId);
-
-          if (previousNote !== note) {
-            if (previousNote !== undefined) {
-              // Turn off previous note
-              NativeAudioModule.noteOff(MAIN_CHANNEL, previousNote);
-              activeNotesRef.current.delete(previousNote);
-              endVisualNote(previousNote);
-              updatePadActive(previousNote, false);
-              recordNoteEvent('noteOff', previousNote);
-            }
-            // Turn on new note
-            NativeAudioModule.noteOn(MAIN_CHANNEL, note, 0.85);
-            activeNotesRef.current.add(note);
-            createVisualNote(note);
-            updatePadActive(note, true);
-            recordNoteEvent('noteOn', note, 0.85);
-          }
-
-          currentTouchedNotes.set(touchId, note);
-        }
-      }
-
-      // Clean up notes that are no longer touched
-      for (const [touchId, note] of touchNotesRef.current.entries()) {
-        if (!currentTouchedNotes.has(touchId)) {
-          NativeAudioModule.noteOff(MAIN_CHANNEL, note);
-          activeNotesRef.current.delete(note);
-          endVisualNote(note);
-          updatePadActive(note, false);
-          recordNoteEvent('noteOff', note);
-        }
-      }
-
-      touchNotesRef.current = currentTouchedNotes;
-    },
-    [
-      findNoteAtPosition,
-      endVisualNote,
-      createVisualNote,
-      recordNoteEvent,
-      updatePadActive,
-    ],
-  );
-
-  const handleTouchEnd = useCallback(
-    (event: any) => {
-      const touches = event.nativeEvent.touches;
-      const remainingTouches = new Map<string, number>();
-
-      for (let i = 0; i < touches.length; i++) {
-        const touch = touches[i];
-        const { pageX, pageY, identifier } = touch;
-        const note = findNoteAtPosition(pageX, pageY);
-
-        if (note !== null) {
-          remainingTouches.set(String(identifier), note);
-        }
-      }
-
-      for (const [touchId, note] of touchNotesRef.current.entries()) {
-        if (!remainingTouches.has(touchId)) {
-          NativeAudioModule.noteOff(MAIN_CHANNEL, note);
-          activeNotesRef.current.delete(note);
-          endVisualNote(note);
-          updatePadActive(note, false);
-          recordNoteEvent('noteOff', note);
-        }
-      }
-
-      touchNotesRef.current = remainingTouches;
-    },
-    [findNoteAtPosition, endVisualNote, recordNoteEvent, updatePadActive],
-  );
-
-  // const setRef = useCallback((index: number, ref: View | null) => {
-  //   if (ref) {
-  //     keyRefsRef.current.set(index, ref);
-  //   }
-  // }, []);
-
-  const setGridPadRef = useCallback(
-    (index: number, handle: GridPadHandle | null) => {
-      if (handle) {
-        const note = gridNotes[index];
-        gridPadHandlesRef.current.set(note, handle);
-      }
-    },
-    [gridNotes],
-  );
-
-  const gridRows = [];
-  for (let i = 0; i < rows; i++) {
-    const rowPads = gridNotes.slice(i * cols, (i + 1) * cols);
-    gridRows.push(rowPads);
-  }
-
-  // ✅ Memoize MidiVisualizer to prevent unnecessary rerenders
-  const MemoizedVisualizer = useMemo(
-    () => (
-      <MidiVisualizer
-        height={50}
-        width={Dimensions.get('window').width}
-        notesRef={visualNotesRef}
-      />
-    ),
-    [], // Only create once - notesRef is stable
-  );
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -1136,7 +643,6 @@ export default function SynthScreen() {
     <View style={styles.container}>
       <View style={styles.contentContainer}>
         <Text style={styles.title}>Grid Synth</Text>
-        {/* <Oscillator channel={2}/> */}
         {/* Tab Navigation */}
         <View style={styles.tabBar}>
           <TouchableOpacity
@@ -1183,97 +689,22 @@ export default function SynthScreen() {
         {/* Tab Content */}
         <View style={styles.tabContentContainer}>{renderTabContent()}</View>
 
-        {/* ✅ Use memoized visualizer */}
-        <View style={styles.midiVisualiser}>{MemoizedVisualizer}</View>
-
-        {/* Grid - Fixed position container */}
-        <View style={styles.gridContainer}>
-          <View
-            style={styles.gridWrapper}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-          >
-            {gridRows.map((rowPads, rowIndex) => (
-              <View key={`row-${rowIndex}`} style={styles.gridRow}>
-                {rowPads.map((note, colIndex) => {
-                  const index = rowIndex * cols + colIndex;
-                  const isInScale = useScale || scaleNotes.has(note);
-                  return (
-                    <GridPad
-                      ref={handle => setGridPadRef(index, handle)}
-                      key={`${gridSize}-${index}`}
-                      note={note}
-                      index={index}
-                      onLayout={measureKey}
-                      isInScale={isInScale}
-                    />
-                  );
-                })}
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Footer with absolute positioning */}
-        <View style={[styles.footer]} pointerEvents="box-none">
-          {showRecordingButtons && (
-            <View style={styles.footerButtons} pointerEvents="auto">
-              <View style={styles.footerButtonRow}>
-                <TouchableOpacity
-                  style={[styles.footerButton, styles.addButton]}
-                  onPress={addRecording}
-                  disabled={currentRecordingRef.current.length === 0}
-                >
-                  <Text style={styles.footerButtonText}>ADD</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.footerButton, styles.clearButton]}
-                  onPress={clearRecording}
-                >
-                  <Text style={styles.footerButtonText}>CLEAR</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {savedSequences.length > 0 && !showRecordingButtons && (
-            <View style={styles.footerButtons} pointerEvents="auto">
-              <TouchableOpacity
-                style={[
-                  styles.footerButton,
-                  isPlaying ? styles.stopButton : styles.playButton,
-                ]}
-                onPress={() => {
-                  if (isPlaying) {
-                    stopPlayback();
-                  } else if (savedSequences.length > 0) {
-                    playSequence(savedSequences[savedSequences.length - 1]);
-                  }
-                }}
-              >
-                <Text style={styles.footerButtonText}>
-                  {isPlaying ? '■ STOP' : '▶ PLAY'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.footerButton, styles.deleteButton]}
-                onPress={() => deleteSequence(savedSequences.length - 1)}
-              >
-                <Text style={styles.footerButtonText}>DELETE</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
+        {/* Player: MidiVisualizer + Grid + Recording/Playback */}
+        <Player
+          channel={MAIN_CHANNEL}
+          gridNotes={gridNotes}
+          rows={rows}
+          cols={cols}
+          gridSize={gridSize}
+          useScale={useScale}
+          scaleNotes={scaleNotes}
+        />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  midiVisualiser: {
-    height: 50,
-  },
   container: {
     flex: 1,
     backgroundColor: '#121212',
@@ -1367,90 +798,5 @@ const styles = StyleSheet.create({
   slider: {
     width: '100%',
     height: 40,
-  },
-  gridContainer: {
-    width: '100%',
-    marginTop: 8,
-    aspectRatio: 1,
-  },
-  gridWrapper: {
-    flex: 1,
-    width: '100%',
-  },
-  gridRow: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 1,
-  },
-  gridPad: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  noteText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  noteTextActive: {
-    color: '#ffffff',
-  },
-  noteTextOutOfScale: {
-    color: '#666666',
-  },
-  footer: {
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 50,
-    paddingHorizontal: 16,
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  footerButtons: {
-    alignItems: 'center',
-    gap: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  footerButtonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-    justifyContent: 'center',
-  },
-  footerButton: {
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    minWidth: 140,
-    alignItems: 'center',
-  },
-  footerButtonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  addButton: {
-    backgroundColor: '#4caf50',
-  },
-  clearButton: {
-    backgroundColor: '#757575',
-  },
-  playButton: {
-    backgroundColor: '#4caf50',
-  },
-  stopButton: {
-    backgroundColor: '#f44336',
-  },
-  deleteButton: {
-    backgroundColor: '#d32f2f',
-  },
-  recordingIndicator: {
-    color: '#f44336',
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
   },
 });
