@@ -342,6 +342,14 @@ export default function Player({
             >
               <Text style={styles.footerButtonText}>DELETE</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.footerButton, styles.playButton]}
+              onPress={() => {
+                //implementation
+              }}
+            >
+              <Text style={styles.footerButtonText}>QUANTIZE</Text>
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -375,9 +383,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   footerButton: {
-    paddingHorizontal: 32,
+    paddingHorizontal: 5,
     borderRadius: 12,
-    minWidth: 140,
+    minWidth: 90,
     alignItems: 'center',
   },
   footerButtonText: {
