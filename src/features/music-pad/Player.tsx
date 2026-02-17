@@ -121,7 +121,6 @@ export default function Player({
     currentRecordingRef.current = [];
     setIsRecording(false);
     setShowRecordingButtons(false);
-
     playSequence(newSequence);
   };
 
