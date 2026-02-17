@@ -34,6 +34,7 @@ export interface LoopSequence {
   confidence: number;
   downbeatOffset: number;
   timeSignature: [number, number];
+  beatIntervalMs: number;
 }
 
 interface BPMInfo {
@@ -142,10 +143,16 @@ export default function Player({
         const confidence =
           (hits / noteOns.length) * (cand.weight / count) * 0.8;
 
-        if (confidence > bestConfidence) {
+        const EPS = 0.05; // 5% confidence tolerance
+
+        if (
+          confidence > bestConfidence + EPS ||
+          (Math.abs(confidence - bestConfidence) <= EPS &&
+            cand.interval > bestInterval) // ⬅️ prefer slower beat
+        ) {
           bestConfidence = confidence;
           bestBPM = cand.bpm;
-          bestInterval = cand.interval; // Store the exact interval from candidate
+          bestInterval = cand.interval;
         }
       }
     }
@@ -165,7 +172,7 @@ export default function Player({
         .map(e => e.timestamp);
       if (noteOns.length === 0) return null;
 
-      const beatMs = 60000 / bpmInfo.bpm;
+      const beatMs = bpmInfo.intervalMs;
       let bestOffset = 0;
       let bestError = Infinity;
 
@@ -212,36 +219,26 @@ export default function Player({
       const beatMs = bpmInfo.intervalMs;
       const barMs = beatMs * 4; // 4/4 time signature
 
+      const lastNoteOff = Math.max(
+        ...normalizedEvents
+          .filter(e => e.type === 'noteOff')
+          .map(e => e.timestamp),
+      );
+
       const phaseInfo = detectPhase(normalizedEvents, bpmInfo);
       const downbeatOffset = phaseInfo?.downbeatOffset ?? 0;
 
       // Find last note ON (more musically relevant)
-      const lastNoteOn = Math.max(
-        ...normalizedEvents
-          .filter(e => e.type === 'noteOn')
-          .map(e => e.timestamp),
-      );
+      // const lastNoteOn = Math.max(
+      //   ...normalizedEvents
+      //     .filter(e => e.type === 'noteOn')
+      //     .map(e => e.timestamp),
+      // );
 
       // Try different bar lengths using exact barMs
-      const barCandidates = [1, 2, 4, 8];
-      let bestDuration = barMs * 4;
-      let bestScore = Infinity;
-
-      for (const bars of barCandidates) {
-        const candidateDuration = bars * barMs;
-        if (candidateDuration < lastNoteOn) continue;
-
-        const timeAfterLastNote = candidateDuration - lastNoteOn;
-        const silenceBeats = timeAfterLastNote / beatMs;
-        const lengthPenalty = bars * 0.5;
-        const silencePenalty = silenceBeats > 1 ? 10 : silenceBeats;
-        const score = lengthPenalty + silencePenalty;
-
-        if (score < bestScore) {
-          bestScore = score;
-          bestDuration = candidateDuration;
-        }
-      }
+      const rawBars = lastNoteOff / barMs;
+      const bars = nextPowerOfTwo(Math.ceil(rawBars)); //
+      const bestDuration = bars * barMs;
 
       const firstEventTime = Math.min(
         ...normalizedEvents.map(e => e.timestamp),
@@ -254,12 +251,13 @@ export default function Player({
       return {
         events: normalizedEvents,
         duration: bestDuration,
-        durationBars: bestDuration / barMs,
+        durationBars: bars,
         name,
         bpm: bpmInfo.bpm,
         confidence: bpmInfo.confidence,
         downbeatOffset,
         timeSignature: [4, 4],
+        beatIntervalMs: bpmInfo.intervalMs,
       };
     },
     [detectBPM, detectPhase],
@@ -440,6 +438,105 @@ export default function Player({
     }
   };
 
+  function roundToGrid(time: number, gridMs: number) {
+    return Math.round(time / gridMs) * gridMs;
+  }
+
+  const quantizeSequence = () => {
+    if (savedSequences.length === 0) return;
+
+    const seqIndex = savedSequences.length - 1;
+    const sequence = savedSequences[seqIndex];
+
+    const beatMs = sequence.beatIntervalMs;
+    const sixteenthMs = beatMs / 4;
+
+    // 1️⃣ Pair noteOn / noteOff
+    type NotePair = {
+      note: number;
+      velocity: number;
+      start: number;
+      end: number;
+    };
+
+    const active = new Map<number, NoteEvent>();
+    const pairs: NotePair[] = [];
+
+    for (const e of sequence.events) {
+      if (e.type === 'noteOn') {
+        active.set(e.note, e);
+      } else {
+        const on = active.get(e.note);
+        if (on) {
+          pairs.push({
+            note: e.note,
+            velocity: on.velocity,
+            start: on.timestamp,
+            end: e.timestamp,
+          });
+          active.delete(e.note);
+        }
+      }
+    }
+
+    // 2️⃣ Quantize pairs
+    const quantizedEvents: NoteEvent[] = [];
+
+    for (const p of pairs) {
+      const originalLength = p.end - p.start;
+
+      const qStart = roundToGrid(p.start, sixteenthMs);
+      const qEnd = Math.max(
+        qStart + sixteenthMs * 0.25, // minimum length safety
+        qStart + originalLength,
+      );
+
+      quantizedEvents.push(
+        {
+          type: 'noteOn',
+          note: p.note,
+          timestamp: qStart,
+          velocity: p.velocity,
+        },
+        {
+          type: 'noteOff',
+          note: p.note,
+          timestamp: qEnd,
+          velocity: 0,
+        },
+      );
+    }
+
+    // 3️⃣ Sort events
+    quantizedEvents.sort((a, b) => a.timestamp - b.timestamp);
+
+    // 4️⃣ Replace sequence
+    const quantizedSequence: LoopSequence = {
+      ...sequence,
+      events: quantizedEvents,
+    };
+
+    const next = [...savedSequences];
+    next[seqIndex] = quantizedSequence;
+    setSavedSequences(next);
+
+    // 5️⃣ Update visual notes
+    visualNotesRef.current = quantizedEvents
+      .filter(e => e.type === 'noteOn')
+      .map(e => ({
+        id: ++noteIdRef.current,
+        note: e.note,
+        startTime: e.timestamp,
+        endTime:
+          quantizedEvents.find(
+            x =>
+              x.type === 'noteOff' &&
+              x.note === e.note &&
+              x.timestamp > e.timestamp,
+          )?.timestamp ?? e.timestamp + sixteenthMs,
+      }));
+  };
+
   useEffect(() => {
     return () => {
       if (playbackRafRef.current !== null) {
@@ -466,9 +563,9 @@ export default function Player({
     if (savedSequences.length === 0) return null;
     const seq = savedSequences[savedSequences.length - 1];
     return {
-      bpm: Math.round(seq.bpm),
+      bpm: seq.bpm.toFixed(2), // display 2 decimals
       bars: seq.durationBars,
-      duration: (seq.duration / 1000).toFixed(2),
+      duration: (seq.duration / 1000).toFixed(3), // show 3 decimals
       confidence: (seq.confidence * 100).toFixed(0),
     };
   }, [savedSequences]);
@@ -522,6 +619,12 @@ export default function Player({
         {savedSequences.length > 0 && !showRecordingButtons && (
           <View style={styles.footerButtons} pointerEvents="auto">
             <TouchableOpacity
+              style={[styles.footerButton, styles.playButton]}
+              onPress={quantizeSequence}
+            >
+              <Text style={styles.footerButtonText}>QUANTIZE</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               style={[
                 styles.footerButton,
                 isPlaying ? styles.stopButton : styles.playButton,
@@ -549,6 +652,10 @@ export default function Player({
       </View>
     </>
   );
+}
+
+function nextPowerOfTwo(n: number) {
+  return Math.pow(2, Math.ceil(Math.log2(n)));
 }
 
 const styles = StyleSheet.create({
@@ -586,7 +693,7 @@ const styles = StyleSheet.create({
   },
   footerButton: {
     paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingVertical: 3,
     borderRadius: 20,
     minWidth: 90,
     alignItems: 'center',
