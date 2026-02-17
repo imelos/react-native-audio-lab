@@ -4,13 +4,13 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from 'react';
-import {View, StyleSheet, Text} from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
-import {AnimatedView} from 'react-native-reanimated/lib/typescript/component/View';
+import { AnimatedView } from 'react-native-reanimated/lib/typescript/component/View';
 
 function midiToNoteName(midiNote: number): string {
   const noteNames = [
@@ -45,13 +45,13 @@ interface GridPadProps {
 }
 
 const GridPad = forwardRef<GridPadHandle, GridPadProps>(
-  ({note, index, onLayout, isInScale = true}, ref) => {
+  ({ note, index, onLayout, isInScale = true }, ref) => {
     const backgroundColor = useSharedValue(0);
     const viewRef = useRef<View>(null);
 
     useImperativeHandle(ref, () => ({
       setActive: (active: boolean) => {
-        backgroundColor.value = withTiming(active ? 1 : 0, {duration: 0});
+        backgroundColor.value = withTiming(active ? 1 : 0, { duration: 0 });
       },
       view: viewRef.current,
     }));
@@ -71,9 +71,11 @@ const GridPad = forwardRef<GridPadHandle, GridPadProps>(
           viewRef.current = r;
         }}
         style={[styles.gridPad, animatedStyle]}
-        onLayout={event => onLayout(index, event)}>
+        onLayout={event => onLayout(index, event)}
+      >
         <Text
-          style={[styles.noteText, !isInScale && styles.noteTextOutOfScale]}>
+          style={[styles.noteText, !isInScale && styles.noteTextOutOfScale]}
+        >
           {midiToNoteName(note)}
         </Text>
       </Animated.View>
@@ -98,13 +100,22 @@ export interface GridProps {
 
 const Grid = forwardRef<GridHandle, GridProps>(
   (
-    {gridNotes, rows, cols, gridSize, useScale, scaleNotes, onNoteOn, onNoteOff},
+    {
+      gridNotes,
+      rows,
+      cols,
+      gridSize,
+      useScale,
+      scaleNotes,
+      onNoteOn,
+      onNoteOff,
+    },
     ref,
   ) => {
     const gridPadHandlesRef = useRef<Map<number, GridPadHandle>>(new Map());
     const touchNotesRef = useRef<Map<string, number>>(new Map());
     const keyLayoutsRef = useRef<
-      Map<number, {x: number; y: number; width: number; height: number}>
+      Map<number, { x: number; y: number; width: number; height: number }>
     >(new Map());
 
     const setPadActive = useCallback((note: number, active: boolean) => {
@@ -120,7 +131,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
 
     const measureKey = useCallback(
       (index: number, event: any) => {
-        const {width, height} = event.nativeEvent.layout;
+        const { width, height } = event.nativeEvent.layout;
         const note = gridNotes[index];
         const handle = gridPadHandlesRef.current.get(note);
 
@@ -161,7 +172,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
 
         for (let i = 0; i < touches.length; i++) {
           const touch = touches[i];
-          const {pageX, pageY, identifier} = touch;
+          const { pageX, pageY, identifier } = touch;
           const note = findNoteAtPosition(pageX, pageY);
 
           if (note !== null) {
@@ -185,7 +196,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
 
         for (let i = 0; i < touches.length; i++) {
           const touch = touches[i];
-          const {pageX, pageY, identifier} = touch;
+          const { pageX, pageY, identifier } = touch;
           const note = findNoteAtPosition(pageX, pageY);
 
           if (note !== null) {
@@ -224,7 +235,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
 
         for (let i = 0; i < touches.length; i++) {
           const touch = touches[i];
-          const {pageX, pageY, identifier} = touch;
+          const { pageX, pageY, identifier } = touch;
           const note = findNoteAtPosition(pageX, pageY);
 
           if (note !== null) {
@@ -266,11 +277,17 @@ const Grid = forwardRef<GridHandle, GridProps>(
           style={styles.gridWrapper}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}>
-          {gridRows.map((rowPads, rowIndex) => (
-            <View key={`row-${rowIndex}`} style={styles.gridRow}>
+          onTouchEnd={handleTouchEnd}
+        >
+          {gridRows.reverse().map((rowPads, rowIndex) => (
+            <View
+              key={`row-${gridRows.length - 1 - rowIndex}`}
+              style={styles.gridRow}
+            >
               {rowPads.map((note, colIndex) => {
-                const index = rowIndex * cols + colIndex;
+                // Calculate the original index for proper referencing
+                const originalRowIndex = gridRows.length - 1 - rowIndex;
+                const index = originalRowIndex * cols + colIndex;
                 const isInScale = useScale || scaleNotes.has(note);
                 return (
                   <GridPad
