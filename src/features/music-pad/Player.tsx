@@ -16,8 +16,8 @@ import NativeAudioModule from '../../specs/NativeAudioModule';
 import { MidiVisualizer, VisualNote } from './midi-visualiser/MidiVisualiser';
 import Grid, { GridHandle } from './grid/Grid';
 import performance from 'react-native-performance';
+import { useSharedValue } from 'react-native-reanimated';
 
-// --- Type definitions ---
 interface NoteEvent {
   type: 'noteOn' | 'noteOff';
   note: number;
@@ -25,7 +25,7 @@ interface NoteEvent {
   velocity: number;
 }
 
-interface LoopSequence {
+export interface LoopSequence {
   events: NoteEvent[];
   duration: number;
   durationBars: number;
@@ -84,6 +84,11 @@ export default function Player({
   // Visual notes
   const noteIdRef = useRef(0);
   const visualNotesRef = useRef<VisualNote[]>([]);
+
+  const playheadX = useSharedValue(0);
+  const currentMusicalMs = useSharedValue(0);
+
+  const windowWidth = Dimensions.get('window').width;
 
   // --- BPM Detection ---
   const detectBPM = useCallback((events: NoteEvent[]): BPMInfo | null => {
@@ -262,7 +267,7 @@ export default function Player({
 
   // --- Recording functions ---
   const startRecording = () => {
-    recordingStartTime.current = Date.now();
+    recordingStartTime.current = performance.now();
     currentRecordingRef.current = [];
     isRecordingRef.current = true; // <-- SYNCHRONOUS
     setShowRecordingButtons(true);
@@ -292,7 +297,7 @@ export default function Player({
   const recordNoteEvent = useCallback(
     (type: 'noteOn' | 'noteOff', note: number, velocity: number = 0.85) => {
       if (!isRecordingRef.current || recordingStartTime.current === 0) return; // <-- USE REF
-      const timestamp = Date.now() - recordingStartTime.current;
+      const timestamp = performance.now() - recordingStartTime.current;
       currentRecordingRef.current.push({ type, note, timestamp, velocity });
     },
     [],
@@ -303,7 +308,7 @@ export default function Player({
     const vn: VisualNote = {
       id: ++noteIdRef.current,
       note,
-      startTime: Date.now(),
+      startTime: performance.now(),
     };
     visualNotesRef.current = [...visualNotesRef.current, vn];
   }, []);
@@ -312,7 +317,7 @@ export default function Player({
     for (let i = visualNotesRef.current.length - 1; i >= 0; i--) {
       const vn = visualNotesRef.current[i];
       if (vn.note === note && vn.endTime == null) {
-        vn.endTime = Date.now();
+        vn.endTime = performance.now();
         break;
       }
     }
@@ -386,7 +391,6 @@ export default function Player({
           activeNotesRef.current.forEach(note => {
             NativeAudioModule.noteOff(channel, note);
             gridRef.current?.setPadActive(note, false);
-            endVisualNote(note);
           });
           activeNotesRef.current.clear();
           eventIndex = 0;
@@ -402,17 +406,19 @@ export default function Player({
           if (e.type === 'noteOn') {
             NativeAudioModule.noteOn(channel, e.note, e.velocity);
             activeNotesRef.current.add(e.note);
-            createVisualNote(e.note);
             gridRef.current?.setPadActive(e.note, true);
           } else {
             NativeAudioModule.noteOff(channel, e.note);
             activeNotesRef.current.delete(e.note);
-            endVisualNote(e.note);
             gridRef.current?.setPadActive(e.note, false);
           }
 
           eventIndex++;
         }
+
+        currentMusicalMs.value = loopTime;
+        const progress = loopTime / sequence.duration; // 0…1
+        playheadX.value = progress * windowWidth; // ← cheap write!
 
         lastLoopTime = loopTime;
         playbackRafRef.current = requestAnimationFrame(tick);
@@ -420,7 +426,7 @@ export default function Player({
 
       playbackRafRef.current = requestAnimationFrame(tick);
     },
-    [channel, createVisualNote, endVisualNote, stopPlayback],
+    [channel, stopPlayback, currentMusicalMs, playheadX, windowWidth],
   );
 
   // --- Sequence management ---
@@ -446,11 +452,14 @@ export default function Player({
     () => (
       <MidiVisualizer
         height={50}
-        width={Dimensions.get('window').width}
+        width={windowWidth}
         notesRef={visualNotesRef}
+        currentMusicalMs={currentMusicalMs}
+        playheadX={playheadX}
+        sequence={savedSequences[savedSequences.length - 1]}
       />
     ),
-    [],
+    [savedSequences, currentMusicalMs, playheadX, windowWidth],
   );
 
   const currentSequenceInfo = useMemo(() => {
