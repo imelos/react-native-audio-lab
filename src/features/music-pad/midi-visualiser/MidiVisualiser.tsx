@@ -106,7 +106,7 @@ export function MidiVisualizer({
             );
 
             const startMs = noteOn.timestamp;
-            const endMs = noteOff ? noteOff.timestamp : currentMusicalMs.value;
+            const endMs = noteOff ? noteOff.timestamp : sequence.duration;
 
             const x = (startMs / sequence.duration) * width;
             const w = ((endMs - startMs) / sequence.duration) * width;
