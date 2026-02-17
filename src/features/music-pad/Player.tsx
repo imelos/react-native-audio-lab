@@ -238,6 +238,14 @@ export default function Player({
         }
       }
 
+      const firstEventTime = Math.min(
+        ...normalizedEvents.map(e => e.timestamp),
+      );
+
+      normalizedEvents.forEach(e => {
+        e.timestamp -= firstEventTime;
+      });
+
       return {
         events: normalizedEvents,
         duration: bestDuration,
@@ -355,60 +363,64 @@ export default function Player({
 
   const playSequence = useCallback(
     (sequence: LoopSequence) => {
-      if (isPlaying) {
-        stopPlayback();
-        return;
-      }
-
+      stopPlayback();
       setIsPlaying(true);
-      // console.log(sequence)
+
       const events = [...sequence.events].sort(
         (a, b) => a.timestamp - b.timestamp,
       );
-      let startTime = performance.now();
+
       let eventIndex = 0;
+      let lastLoopTime = 0;
+      const startTime = performance.now();
 
       const tick = () => {
-        const elapsed = performance.now() - startTime;
+        const now = performance.now();
+        const rawElapsed = now - startTime;
 
-        if (elapsed >= sequence.duration) {
+        const loopTime =
+          (rawElapsed + sequence.downbeatOffset) % sequence.duration;
+
+        // 🔁 LOOP WRAP — THIS FIXES THE GAP
+        if (loopTime < lastLoopTime) {
           activeNotesRef.current.forEach(note => {
             NativeAudioModule.noteOff(channel, note);
-            endVisualNote(note);
             gridRef.current?.setPadActive(note, false);
+            endVisualNote(note);
           });
           activeNotesRef.current.clear();
-
           eventIndex = 0;
-          startTime = performance.now();
-        } else {
-          while (
-            eventIndex < events.length &&
-            events[eventIndex].timestamp <= elapsed
-          ) {
-            const event = events[eventIndex];
-
-            if (event.type === 'noteOn') {
-              NativeAudioModule.noteOn(channel, event.note, event.velocity);
-              activeNotesRef.current.add(event.note);
-              createVisualNote(event.note);
-              gridRef.current?.setPadActive(event.note, true);
-            } else {
-              NativeAudioModule.noteOff(channel, event.note);
-              activeNotesRef.current.delete(event.note);
-              endVisualNote(event.note);
-              gridRef.current?.setPadActive(event.note, false);
-            }
-            eventIndex++;
-          }
         }
 
+        // ▶️ SCHEDULE EVENTS
+        while (
+          eventIndex < events.length &&
+          events[eventIndex].timestamp <= loopTime
+        ) {
+          const e = events[eventIndex];
+
+          if (e.type === 'noteOn') {
+            NativeAudioModule.noteOn(channel, e.note, e.velocity);
+            activeNotesRef.current.add(e.note);
+            createVisualNote(e.note);
+            gridRef.current?.setPadActive(e.note, true);
+          } else {
+            NativeAudioModule.noteOff(channel, e.note);
+            activeNotesRef.current.delete(e.note);
+            endVisualNote(e.note);
+            gridRef.current?.setPadActive(e.note, false);
+          }
+
+          eventIndex++;
+        }
+
+        lastLoopTime = loopTime;
         playbackRafRef.current = requestAnimationFrame(tick);
       };
 
       playbackRafRef.current = requestAnimationFrame(tick);
     },
-    [channel, isPlaying, createVisualNote, endVisualNote, stopPlayback],
+    [channel, createVisualNote, endVisualNote, stopPlayback],
   );
 
   // --- Sequence management ---
