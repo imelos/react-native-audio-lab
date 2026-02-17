@@ -361,6 +361,7 @@ export default function Player({
       }
 
       setIsPlaying(true);
+      // console.log(sequence)
       const events = [...sequence.events].sort(
         (a, b) => a.timestamp - b.timestamp,
       );
@@ -451,7 +452,6 @@ export default function Player({
     };
   }, [savedSequences]);
 
-  // --- RENDER ---
   return (
     <>
       <View style={styles.midiVisualiser}>{MemoizedVisualizer}</View>
