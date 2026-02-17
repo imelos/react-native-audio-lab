@@ -340,14 +340,6 @@ export default function Player({
             >
               <Text style={styles.footerButtonText}>DELETE</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.footerButton, styles.playButton]}
-              onPress={() => {
-                //implementation
-              }}
-            >
-              <Text style={styles.footerButtonText}>QUANTIZE</Text>
-            </TouchableOpacity>
           </View>
         )}
       </View>
