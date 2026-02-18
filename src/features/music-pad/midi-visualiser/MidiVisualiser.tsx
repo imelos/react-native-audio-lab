@@ -8,7 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { StyleSheet, View } from 'react-native';
 import performance from 'react-native-performance';
-import { LoopSequence } from '../utils/loopUtils';
+import { LoopSequence, pairNotes, NotePair } from '../utils/loopUtils';
 
 export type VisualNote = {
   id: number;
@@ -54,6 +54,7 @@ export function MidiVisualizer({
 }: Props) {
   const recordingStartRef = useRef<number | null>(null);
   const pitchIndexRef = useRef<Map<number, number>>(new Map());
+  const cachedPairsRef = useRef<{ seq: LoopSequence | undefined; pairs: NotePair[] }>({ seq: undefined, pairs: [] });
   const rectsData = useSharedValue<RectData[]>([]);
   const fallbackShared = useSharedValue(0);
   const resolvedPlayheadX = playheadX ?? fallbackShared;
@@ -99,37 +100,29 @@ export function MidiVisualizer({
       let newRects: RectData[] = [];
 
       if (sequence && sequence.events.length > 0) {
-        // Playback mode – use normalized timestamps (preferred)
+        // Recompute pairs only when the sequence reference changes
+        if (cachedPairsRef.current.seq !== sequence) {
+          cachedPairsRef.current = { seq: sequence, pairs: pairNotes(sequence.events) };
+        }
+        const pairs = cachedPairsRef.current.pairs;
+
         const activeNotes = new Set(
           all.filter(n => !n.endTime).map(n => n.note),
         );
 
-        newRects = sequence.events
-          .filter(e => e.type === 'noteOn') // only draw from noteOn
-          .map(noteOn => {
-            const noteOff = sequence.events.find(
-              later =>
-                later.type === 'noteOff' &&
-                later.note === noteOn.note &&
-                later.timestamp > noteOn.timestamp,
-            );
+        newRects = pairs.map(p => {
+          const x = (p.start / sequence.duration) * width;
+          const w = ((p.end - p.start) / sequence.duration) * width;
+          const yIndex = pitchIndexRef.current.get(p.note) ?? 0;
 
-            const startMs = noteOn.timestamp;
-            const endMs = noteOff ? noteOff.timestamp : sequence.duration;
-
-            const x = (startMs / sequence.duration) * width;
-            const w = ((endMs - startMs) / sequence.duration) * width;
-
-            const yIndex = pitchIndexRef.current.get(noteOn.note) ?? 0;
-
-            return {
-              x,
-              w,
-              y: yIndex * sliceH,
-              h: sliceH,
-              active: activeNotes.has(noteOn.note),
-            };
-          });
+          return {
+            x,
+            w,
+            y: yIndex * sliceH,
+            h: sliceH,
+            active: activeNotes.has(p.note),
+          };
+        });
       } else if (loopDuration && loopDuration > 0 && currentMusicalMs) {
         // Overdub mode – notes have loop-relative timestamps, render against
         // the master loop duration so they appear at the playhead position
