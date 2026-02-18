@@ -122,7 +122,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
 
   // Initialize audio engine on mount
   useEffect(() => {
-    // Create main instrument on channel 1
+    // Create main instrument on channel
     NativeAudioModule.createOscillatorInstrument(
       channelId,
       'Main Synth',
@@ -135,9 +135,9 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
 
     return () => {
       // Cleanup: stop all notes and remove instruments
-      NativeAudioModule.allNotesOffAllChannels();
+      NativeAudioModule.allNotesOff(channelId);
     };
-  }, []);
+  }, [channelId]);
 
   // Toggle Filter
   const toggleFilter = () => {

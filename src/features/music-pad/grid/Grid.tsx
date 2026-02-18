@@ -10,7 +10,6 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
-import { AnimatedView } from 'react-native-reanimated/lib/typescript/component/View';
 
 function midiToNoteName(midiNote: number): string {
   const noteNames = [
@@ -47,7 +46,7 @@ interface GridPadProps {
 const GridPad = forwardRef<GridPadHandle, GridPadProps>(
   ({ note, index, onLayout, isInScale = true }, ref) => {
     const backgroundColor = useSharedValue(0);
-    const viewRef = useRef<View>(null);
+    const viewRef = useRef<Animated.View>(null);
 
     useImperativeHandle(ref, () => ({
       setActive: (active: boolean) => {
@@ -67,7 +66,7 @@ const GridPad = forwardRef<GridPadHandle, GridPadProps>(
 
     return (
       <Animated.View
-        ref={(r: AnimatedView) => {
+        ref={(r: Animated.View) => {
           viewRef.current = r;
         }}
         style={[styles.gridPad, animatedStyle]}

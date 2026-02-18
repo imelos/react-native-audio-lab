@@ -94,10 +94,6 @@ export default function Player({
     quantize(quantizeEvents);
   }, [quantize]);
 
-  const handleDelete = useCallback(() => {
-    deleteSequence();
-  }, [deleteSequence]);
-
   // ── Memoized visualizer ──────────────────────────────────────────────────
 
   const MemoizedVisualizer = useMemo(
@@ -109,10 +105,19 @@ export default function Player({
         currentMusicalMs={currentMusicalMs}
         playheadX={playheadX}
         sequence={sequence ?? undefined}
-        loopDuration={!sequence && masterDuration > 0 ? masterDuration : undefined}
+        loopDuration={
+          !sequence && masterDuration > 0 ? masterDuration : undefined
+        }
       />
     ),
-    [sequence, currentMusicalMs, playheadX, windowWidth, visualNotesRef, masterDuration],
+    [
+      sequence,
+      currentMusicalMs,
+      playheadX,
+      windowWidth,
+      visualNotesRef,
+      masterDuration,
+    ],
   );
 
   const sequenceInfo = useMemo(() => {
@@ -196,7 +201,7 @@ export default function Player({
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.footerButton, styles.deleteButton]}
-              onPress={handleDelete}
+              onPress={deleteSequence}
             >
               <Text style={styles.footerButtonText}>DELETE</Text>
             </TouchableOpacity>
