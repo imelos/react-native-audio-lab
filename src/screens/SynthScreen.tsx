@@ -1,8 +1,4 @@
-import React, {
-  useState,
-  useRef,
-  useEffect,
-} from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,6 +10,7 @@ import {
 import NativeAudioModule from '../specs/NativeAudioModule';
 import Slider from '@react-native-community/slider';
 import Player from '../features/music-pad/Player';
+import { Props } from '../navigation/Navigation';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -56,7 +53,6 @@ type FilterType = (typeof FILTER_TYPES)[number];
 type TabType = 'instrument' | 'filter' | 'fx';
 
 // CHANNEL CONSTANTS - Define which channel to use
-const MAIN_CHANNEL = 1; // Main instrument on channel 1
 
 function generateScale(
   rootNote: number,
@@ -78,7 +74,8 @@ function generateScale(
   return notes;
 }
 
-export default function SynthScreen() {
+const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
+  const { channelId } = route?.params || { channelId: 1 };
   const [activeTab, setActiveTab] = useState<TabType>('instrument');
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
   const [gridSize, setGridSize] = useState<GridSize>('5x5');
@@ -126,14 +123,14 @@ export default function SynthScreen() {
   useEffect(() => {
     // Create main instrument on channel 1
     NativeAudioModule.createOscillatorInstrument(
-      MAIN_CHANNEL,
+      channelId,
       'Main Synth',
       16,
       'sine',
     );
 
     // Set initial ADSR
-    NativeAudioModule.setADSR(MAIN_CHANNEL, 0.01, 0.1, 0.8, 0.3);
+    NativeAudioModule.setADSR(channelId, 0.01, 0.1, 0.8, 0.3);
 
     return () => {
       // Cleanup: stop all notes and remove instruments
@@ -144,23 +141,23 @@ export default function SynthScreen() {
   // Toggle Filter
   const toggleFilter = () => {
     if (!filterEnabled) {
-      NativeAudioModule.addEffect(MAIN_CHANNEL, 'filter');
+      NativeAudioModule.addEffect(channelId, 'filter');
       const effectId = nextEffectIdRef.current++;
       filterEffectIdRef.current = effectId;
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'cutoff',
         filterCutoff,
       );
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'resonance',
         filterResonance,
       );
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'type',
         FILTER_TYPES.indexOf(filterType),
@@ -169,7 +166,7 @@ export default function SynthScreen() {
       setFilterEnabled(true);
     } else {
       if (filterEffectIdRef.current !== null) {
-        NativeAudioModule.removeEffect(MAIN_CHANNEL, filterEffectIdRef.current);
+        NativeAudioModule.removeEffect(channelId, filterEffectIdRef.current);
       }
       setFilterEnabled(false);
       filterEffectIdRef.current = null;
@@ -180,7 +177,7 @@ export default function SynthScreen() {
   useEffect(() => {
     if (filterEnabled && filterEffectIdRef.current !== null) {
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         filterEffectIdRef.current,
         'cutoff',
         filterCutoff,
@@ -191,7 +188,7 @@ export default function SynthScreen() {
   useEffect(() => {
     if (filterEnabled && filterEffectIdRef.current !== null) {
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         filterEffectIdRef.current,
         'resonance',
         filterResonance,
@@ -203,7 +200,7 @@ export default function SynthScreen() {
     if (filterEnabled && filterEffectIdRef.current !== null) {
       const typeIndex = FILTER_TYPES.indexOf(filterType);
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         filterEffectIdRef.current,
         'type',
         typeIndex,
@@ -214,18 +211,18 @@ export default function SynthScreen() {
   // Toggle Reverb
   const toggleReverb = () => {
     if (!reverbEnabled) {
-      NativeAudioModule.addEffect(MAIN_CHANNEL, 'reverb');
+      NativeAudioModule.addEffect(channelId, 'reverb');
       const effectId = nextEffectIdRef.current++;
       reverbEffectIdRef.current = effectId;
 
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'roomSize',
         reverbRoomSize,
       );
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'wetLevel',
         reverbWetLevel,
@@ -234,7 +231,7 @@ export default function SynthScreen() {
       setReverbEnabled(true);
     } else {
       if (reverbEffectIdRef.current !== null) {
-        NativeAudioModule.removeEffect(MAIN_CHANNEL, reverbEffectIdRef.current);
+        NativeAudioModule.removeEffect(channelId, reverbEffectIdRef.current);
       }
       setReverbEnabled(false);
       reverbEffectIdRef.current = null;
@@ -245,7 +242,7 @@ export default function SynthScreen() {
   useEffect(() => {
     if (reverbEnabled && reverbEffectIdRef.current !== null) {
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         reverbEffectIdRef.current,
         'roomSize',
         reverbRoomSize,
@@ -256,7 +253,7 @@ export default function SynthScreen() {
   useEffect(() => {
     if (reverbEnabled && reverbEffectIdRef.current !== null) {
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         reverbEffectIdRef.current,
         'wetLevel',
         reverbWetLevel,
@@ -267,24 +264,24 @@ export default function SynthScreen() {
   // Toggle Delay
   const toggleDelay = () => {
     if (!delayEnabled) {
-      NativeAudioModule.addEffect(MAIN_CHANNEL, 'delay');
+      NativeAudioModule.addEffect(channelId, 'delay');
       const effectId = nextEffectIdRef.current++;
       delayEffectIdRef.current = effectId;
 
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'delayTime',
         delayTime,
       );
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'feedback',
         delayFeedback,
       );
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         effectId,
         'wetLevel',
         delayWetLevel,
@@ -293,7 +290,7 @@ export default function SynthScreen() {
       setDelayEnabled(true);
     } else {
       if (delayEffectIdRef.current !== null) {
-        NativeAudioModule.removeEffect(MAIN_CHANNEL, delayEffectIdRef.current);
+        NativeAudioModule.removeEffect(channelId, delayEffectIdRef.current);
       }
       setDelayEnabled(false);
       delayEffectIdRef.current = null;
@@ -304,7 +301,7 @@ export default function SynthScreen() {
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         delayEffectIdRef.current,
         'delayTime',
         delayTime,
@@ -315,7 +312,7 @@ export default function SynthScreen() {
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         delayEffectIdRef.current,
         'feedback',
         delayFeedback,
@@ -326,7 +323,7 @@ export default function SynthScreen() {
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
       NativeAudioModule.setEffectParameter(
-        MAIN_CHANNEL,
+        channelId,
         delayEffectIdRef.current,
         'wetLevel',
         delayWetLevel,
@@ -346,7 +343,7 @@ export default function SynthScreen() {
     const nextWave = WAVEFORMS[nextIndex];
 
     setCurrentWaveform(nextWave);
-    NativeAudioModule.setWaveform(MAIN_CHANNEL, nextWave);
+    NativeAudioModule.setWaveform(channelId, nextWave);
   };
 
   const changeGridSize = () => {
@@ -428,31 +425,19 @@ export default function SynthScreen() {
                 <Button
                   title="Pluck"
                   onPress={() =>
-                    NativeAudioModule.setADSR(
-                      MAIN_CHANNEL,
-                      0.005,
-                      0.1,
-                      0.0,
-                      0.2,
-                    )
+                    NativeAudioModule.setADSR(channelId, 0.005, 0.1, 0.0, 0.2)
                   }
                 />
                 <Button
                   title="Pad"
                   onPress={() =>
-                    NativeAudioModule.setADSR(MAIN_CHANNEL, 0.3, 1.5, 0.7, 2.0)
+                    NativeAudioModule.setADSR(channelId, 0.3, 1.5, 0.7, 2.0)
                   }
                 />
                 <Button
                   title="Organ"
                   onPress={() =>
-                    NativeAudioModule.setADSR(
-                      MAIN_CHANNEL,
-                      0.01,
-                      0.05,
-                      1.0,
-                      0.4,
-                    )
+                    NativeAudioModule.setADSR(channelId, 0.01, 0.05, 1.0, 0.4)
                   }
                 />
               </View>
@@ -642,8 +627,6 @@ export default function SynthScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.contentContainer}>
-        <Text style={styles.title}>Grid Synth</Text>
-        {/* Tab Navigation */}
         <View style={styles.tabBar}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'instrument' && styles.activeTab]}
@@ -691,7 +674,7 @@ export default function SynthScreen() {
 
         {/* Player: MidiVisualizer + Grid + Recording/Playback */}
         <Player
-          channel={MAIN_CHANNEL}
+          channel={channelId}
           gridNotes={gridNotes}
           rows={rows}
           cols={cols}
@@ -702,7 +685,9 @@ export default function SynthScreen() {
       </View>
     </View>
   );
-}
+};
+
+export default SynthScreen;
 
 const styles = StyleSheet.create({
   container: {

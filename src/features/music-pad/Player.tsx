@@ -37,15 +37,15 @@ export default function Player({
   // ── Hook into the global sequencer ───────────────────────────────────────
 
   const {
-    transportState,
+    // transportState,
     sequence,
     isRecording,
     isPlaying,
     playheadX,
     currentMusicalMs,
     visualNotesRef,
-    play,
-    stop,
+    // play,
+    // stop,
     togglePlayback,
     startRecording,
     clearRecording,
@@ -204,10 +204,6 @@ export default function Player({
     </>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   midiVisualiser: {
