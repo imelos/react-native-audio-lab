@@ -82,6 +82,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
   const [selectedKey, setSelectedKey] = useState<Key>('C');
   const [scaleType, setScaleType] = useState<ScaleType>('Major');
   const [useScale, setUseScale] = useState(true);
+  const [octaveShift, setOctaveShift] = useState(0);
 
   // Filter state
   const [filterEnabled, setFilterEnabled] = useState(false);
@@ -111,7 +112,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
 
   const baseOctave = 3;
   const keyOffset = KEYS.indexOf(selectedKey);
-  const rootNote = 12 * (baseOctave + 1) + keyOffset;
+  const rootNote = 12 * (baseOctave + 1) + keyOffset + octaveShift * 12;
 
   const gridNotes = useScale
     ? generateScale(rootNote, scaleType, totalPads)
@@ -388,6 +389,25 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                 onPress={toggleScale}
                 color="#6200ee"
               />
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>
+                Octave: {octaveShift >= 0 ? '+' : ''}
+                {octaveShift}
+              </Text>
+              <View style={styles.buttonGroup}>
+                <Button
+                  title="-12st"
+                  onPress={() => setOctaveShift(o => Math.max(o - 1, -3))}
+                  color="#6200ee"
+                />
+                <Button
+                  title="+12st"
+                  onPress={() => setOctaveShift(o => Math.min(o + 1, 3))}
+                  color="#6200ee"
+                />
+              </View>
             </View>
 
             <View style={styles.controlRow}>
