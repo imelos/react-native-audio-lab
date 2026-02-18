@@ -189,31 +189,46 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     (note: number, velocity: number) => {
       sequencer.pushRecordEvent(channel, 'noteOn', note, velocity);
 
-      // Live visual feedback while recording (before sequence exists)
+      // Use loop-relative time when master loop is playing (overdub),
+      // so visual notes appear at the playhead position, not from the left
+      const masterPlaying =
+        sequencer.transportState === 'playing' &&
+        sequencer.getMasterDuration() > 0;
+      const startTime = masterPlaying
+        ? currentMusicalMs.value
+        : performance.now();
+
       const vn: VisualNote = {
         id: ++noteIdRef.current,
         note,
-        startTime: performance.now(),
+        startTime,
       };
       visualNotesRef.current = [...visualNotesRef.current, vn];
     },
-    [channel, sequencer],
+    [channel, sequencer, currentMusicalMs],
   );
 
   const pushNoteOff = useCallback(
     (note: number) => {
       sequencer.pushRecordEvent(channel, 'noteOff', note, 0);
 
+      const masterPlaying =
+        sequencer.transportState === 'playing' &&
+        sequencer.getMasterDuration() > 0;
+      const endTime = masterPlaying
+        ? currentMusicalMs.value
+        : performance.now();
+
       // End live visual note
       for (let i = visualNotesRef.current.length - 1; i >= 0; i--) {
         const vn = visualNotesRef.current[i];
         if (vn.note === note && vn.endTime == null) {
-          vn.endTime = performance.now();
+          vn.endTime = endTime;
           break;
         }
       }
     },
-    [channel, sequencer],
+    [channel, sequencer, currentMusicalMs],
   );
 
   // ── Internal helpers ─────────────────────────────────────────────────────
@@ -241,6 +256,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     playheadX,
     currentMusicalMs,
     visualNotesRef,
+    masterDuration: sequencer.getMasterDuration(),
 
     // Global transport (any Player can trigger these)
     play: () => sequencer.play(),

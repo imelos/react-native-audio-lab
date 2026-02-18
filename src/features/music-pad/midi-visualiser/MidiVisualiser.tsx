@@ -24,6 +24,8 @@ interface Props {
   playheadX?: SharedValue<number>;
   currentMusicalMs?: SharedValue<number>;
   sequence?: LoopSequence;
+  /** Master loop duration — used to position live notes against the loop when overdubbing */
+  loopDuration?: number;
 }
 
 const recorder = Skia.PictureRecorder();
@@ -48,6 +50,7 @@ export function MidiVisualizer({
   playheadX,
   currentMusicalMs,
   sequence,
+  loopDuration,
 }: Props) {
   const recordingStartRef = useRef<number | null>(null);
   const pitchIndexRef = useRef<Map<number, number>>(new Map());
@@ -127,8 +130,26 @@ export function MidiVisualizer({
               active: activeNotes.has(noteOn.note),
             };
           });
+      } else if (loopDuration && loopDuration > 0 && currentMusicalMs) {
+        // Overdub mode – notes have loop-relative timestamps, render against
+        // the master loop duration so they appear at the playhead position
+        const total = loopDuration;
+        const musicalNow = currentMusicalMs.value;
+
+        newRects = all.map(n => {
+          const noteEnd = n.endTime ?? musicalNow;
+          const yIndex = pitchIndexRef.current.get(n.note) ?? 0;
+
+          return {
+            x: (n.startTime / total) * width,
+            w: (Math.max(0, noteEnd - n.startTime) / total) * width,
+            y: yIndex * sliceH,
+            h: sliceH,
+            active: !n.endTime,
+          };
+        });
       } else {
-        // Live recording mode – use visual times
+        // Live recording mode (no master loop) – auto-scale from wall clock
         if (recordingStartRef.current == null) {
           recordingStartRef.current = Math.min(...all.map(n => n.startTime));
         }
@@ -157,7 +178,7 @@ export function MidiVisualizer({
 
     loop();
     return () => cancelAnimationFrame(raf);
-  }, [width, height, notesRef, sequence, currentMusicalMs, rectsData]);
+  }, [width, height, notesRef, sequence, currentMusicalMs, rectsData, loopDuration]);
 
   const picture = useDerivedValue(() => {
     'worklet';

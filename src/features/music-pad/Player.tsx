@@ -44,6 +44,7 @@ export default function Player({
     playheadX,
     currentMusicalMs,
     visualNotesRef,
+    masterDuration,
     // play,
     // stop,
     togglePlayback,
@@ -108,9 +109,10 @@ export default function Player({
         currentMusicalMs={currentMusicalMs}
         playheadX={playheadX}
         sequence={sequence ?? undefined}
+        loopDuration={!sequence && masterDuration > 0 ? masterDuration : undefined}
       />
     ),
-    [sequence, currentMusicalMs, playheadX, windowWidth, visualNotesRef],
+    [sequence, currentMusicalMs, playheadX, windowWidth, visualNotesRef, masterDuration],
   );
 
   const sequenceInfo = useMemo(() => {
