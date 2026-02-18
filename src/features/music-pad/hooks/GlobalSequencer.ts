@@ -39,6 +39,13 @@ export type ChannelSequenceListener = (
   sequence: LoopSequence | null,
 ) => void;
 
+const NO_OP_DELEGATE: ChannelDelegate = {
+  onNoteOn() {},
+  onNoteOff() {},
+  onTick() {},
+  onLoopWrap() {},
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +102,14 @@ class GlobalSequencer {
     state.activeNotes.forEach(n => NativeAudioModule.noteOff(channel, n));
     this.channels.delete(channel);
     if (this.channels.size === 0) this.stop();
+  }
+
+  /** Detach the UI delegate but keep the channel (sequence + playback) alive. */
+  detachDelegate(channel: number): void {
+    const state = this.channels.get(channel);
+    if (state) {
+      state.delegate = NO_OP_DELEGATE;
+    }
   }
 
   // ── Sequences ────────────────────────────────────────────────────────────
