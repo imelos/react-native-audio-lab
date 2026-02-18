@@ -61,18 +61,18 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   });
 
   // Keep the delegate's closure references fresh without replacing the object
-//   useEffect(() => {
-//     const d = delegateRef.current;
-//     // The delegate captures gridRef and shared values via closure,
-//     // which are themselves refs/shared-values and always current.
-//     // No update needed — this effect is here as a safety net.
-//     return undefined;
-//   }, [gridRef, currentMusicalMs, playheadX, windowWidth]);
+  //   useEffect(() => {
+  //     const d = delegateRef.current;
+  //     // The delegate captures gridRef and shared values via closure,
+  //     // which are themselves refs/shared-values and always current.
+  //     // No update needed — this effect is here as a safety net.
+  //     return undefined;
+  //   }, [gridRef, currentMusicalMs, playheadX, windowWidth]);
 
   // ── Register / unregister ────────────────────────────────────────────────
   useEffect(() => {
     sequencer.registerChannel(channel, delegateRef.current);
-    return () => sequencer.unregisterChannel(channel);
+    // return () => sequencer.unregisterChannel(channel);
   }, [channel, sequencer]);
 
   // ── Subscribe to transport changes ───────────────────────────────────────
@@ -243,7 +243,3 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     pushNoteOff,
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Note pairing utility (shared with original code)
-// ─────────────────────────────────────────────────────────────────────────────
