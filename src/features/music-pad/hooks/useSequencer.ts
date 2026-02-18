@@ -112,6 +112,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         events: NoteEvent[],
         name: string,
         referenceBPM?: number,
+        minDurationMs?: number,
       ) => LoopSequence | null,
     ) => {
       const events = sequencer.stopRecording(channel);
@@ -122,9 +123,15 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         ? `${existing.name} (take ${Date.now()})`
         : `Ch ${channel} Loop`;
 
-      // Use global BPM from an existing sequence so all channels stay in sync
+      // Use global BPM and master duration so all channels stay in sync
       const globalBPM = sequencer.getGlobalBPM();
-      const loop = createLoopFn(events, name, globalBPM ?? undefined);
+      const masterDuration = sequencer.getMasterDuration();
+      const loop = createLoopFn(
+        events,
+        name,
+        globalBPM ?? undefined,
+        masterDuration > 0 ? masterDuration : undefined,
+      );
       if (!loop) return;
 
       sequencer.setSequence(channel, loop);

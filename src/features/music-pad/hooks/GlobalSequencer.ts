@@ -28,6 +28,7 @@ interface ChannelState {
   // Recording
   isRecording: boolean;
   recordingStartTime: number;
+  recordingLoopOffset: number; // where in the master loop recording started
   recordedEvents: NoteEvent[];
 }
 
@@ -82,6 +83,7 @@ class GlobalSequencer {
       lastLoopTime: -1,
       isRecording: false,
       recordingStartTime: 0,
+      recordingLoopOffset: 0,
       recordedEvents: [],
     });
   }
@@ -138,13 +140,28 @@ class GlobalSequencer {
     s.isRecording = true;
     s.recordingStartTime = performance.now();
     s.recordedEvents = [];
+
+    // Capture where in the master loop we are so recorded events
+    // can be placed at the correct loop-relative position
+    if (this._transportState === 'playing' && this.masterDuration > 0) {
+      const elapsed = performance.now() - this.globalStartTime;
+      s.recordingLoopOffset = elapsed % this.masterDuration;
+    } else {
+      s.recordingLoopOffset = 0;
+    }
   }
 
   stopRecording(channel: number): NoteEvent[] {
     const s = this.channels.get(channel);
     if (!s) return [];
     s.isRecording = false;
-    const evts = [...s.recordedEvents];
+    const offset = s.recordingLoopOffset;
+    // Offset events so they're loop-aligned (e.g. if recording started at
+    // 2000ms into a 4000ms loop, a note played immediately gets timestamp 2000ms)
+    const evts = s.recordedEvents.map(e => ({
+      ...e,
+      timestamp: e.timestamp + offset,
+    }));
     s.recordedEvents = [];
     return evts;
   }
@@ -247,7 +264,16 @@ class GlobalSequencer {
 
       this.channels.forEach((s, ch) => {
         const seq = s.sequence;
-        if (!seq) return;
+
+        // Channels without a sequence still get tick updates so the
+        // playhead tracks the global position while recording
+        if (!seq) {
+          if (this.masterDuration > 0) {
+            const loopTime = elapsed % this.masterDuration;
+            s.delegate.onTick(loopTime, this.masterDuration);
+          }
+          return;
+        }
 
         const loopTime = elapsed % seq.duration;
 

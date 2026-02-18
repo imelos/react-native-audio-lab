@@ -359,13 +359,25 @@ export function createLoopSequence(
   events: NoteEvent[],
   name: string,
   referenceBPM?: number,
+  minDurationMs?: number,
 ): LoopSequence | null {
   if (events.length === 0) return null;
 
-  // ── Trim to first noteOn ─────────────────────────────────────────────────
   const firstOnIdx = events.findIndex(e => e.type === 'noteOn');
   if (firstOnIdx === -1) return null;
 
+  // ── Overdub mode: events are already loop-aligned (offset by loop position)
+  if (referenceBPM && minDurationMs && minDurationMs > 0) {
+    // Don't trim/normalize — timestamps are relative to the master loop
+    const trimmed = events.slice(firstOnIdx);
+    return createLoopWithBPM(trimmed, name, {
+      bpm: referenceBPM,
+      confidence: 1,
+      intervalMs: 60000 / referenceBPM,
+    }, minDurationMs);
+  }
+
+  // ── Fresh recording: trim to first noteOn and normalize to 0 ─────────────
   const trimmed = events.slice(firstOnIdx);
   const t0 = trimmed[0].timestamp;
   const normalized: NoteEvent[] = trimmed.map(e => ({
@@ -400,6 +412,7 @@ function createLoopWithBPM(
   events: NoteEvent[],
   name: string,
   bpmInfo: BPMInfo,
+  minDurationMs?: number,
 ): LoopSequence {
   const beatMs = bpmInfo.intervalMs;
   const barMs = beatMs * 4; // 4/4
@@ -435,7 +448,10 @@ function createLoopWithBPM(
   // Raw bars: how many bars does the content span?
   // Add a half-beat buffer so the last note onset sits comfortably inside
   const rawBars = (lastNoteOnTime + beatMs * 0.5) / barMs;
-  const durationBars = bestBarCount(rawBars);
+
+  // If there's a minimum duration (overdub on existing loop), ensure we match it
+  const minBars = minDurationMs ? minDurationMs / barMs : 0;
+  const durationBars = bestBarCount(Math.max(rawBars, minBars));
   const loopDuration = durationBars * barMs;
 
   // ── Fit notes into loop ───────────────────────────────────────────────────
