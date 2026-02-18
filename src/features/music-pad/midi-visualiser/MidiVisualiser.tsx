@@ -21,9 +21,9 @@ interface Props {
   width: number;
   height: number;
   notesRef: React.MutableRefObject<VisualNote[]>;
-  playheadX: SharedValue<number>;
-  currentMusicalMs: SharedValue<number>;
-  sequence: LoopSequence;
+  playheadX?: SharedValue<number>;
+  currentMusicalMs?: SharedValue<number>;
+  sequence?: LoopSequence;
 }
 
 const recorder = Skia.PictureRecorder();
@@ -52,9 +52,11 @@ export function MidiVisualizer({
   const recordingStartRef = useRef<number | null>(null);
   const pitchIndexRef = useRef<Map<number, number>>(new Map());
   const rectsData = useSharedValue<RectData[]>([]);
+  const fallbackShared = useSharedValue(0);
+  const resolvedPlayheadX = playheadX ?? fallbackShared;
 
   const playheadAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: playheadX.value }],
+    transform: [{ translateX: resolvedPlayheadX.value }],
   }));
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export function MidiVisualizer({
       const now = performance.now();
       const all = notesRef.current;
 
-      if (all.length === 0) {
+      if (all.length === 0 && !(sequence && sequence.events.length > 0)) {
         rectsData.value = [];
         raf = requestAnimationFrame(loop);
         return;
@@ -73,7 +75,11 @@ export function MidiVisualizer({
 
       // Recompute pitch index EVERY FRAME if unique pitches changed
       // (cheap, since Set + sort is fast for <50 notes)
-      const uniquePitches = Array.from(new Set(all.map(n => n.note))).sort(
+      const pitchSource =
+        sequence && sequence.events.length > 0
+          ? sequence.events.filter(e => e.type === 'noteOn').map(e => e.note)
+          : all.map(n => n.note);
+      const uniquePitches = Array.from(new Set(pitchSource)).sort(
         (a, b) => b - a,
       );
       const currentPitchCount = uniquePitches.length;
@@ -175,9 +181,11 @@ export function MidiVisualizer({
       <Canvas style={{ width, height }}>
         <Picture picture={picture} />
       </Canvas>
-      <View style={[styles.playHeadContainer, { width, height }]}>
-        <Animated.View style={[styles.playhead, playheadAnimatedStyle]} />
-      </View>
+      {playheadX && (
+        <View style={[styles.playHeadContainer, { width, height }]}>
+          <Animated.View style={[styles.playhead, playheadAnimatedStyle]} />
+        </View>
+      )}
     </>
   );
 }

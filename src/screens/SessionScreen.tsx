@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,6 +7,11 @@ import {
   ScrollView,
 } from 'react-native';
 import { Props } from '../navigation/Navigation';
+import GlobalSequencer, {
+  LoopSequence,
+} from '../features/music-pad/hooks/GlobalSequencer';
+import { MidiVisualizer, VisualNote } from '../features/music-pad/midi-visualiser/MidiVisualiser';
+import { pairNotes } from '../features/music-pad/utils/loopUtils';
 
 interface Clip {
   id: string;
@@ -43,6 +48,52 @@ const createDefaultChannels = (): Channel[] => [
 const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   const [channels, setChannels] = useState<Channel[]>(createDefaultChannels);
   const [nextChannelId, setNextChannelId] = useState(4);
+  const [sequences, setSequences] = useState<Map<number, LoopSequence>>(
+    new Map(),
+  );
+  const sequencer = useMemo(() => GlobalSequencer.getInstance(), []);
+
+  // Subscribe to sequence changes from GlobalSequencer
+  useEffect(() => {
+    // Seed initial state from existing sequences
+    const initial = new Map<number, LoopSequence>();
+    for (const ch of channels) {
+      const seq = sequencer.getSequence(ch.id);
+      if (seq) initial.set(ch.id, seq);
+    }
+    if (initial.size > 0) setSequences(initial);
+
+    return sequencer.onChannelSequence((ch, seq) => {
+      setSequences(prev => {
+        const next = new Map(prev);
+        if (seq) {
+          next.set(ch, seq);
+        } else {
+          next.delete(ch);
+        }
+        return next;
+      });
+    });
+  }, [sequencer, channels]);
+
+  // Build visual notes refs per channel for MidiVisualizer
+  const visualNotesRefs = useRef<Map<number, React.MutableRefObject<VisualNote[]>>>(new Map());
+  const getVisualNotesRef = (channelId: number, seq: LoopSequence) => {
+    let ref = visualNotesRefs.current.get(channelId);
+    if (!ref) {
+      ref = { current: [] };
+      visualNotesRefs.current.set(channelId, ref);
+    }
+    // Rebuild visual notes from sequence events
+    const pairs = pairNotes(seq.events);
+    ref.current = pairs.map((p, i) => ({
+      id: i,
+      note: p.note,
+      startTime: p.start,
+      endTime: p.end,
+    }));
+    return ref;
+  };
 
   const maxClips = Math.max(...channels.map(ch => ch.clips.length), 0);
   const rowCount = Math.max(maxClips + 1, 4); // at least 4 rows visible
@@ -108,8 +159,37 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
             {Array.from({ length: rowCount }).map((_, rowIndex) => (
               <View key={rowIndex} style={styles.clipRow}>
                 {channels.map(ch => {
+                  const seq = sequences.get(ch.id);
                   const clip = ch.clips[rowIndex];
-                  const isAddSlot = rowIndex === ch.clips.length;
+                  const hasSequence = !!seq;
+
+                  // Row 0: show recorded sequence preview if exists
+                  if (rowIndex === 0 && hasSequence) {
+                    const notesRef = getVisualNotesRef(ch.id, seq);
+                    return (
+                      <TouchableOpacity
+                        key={`${ch.id}-${rowIndex}`}
+                        style={[
+                          styles.clipCell,
+                          styles.clipFilled,
+                          {
+                            backgroundColor: ch.color + '33',
+                            borderColor: ch.color,
+                          },
+                        ]}
+                        onPress={() =>
+                          navigation.navigate('synth', { channelId: ch.id })
+                        }
+                      >
+                        <MidiVisualizer
+                          width={CELL_WIDTH - 2}
+                          height={CELL_HEIGHT - 2}
+                          notesRef={notesRef}
+                          sequence={seq}
+                        />
+                      </TouchableOpacity>
+                    );
+                  }
 
                   if (clip) {
                     return (
@@ -131,6 +211,10 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                       </TouchableOpacity>
                     );
                   }
+
+                  // "+" slot: after sequence row (if exists) or at first empty row
+                  const addRowIndex = hasSequence ? 1 : 0;
+                  const isAddSlot = rowIndex === addRowIndex + ch.clips.length;
 
                   if (isAddSlot) {
                     return (
@@ -252,6 +336,7 @@ const styles = StyleSheet.create({
   },
   clipFilled: {
     borderWidth: 1,
+    overflow: 'hidden',
   },
   clipName: {
     fontSize: 13,
