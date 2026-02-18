@@ -8,7 +8,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { StyleSheet, View } from 'react-native';
 import performance from 'react-native-performance';
-import { LoopSequence } from '../Player';
+import { LoopSequence } from '../utils/loopUtils';
 
 export type VisualNote = {
   id: number;

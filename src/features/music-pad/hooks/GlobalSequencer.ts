@@ -1,28 +1,10 @@
 import performance from 'react-native-performance';
 import NativeAudioModule from '../../../specs/NativeAudioModule';
+import type { LoopSequence, NoteEvent } from '../utils/loopUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
-
-export interface NoteEvent {
-  type: 'noteOn' | 'noteOff';
-  note: number;
-  timestamp: number; // ms relative to loop start
-  velocity: number;
-}
-
-export interface LoopSequence {
-  events: NoteEvent[];
-  duration: number;
-  durationBars: number;
-  name: string;
-  bpm: number;
-  confidence: number;
-  downbeatOffset: number;
-  timeSignature: [number, number];
-  beatIntervalMs: number;
-}
 
 /**
  * Delegate interface — each Player implements this so the sequencer can
@@ -326,6 +308,14 @@ class GlobalSequencer {
       if (s.sequence) out.push(ch);
     });
     return out;
+  }
+
+  /** Returns the BPM from the first channel that has a sequence, or null. */
+  getGlobalBPM(): number | null {
+    for (const [, s] of this.channels) {
+      if (s.sequence) return s.sequence.bpm;
+    }
+    return null;
   }
 
   /** Hard reset — useful for hot-reload / dev */

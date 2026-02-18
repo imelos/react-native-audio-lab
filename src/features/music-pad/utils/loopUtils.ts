@@ -358,6 +358,7 @@ export function detectPhase(events: NoteEvent[], bpmInfo: BPMInfo): PhaseInfo {
 export function createLoopSequence(
   events: NoteEvent[],
   name: string,
+  referenceBPM?: number,
 ): LoopSequence | null {
   if (events.length === 0) return null;
 
@@ -371,6 +372,15 @@ export function createLoopSequence(
     ...e,
     timestamp: e.timestamp - t0,
   }));
+
+  // ── Use reference BPM if provided (global BPM from existing sequence) ──
+  if (referenceBPM) {
+    return createLoopWithBPM(normalized, name, {
+      bpm: referenceBPM,
+      confidence: 1,
+      intervalMs: 60000 / referenceBPM,
+    });
+  }
 
   // ── Detect BPM ───────────────────────────────────────────────────────────
   const bpmInfo = detectBPM(normalized);

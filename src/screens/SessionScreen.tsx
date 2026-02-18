@@ -7,11 +7,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { Props } from '../navigation/Navigation';
-import GlobalSequencer, {
-  LoopSequence,
-} from '../features/music-pad/hooks/GlobalSequencer';
-import { MidiVisualizer, VisualNote } from '../features/music-pad/midi-visualiser/MidiVisualiser';
-import { pairNotes } from '../features/music-pad/utils/loopUtils';
+import GlobalSequencer from '../features/music-pad/hooks/GlobalSequencer';
+import {
+  MidiVisualizer,
+  VisualNote,
+} from '../features/music-pad/midi-visualiser/MidiVisualiser';
+import { pairNotes, LoopSequence } from '../features/music-pad/utils/loopUtils';
 
 interface Clip {
   id: string;
@@ -37,7 +38,7 @@ const CHANNEL_COLORS = [
   '#43a047',
 ];
 
-const MAX_ROWS = 8;
+// const MAX_ROWS = 8;
 
 const createDefaultChannels = (): Channel[] => [
   { id: 1, name: 'Synth 1', color: CHANNEL_COLORS[0], clips: [] },
@@ -77,7 +78,9 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   }, [sequencer, channels]);
 
   // Build visual notes refs per channel for MidiVisualizer
-  const visualNotesRefs = useRef<Map<number, React.MutableRefObject<VisualNote[]>>>(new Map());
+  const visualNotesRefs = useRef<
+    Map<number, React.MutableRefObject<VisualNote[]>>
+  >(new Map());
   const getVisualNotesRef = (channelId: number, seq: LoopSequence) => {
     let ref = visualNotesRefs.current.get(channelId);
     if (!ref) {

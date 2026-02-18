@@ -3,14 +3,17 @@ import { Dimensions } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import GlobalSequencer, {
   ChannelDelegate,
-  LoopSequence,
   TransportState,
-  NoteEvent,
 } from './GlobalSequencer';
 import { VisualNote } from '../midi-visualiser/MidiVisualiser';
 import performance from 'react-native-performance';
 import { GridHandle } from '../grid/Grid';
-import { pairNotes, QuantizeGrid } from '../utils/loopUtils';
+import {
+  pairNotes,
+  QuantizeGrid,
+  LoopSequence,
+  NoteEvent,
+} from '../utils/loopUtils';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hook
@@ -105,7 +108,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
    */
   const commitRecording = useCallback(
     (
-      createLoopFn: (events: NoteEvent[], name: string) => LoopSequence | null,
+      createLoopFn: (
+        events: NoteEvent[],
+        name: string,
+        referenceBPM?: number,
+      ) => LoopSequence | null,
     ) => {
       const events = sequencer.stopRecording(channel);
       if (events.length === 0) return;
@@ -115,7 +122,9 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         ? `${existing.name} (take ${Date.now()})`
         : `Ch ${channel} Loop`;
 
-      const loop = createLoopFn(events, name);
+      // Use global BPM from an existing sequence so all channels stay in sync
+      const globalBPM = sequencer.getGlobalBPM();
+      const loop = createLoopFn(events, name, globalBPM ?? undefined);
       if (!loop) return;
 
       sequencer.setSequence(channel, loop);
