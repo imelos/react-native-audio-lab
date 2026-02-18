@@ -595,7 +595,7 @@ type QuantizeGrid = '1/4' | '1/8' | '1/16' | '1/32';
 function quantizeEvents(
   events: NoteEvent[],
   beatMs: number,
-  grid: QuantizeGrid = '1/32',
+  grid: QuantizeGrid = '1/16',
   strength: number = 0.75,
 ): NoteEvent[] {
   const gridDivisor: Record<QuantizeGrid, number> = {
@@ -622,7 +622,24 @@ function quantizeEvents(
 
     // ── Quantize start only ────────────────────────────────────────────
     const snappedStart = Math.round(p.start / gridMs) * gridMs;
-    const newStart = p.start + (snappedStart - p.start) * startStr;
+    const offset = snappedStart - p.start;
+    const absOffset = Math.abs(offset);
+
+    // Dead zone: if already within 20% of grid step, don't move at all.
+    // This preserves notes that the player landed close to the grid —
+    // they already sound right and shifting them feels wrong.
+    let newStart: number;
+    if (absOffset < gridMs * 0.2) {
+      newStart = p.start; // leave it alone
+    } else {
+      // Apply strength, but cap maximum shift to 40% of a grid step.
+      // This prevents far-off notes from jumping unnaturally far.
+      const maxShift = gridMs * 0.4;
+      const rawShift = offset * startStr;
+      const clampedShift =
+        Math.sign(rawShift) * Math.min(Math.abs(rawShift), maxShift);
+      newStart = p.start + clampedShift;
+    }
 
     // ── Preserve original duration (this is what Ableton Note does) ────
     const newEnd = newStart + Math.max(originalDuration, minDuration);
