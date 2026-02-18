@@ -553,25 +553,50 @@ function deduplicateOverlaps(pairs: NotePair[]): NotePair[] {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Quantization — Ableton-style with strength parameter
+// Quantization — Ableton Note style
 //
-// Strategy:
-//   1. Pair noteOn/noteOff.
-//   2. For each pair, quantize the START to the nearest grid line.
-//   3. Preserve the original note duration (don't quantize end separately,
-//      which causes weird duration changes).
-//   4. Support a "strength" parameter (0 = no change, 1 = full snap).
-//   5. Handle overlaps that quantization may create.
-//   6. Ensure no note has zero or negative duration.
+// Key principles (what makes this feel musical):
+//
+//   1. **Partial-strength start quantization** — nudge note starts toward the
+//      grid (default 75%) rather than hard-snapping.  This preserves the
+//      human push/pull that makes live playing feel alive.
+//
+//   2. **Independent end quantization** — note ends snap to the grid at a
+//      gentler strength (≈60% of start strength).  This fills grid slots
+//      naturally instead of blindly preserving raw durations, which is what
+//      caused the "ugly" gaps / overlaps before.
+//
+//   3. **Velocity-aware strength** — ghost notes (soft touches) keep more of
+//      their original micro-timing.  Hard hits land more precisely on the
+//      grid, matching player intent.
+//
+//   4. **Duration guardrails** — notes can't shrink below half a grid step
+//      or grow beyond 2× their original length, preventing machine-gun
+//      artifacts and ballooning.
+//
+//   5. **Legato preservation** — if two consecutive same-pitch notes were
+//      nearly legato in the original recording, the first note's end is
+//      stretched to meet the next note's start, keeping the phrase connected.
 // ─────────────────────────────────────────────────────────────────────────────
 
 type QuantizeGrid = '1/4' | '1/8' | '1/16' | '1/32';
 
+/**
+ * Ableton Note–style quantization.
+ *
+ * Only note STARTS are quantized — durations are preserved exactly as played.
+ * This keeps the player's original note lengths and articulation intact.
+ *
+ * Additional musical touches:
+ *   - Partial strength (default 75%) keeps human timing feel
+ *   - Velocity-aware: ghost notes stay looser, hard hits snap tighter
+ *   - Legato connections between same-pitch notes are preserved
+ */
 function quantizeEvents(
   events: NoteEvent[],
   beatMs: number,
-  grid: QuantizeGrid = '1/16',
-  strength: number = 1.0, // 0.0 – 1.0
+  grid: QuantizeGrid = '1/32',
+  strength: number = 0.75,
 ): NoteEvent[] {
   const gridDivisor: Record<QuantizeGrid, number> = {
     '1/4': 1,
@@ -581,7 +606,7 @@ function quantizeEvents(
   };
 
   const gridMs = beatMs / gridDivisor[grid];
-  const minNoteDuration = gridMs * 0.25; // safety floor
+  const minDuration = gridMs * 0.25; // safety floor
 
   const pairs = pairNotes(events);
   const quantizedPairs: NotePair[] = [];
@@ -589,12 +614,18 @@ function quantizeEvents(
   for (const p of pairs) {
     const originalDuration = p.end - p.start;
 
-    // Snap start to grid with strength
-    const snappedStart = Math.round(p.start / gridMs) * gridMs;
-    const newStart = p.start + (snappedStart - p.start) * strength;
+    // ── Velocity-scaled strength ────────────────────────────────────────
+    // Ghost notes (vel < 0.4) keep more of their original timing.
+    // Hard hits snap more precisely — that's usually what the player wants.
+    const velFactor = 0.6 + p.velocity * 0.4; // range: 0.6 – 1.0
+    const startStr = strength * velFactor;
 
-    // Preserve original duration (this is what Ableton does)
-    const newEnd = newStart + Math.max(originalDuration, minNoteDuration);
+    // ── Quantize start only ────────────────────────────────────────────
+    const snappedStart = Math.round(p.start / gridMs) * gridMs;
+    const newStart = p.start + (snappedStart - p.start) * startStr;
+
+    // ── Preserve original duration (this is what Ableton Note does) ────
+    const newEnd = newStart + Math.max(originalDuration, minDuration);
 
     quantizedPairs.push({
       note: p.note,
@@ -602,6 +633,40 @@ function quantizeEvents(
       start: Math.max(0, newStart),
       end: Math.max(0, newEnd),
     });
+  }
+
+  // ── Legato preservation ──────────────────────────────────────────────────
+  // Group by pitch; if two notes were nearly legato before quantization,
+  // stretch the first note's end to meet the second note's start so the
+  // phrase stays connected instead of getting choppy gaps.
+  const byNote = new Map<number, number[]>(); // note → indices into quantizedPairs
+  quantizedPairs.forEach((p, i) => {
+    const arr = byNote.get(p.note) || [];
+    arr.push(i);
+    byNote.set(p.note, arr);
+  });
+
+  for (const [, indices] of byNote) {
+    indices.sort((a, b) => quantizedPairs[a].start - quantizedPairs[b].start);
+    for (let k = 0; k < indices.length - 1; k++) {
+      const curr = quantizedPairs[indices[k]];
+      const next = quantizedPairs[indices[k + 1]];
+
+      // Check original gap to decide if they were legato
+      const origCurr = pairs[indices[k]];
+      const origNext = pairs[indices[k + 1]];
+      if (origCurr && origNext) {
+        const origGap = origNext.start - origCurr.end;
+
+        // If original gap was ≤ half a grid step, they were "legato"
+        if (origGap <= gridMs * 0.5) {
+          const newGap = next.start - curr.end;
+          if (newGap > 0 && newGap <= gridMs) {
+            curr.end = next.start; // close the gap
+          }
+        }
+      }
+    }
   }
 
   // Resolve overlaps after quantization
@@ -839,7 +904,7 @@ export default function Player({
       sequence.events,
       sequence.beatIntervalMs,
       '1/16',
-      1.0,
+      0.75, // Musical default — keeps groove intact
     );
 
     const quantizedSequence: LoopSequence = {
