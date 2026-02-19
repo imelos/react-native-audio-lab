@@ -69,7 +69,36 @@ export function MidiVisualizer({
     return Skia.PictureRecorder();
   }, []);
 
+  // Static mode: sequence exists but no currentMusicalMs (e.g. session clip previews).
+  // Compute rects once — no RAF loop needed.
+  const isStatic = !!sequence && !currentMusicalMs;
+
   useEffect(() => {
+    if (!isStatic) return;
+
+    const pairs = pairNotes(sequence!.events);
+    cachedPairsRef.current = { seq: sequence, pairs };
+
+    const uniquePitches = Array.from(new Set(pairs.map(p => p.note))).sort(
+      (a, b) => b - a,
+    );
+    pitchIndexRef.current.clear();
+    uniquePitches.forEach((p, i) => pitchIndexRef.current.set(p, i));
+
+    const sliceH = height / Math.max(1, uniquePitches.length);
+
+    rectsData.value = pairs.map(p => {
+      const x = (p.start / sequence!.duration) * width;
+      const w = ((p.end - p.start) / sequence!.duration) * width;
+      const yIndex = pitchIndexRef.current.get(p.note) ?? 0;
+      return { x, w, y: yIndex * sliceH, h: sliceH, active: false };
+    });
+  }, [isStatic, sequence, width, height, rectsData]);
+
+  // Dynamic mode: RAF loop for live recording, playback, and overdub.
+  useEffect(() => {
+    if (isStatic) return;
+
     let raf: number;
     let lastPitchCount = 0;
 
@@ -83,8 +112,6 @@ export function MidiVisualizer({
         return;
       }
 
-      // Recompute pitch index EVERY FRAME if unique pitches changed
-      // (cheap, since Set + sort is fast for <50 notes)
       const pitchSource =
         sequence && sequence.events.length > 0
           ? sequence.events.filter(e => e.type === 'noteOn').map(e => e.note)
@@ -102,11 +129,10 @@ export function MidiVisualizer({
 
       const sliceH = height / Math.max(1, currentPitchCount);
 
-      // Use sequence if available (playback mode), else fallback (live)
       let newRects: RectData[] = [];
 
       if (sequence && sequence.events.length > 0) {
-        // Recompute pairs only when the sequence reference changes
+        // Playback mode
         if (cachedPairsRef.current.seq !== sequence) {
           cachedPairsRef.current = {
             seq: sequence,
@@ -133,8 +159,7 @@ export function MidiVisualizer({
           };
         });
       } else if (loopDuration && loopDuration > 0 && currentMusicalMs) {
-        // Overdub mode – notes have loop-relative timestamps, render against
-        // the master loop duration so they appear at the playhead position
+        // Overdub mode
         const total = loopDuration;
         const musicalNow = currentMusicalMs.value;
 
@@ -151,7 +176,7 @@ export function MidiVisualizer({
           };
         });
       } else {
-        // Live recording mode (no master loop) – auto-scale from wall clock
+        // Live recording mode – auto-scale from wall clock
         if (recordingStartRef.current == null) {
           recordingStartRef.current = Math.min(...all.map(n => n.startTime));
         }
@@ -181,6 +206,7 @@ export function MidiVisualizer({
     loop();
     return () => cancelAnimationFrame(raf);
   }, [
+    isStatic,
     width,
     height,
     notesRef,
