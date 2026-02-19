@@ -19,7 +19,7 @@ export type VisualNote = {
 interface Props {
   width: number;
   height: number;
-  notes: SharedValue<VisualNote[]>;
+  notes?: SharedValue<VisualNote[]>;
   playheadX?: SharedValue<number>;
   currentMusicalMs?: SharedValue<number>;
   sequence?: LoopSequence;
@@ -68,6 +68,8 @@ export function MidiVisualizer({
   sequence,
   loopDuration,
 }: Props) {
+  const emptyNotes = useSharedValue<VisualNote[]>([]);
+  const resolvedNotes = notes ?? emptyNotes;
   const fallbackShared = useSharedValue(0);
   const resolvedPlayheadX = playheadX ?? fallbackShared;
 
@@ -98,7 +100,7 @@ export function MidiVisualizer({
   const rectsData = useDerivedValue(() => {
     'worklet';
     const pairs = sequencePairs.value;
-    const all = notes.value;
+    const all = resolvedNotes.value;
     const nowMs = currentMusicalMs ? currentMusicalMs.value : 0;
 
     // ── Playback mode (sequence exists) ──────────────────────────────────
@@ -177,7 +179,7 @@ export function MidiVisualizer({
         active: n.endTime == null,
       };
     });
-  }, [sequencePairs, sequenceDuration, notes, currentMusicalMs, loopDuration]);
+  }, [sequencePairs, sequenceDuration, resolvedNotes, currentMusicalMs, loopDuration]);
 
   const picture = useDerivedValue(() => {
     'worklet';

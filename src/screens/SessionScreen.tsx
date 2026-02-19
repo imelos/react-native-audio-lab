@@ -6,14 +6,10 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
-import { useSharedValue } from 'react-native-reanimated';
 import { Props } from '../navigation/Navigation';
 import GlobalSequencer from '../features/music-pad/hooks/GlobalSequencer';
-import {
-  MidiVisualizer,
-  type VisualNote,
-} from '../features/music-pad/midi-visualiser/MidiVisualiser';
-import { pairNotes, LoopSequence } from '../features/music-pad/utils/loopUtils';
+import { MidiVisualizer } from '../features/music-pad/midi-visualiser/MidiVisualiser';
+import { LoopSequence } from '../features/music-pad/utils/loopUtils';
 
 interface Channel {
   id: number;
@@ -37,38 +33,6 @@ const createDefaultChannels = (): Channel[] => [
   { id: 2, name: 'Synth 2', color: CHANNEL_COLORS[1] },
   { id: 3, name: 'Synth 3', color: CHANNEL_COLORS[2] },
 ];
-
-/** Static clip preview — owns its own SharedValue for notes. */
-function ClipPreview({
-  sequence,
-  width,
-  height,
-}: {
-  sequence: LoopSequence;
-  width: number;
-  height: number;
-}) {
-  const notes = useSharedValue<VisualNote[]>([]);
-
-  useEffect(() => {
-    const pairs = pairNotes(sequence.events);
-    notes.value = pairs.map((p, i) => ({
-      id: i,
-      note: p.note,
-      startTime: p.start,
-      endTime: p.end,
-    }));
-  }, [sequence, notes]);
-
-  return (
-    <MidiVisualizer
-      width={width}
-      height={height}
-      notes={notes}
-      sequence={sequence}
-    />
-  );
-}
 
 const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   const [channels, setChannels] = useState<Channel[]>(createDefaultChannels);
@@ -175,10 +139,10 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                             navigation.navigate('synth', { channelId: ch.id })
                           }
                         >
-                          <ClipPreview
-                            sequence={seq}
+                          <MidiVisualizer
                             width={CELL_WIDTH - 2}
                             height={CELL_HEIGHT - 2}
+                            sequence={seq}
                           />
                         </TouchableOpacity>
                       );
