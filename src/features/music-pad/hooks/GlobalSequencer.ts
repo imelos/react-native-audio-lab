@@ -163,6 +163,9 @@ class GlobalSequencer {
       s.recordingLoopOffset = elapsed % this.masterDuration;
     } else {
       s.recordingLoopOffset = 0;
+      // Start the RAF loop so delegates receive onTick during recording
+      // even when no sequence is playing yet.
+      this.ensureRAF();
     }
   }
 
@@ -178,6 +181,11 @@ class GlobalSequencer {
       timestamp: e.timestamp + offset,
     }));
     s.recordedEvents = [];
+
+    // Stop RAF if nothing else needs it
+    if (this._transportState !== 'playing' && !this.isAnyChannelRecording()) {
+      this.stopRAF();
+    }
     return evts;
   }
 
@@ -205,7 +213,6 @@ class GlobalSequencer {
     if (this.masterDuration === 0) return;
 
     this._transportState = 'playing';
-    this.globalStartTime = performance.now();
 
     this.channels.forEach(s => {
       s.eventIndex = 0;
@@ -213,17 +220,12 @@ class GlobalSequencer {
     });
 
     this.emitTransport();
-    this.startRAF();
+    this.ensureRAF();
   }
 
   stop(): void {
     if (this._transportState === 'stopped') return;
     this._transportState = 'stopped';
-
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
 
     // Silence every channel
     this.channels.forEach((s, ch) => {
@@ -235,6 +237,11 @@ class GlobalSequencer {
       s.eventIndex = 0;
       s.lastLoopTime = -1;
     });
+
+    // Stop RAF if no channels are recording
+    if (!this.isAnyChannelRecording()) {
+      this.stopRAF();
+    }
 
     this.emitTransport();
   }
@@ -270,9 +277,34 @@ class GlobalSequencer {
 
   // ── The single RAF loop ──────────────────────────────────────────────────
 
+  /** Start RAF if not already running. */
+  private ensureRAF(): void {
+    if (this.rafId !== null) return;
+    this.globalStartTime = performance.now();
+    this.startRAF();
+  }
+
+  private stopRAF(): void {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+
+  private isAnyChannelRecording(): boolean {
+    for (const [, s] of this.channels) {
+      if (s.isRecording) return true;
+    }
+    return false;
+  }
+
   private startRAF(): void {
     const tick = () => {
-      if (this._transportState !== 'playing') return;
+      const isPlaying = this._transportState === 'playing';
+      const isRecording = this.isAnyChannelRecording();
+
+      // Nothing needs the loop — stop it
+      if (!isPlaying && !isRecording) return;
 
       const now = performance.now();
       const elapsed = now - this.globalStartTime;
@@ -280,8 +312,18 @@ class GlobalSequencer {
       this.channels.forEach((s, ch) => {
         const seq = s.sequence;
 
-        // Channels without a sequence still get tick updates so the
-        // playhead tracks the global position while recording
+        // ── Recording-only mode (no sequences playing yet) ────────
+        if (!isPlaying) {
+          if (s.isRecording) {
+            // Elapsed time since recording started — drives MidiVisualizer
+            const recElapsed = now - s.recordingStartTime;
+            s.delegate.onTick(recElapsed, 0);
+          }
+          return;
+        }
+
+        // ── Channels without a sequence still get tick updates so the
+        // playhead tracks the global position while recording ──────
         if (!seq) {
           if (this.masterDuration > 0) {
             const loopTime = elapsed % this.masterDuration;

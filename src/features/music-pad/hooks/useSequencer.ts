@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Dimensions } from 'react-native';
-import { useFrameCallback, useSharedValue } from 'react-native-reanimated';
+import { useSharedValue } from 'react-native-reanimated';
 import GlobalSequencer, {
   ChannelDelegate,
   TransportState,
@@ -59,7 +59,9 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
     onTick(loopTimeMs: number, loopDuration: number) {
       currentMusicalMs.value = loopTimeMs;
-      playheadX.value = (loopTimeMs / loopDuration) * windowWidth;
+      if (loopDuration > 0) {
+        playheadX.value = (loopTimeMs / loopDuration) * windowWidth;
+      }
     },
 
     onLoopWrap() {},
@@ -85,12 +87,6 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     });
   }, [channel, sequencer]);
 
-  // ── Frame callback for first-recording clock (runs on UI thread) ────────
-  // Drives currentMusicalMs when there's no master loop to provide ticks.
-  const recordingClock = useFrameCallback(frameInfo => {
-    currentMusicalMs.value = frameInfo.timeSinceFirstFrame;
-  }, false); // autostart = false
-
   // ── Internal helpers ─────────────────────────────────────────────────────
 
   const rebuildVisualNotes = useCallback(
@@ -111,23 +107,13 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const startRecording = useCallback(() => {
     sequencer.startRecording(channel);
     setIsRecording(true);
-
-    // Drive currentMusicalMs during first recording (no master loop playing).
-    // useFrameCallback runs on UI thread — no JS→UI bridge per frame.
-    const noMasterLoop =
-      sequencer.transportState !== 'playing' ||
-      sequencer.getMasterDuration() === 0;
-    if (noMasterLoop) {
-      recordingClock.setActive(true);
-    }
-  }, [channel, sequencer, recordingClock]);
+  }, [channel, sequencer]);
 
   const clearRecording = useCallback(() => {
-    recordingClock.setActive(false);
     sequencer.stopRecording(channel); // discard events
     setIsRecording(false);
     visualNotes.value = [];
-  }, [channel, sequencer, recordingClock, visualNotes]);
+  }, [channel, sequencer, visualNotes]);
 
   /**
    * Finalize a recording into a LoopSequence and assign it.
@@ -142,7 +128,6 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         minDurationMs?: number,
       ) => LoopSequence | null,
     ) => {
-      recordingClock.setActive(false);
       const events = sequencer.stopRecording(channel);
       if (events.length === 0) return;
 
@@ -173,7 +158,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         sequencer.play();
       }
     },
-    [channel, sequencer, recordingClock, rebuildVisualNotes],
+    [channel, sequencer, rebuildVisualNotes],
   );
 
   const deleteSequence = useCallback(() => {
