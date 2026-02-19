@@ -29,7 +29,7 @@ export const NOTE_REPEAT_MODES: NoteRepeatMode[] = [
 ];
 
 const DEFAULT_BPM = 120;
-const GATE = 0.8; // note plays for 80% of the interval, silent for 20%
+const GATE = 1.0; // note plays for 80% of the interval, silent for 20%
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interval calculation
