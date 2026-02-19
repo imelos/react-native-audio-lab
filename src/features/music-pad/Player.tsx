@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo } from 'react';
+import React, { useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -11,6 +11,8 @@ import { MidiVisualizer } from './midi-visualiser/MidiVisualiser';
 import Grid, { GridHandle } from './grid/Grid';
 import { createLoopSequence, quantizeEvents } from './utils/loopUtils.ts';
 import { useSequencer } from './hooks/useSequencer.ts';
+import { useNoteRepeat, NoteRepeatMode } from './hooks/useNoteRepeat';
+import NoteRepeatSelector from './NoteRepeatSelector';
 
 export interface PlayerProps {
   channel: number;
@@ -33,6 +35,11 @@ export default function Player({
 }: PlayerProps) {
   const gridRef = useRef<GridHandle>(null);
   const windowWidth = Dimensions.get('window').width;
+
+  // ── Note repeat state ──────────────────────────────────────────────────
+  const [noteRepeatMode, setNoteRepeatMode] =
+    useState<NoteRepeatMode>('off');
+  const [showRepeatSelector, setShowRepeatSelector] = useState(false);
 
   // ── Hook into the global sequencer ───────────────────────────────────────
 
@@ -59,7 +66,7 @@ export default function Player({
 
   // ── Grid note handlers ───────────────────────────────────────────────────
 
-  const handleNoteOn = useCallback(
+  const rawNoteOn = useCallback(
     (note: number, velocity: number) => {
       // Auto-start recording on first touch if nothing exists yet
       if (!isRecording && !sequence) {
@@ -75,7 +82,7 @@ export default function Player({
     [channel, isRecording, sequence, startRecording, pushNoteOn],
   );
 
-  const handleNoteOff = useCallback(
+  const rawNoteOff = useCallback(
     (note: number) => {
       NativeAudioModule.noteOff(channel, note);
       pushNoteOff(note);
@@ -83,6 +90,14 @@ export default function Player({
     },
     [channel, pushNoteOff],
   );
+
+  // Wrap with note repeat — when mode !== 'off', holding a pad re-triggers
+  // the note at the selected grid division (Ableton Note–style).
+  const { handleNoteOn, handleNoteOff } = useNoteRepeat({
+    mode: noteRepeatMode,
+    onNoteOn: rawNoteOn,
+    onNoteOff: rawNoteOff,
+  });
 
   const handleAdd = useCallback(() => {
     commitRecording(createLoopSequence);
@@ -141,19 +156,42 @@ export default function Player({
         )}
       </View>
 
-      <Grid
-        ref={gridRef}
-        gridNotes={gridNotes}
-        rows={rows}
-        cols={cols}
-        gridSize={gridSize}
-        useScale={useScale}
-        scaleNotes={scaleNotes}
-        onNoteOn={handleNoteOn}
-        onNoteOff={handleNoteOff}
-      />
+      <View style={styles.gridContainer}>
+        <Grid
+          ref={gridRef}
+          gridNotes={gridNotes}
+          rows={rows}
+          cols={cols}
+          gridSize={gridSize}
+          useScale={useScale}
+          scaleNotes={scaleNotes}
+          onNoteOn={handleNoteOn}
+          onNoteOff={handleNoteOff}
+        />
+        <NoteRepeatSelector
+          mode={noteRepeatMode}
+          visible={showRepeatSelector}
+          onSelect={setNoteRepeatMode}
+          onClose={() => setShowRepeatSelector(false)}
+        />
+      </View>
 
       <View style={styles.footer} pointerEvents="box-none">
+        {/* Note repeat toggle */}
+        <View style={styles.repeatToggleRow} pointerEvents="auto">
+          <TouchableOpacity
+            style={[
+              styles.repeatToggleButton,
+              noteRepeatMode !== 'off' && styles.repeatToggleActive,
+            ]}
+            onPress={() => setShowRepeatSelector(prev => !prev)}
+          >
+            <Text style={styles.repeatToggleText}>
+              {noteRepeatMode === 'off' ? 'RPT' : noteRepeatMode}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         {showRecordingButtons && (
           <View style={styles.footerButtons} pointerEvents="auto">
             <TouchableOpacity
@@ -204,6 +242,35 @@ export default function Player({
 }
 
 const styles = StyleSheet.create({
+  gridContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  repeatToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginBottom: 4,
+  },
+  repeatToggleButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 1,
+    borderColor: '#444',
+    minWidth: 52,
+    alignItems: 'center',
+  },
+  repeatToggleActive: {
+    backgroundColor: '#6200ee',
+    borderColor: '#6200ee',
+  },
+  repeatToggleText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
   sequenceInfo: {
     paddingHorizontal: 16,
     justifyContent: 'center',
