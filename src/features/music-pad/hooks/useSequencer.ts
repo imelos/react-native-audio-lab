@@ -33,6 +33,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
   // ── Visual notes (SharedValue — drives MidiVisualizer reactively) ─────
   const visualNotes = useSharedValue<VisualNote[]>([]);
+  // Plain JS ref mirrors visualNotes for immediate same-frame reads.
+  // SharedValue .value reads can return stale data within the same JS frame,
+  // which causes lost notes when multiple pushNoteOn calls happen in one tick
+  // (e.g. chord re-triggers in repeat mode).
+  const visualNotesRef = useRef<VisualNote[]>([]);
   const noteIdRef = useRef(0);
 
   // ── React state (only for UI that genuinely needs re-render) ───────────
@@ -92,12 +97,14 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const rebuildVisualNotes = useCallback(
     (loop: LoopSequence) => {
       const pairs = pairNotes(loop.events);
-      visualNotes.value = pairs.map(p => ({
+      const arr = pairs.map(p => ({
         id: ++noteIdRef.current,
         note: p.note,
         startTime: p.start,
         endTime: p.end,
       }));
+      visualNotesRef.current = arr;
+      visualNotes.value = arr;
     },
     [visualNotes],
   );
@@ -112,6 +119,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const clearRecording = useCallback(() => {
     sequencer.stopRecording(channel); // discard events
     setIsRecording(false);
+    visualNotesRef.current = [];
     visualNotes.value = [];
   }, [channel, sequencer, visualNotes]);
 
@@ -163,6 +171,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
   const deleteSequence = useCallback(() => {
     sequencer.setSequence(channel, null);
+    visualNotesRef.current = [];
     visualNotes.value = [];
     // If nothing left to play, stop
     if (!sequencer.hasAnySequence()) {
@@ -200,13 +209,12 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
   const pushNoteOn = useCallback(
     (note: number, velocity: number, duration?: number) => {
+      const arr = visualNotesRef.current;
       let startTime = currentMusicalMs.value;
 
-      // In repeat mode (duration provided), snap to the previous note's
-      // endTime for the same pitch so notes are perfectly back-to-back
-      // without RAF-jitter micro-gaps.
       if (duration != null) {
-        const arr = visualNotes.value;
+        // Repeat mode: snap to the previous endTime for the SAME pitch so
+        // notes are perfectly back-to-back without RAF-jitter micro-gaps.
         for (let i = arr.length - 1; i >= 0; i--) {
           if (arr[i].note === note && arr[i].endTime != null) {
             startTime = arr[i].endTime!;
@@ -231,7 +239,9 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         startTime,
         endTime: duration != null ? startTime + duration : undefined,
       };
-      visualNotes.value = [...visualNotes.value, vn];
+      const updated = [...arr, vn];
+      visualNotesRef.current = updated;
+      visualNotes.value = updated;
     },
     [channel, sequencer, currentMusicalMs, visualNotes],
   );
@@ -239,16 +249,14 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const pushNoteOff = useCallback(
     (note: number) => {
       const endTime = currentMusicalMs.value;
-      const arr = visualNotes.value;
+      const arr = visualNotesRef.current;
 
-      // Find the latest open note for this pitch to get its predicted endTime
-      // (repeat mode) or use currentMusicalMs (non-repeat mode).
+      // Find the latest note for this pitch to get its predicted endTime
+      // (repeat mode) for grid-aligned recording.
       let snappedEnd: number | undefined;
       for (let i = arr.length - 1; i >= 0; i--) {
         if (arr[i].note === note) {
           if (arr[i].endTime != null) {
-            // Repeat mode: note already has predicted endTime — use it for
-            // the recording so committed events are grid-aligned.
             snappedEnd = arr[i].endTime!;
           }
           break;
@@ -269,6 +277,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         if (arr[i].note === note && arr[i].endTime == null) {
           const updated = [...arr];
           updated[i] = { ...arr[i], endTime };
+          visualNotesRef.current = updated;
           visualNotes.value = updated;
           return;
         }

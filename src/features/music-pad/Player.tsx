@@ -11,6 +11,7 @@ import { MidiVisualizer } from './midi-visualiser/MidiVisualiser';
 import Grid, { GridHandle } from './grid/Grid';
 import { createLoopSequence, quantizeEvents } from './utils/loopUtils.ts';
 import { useSequencer } from './hooks/useSequencer.ts';
+import GlobalSequencer from './hooks/GlobalSequencer';
 import { useNoteRepeat, NoteRepeatMode } from './hooks/useNoteRepeat';
 import NoteRepeatSelector from './NoteRepeatSelector';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,10 +68,17 @@ export default function Player({
 
   // ── Grid note handlers ───────────────────────────────────────────────────
 
+  const sequencerRef = useRef(GlobalSequencer.getInstance());
+
   const rawNoteOn = useCallback(
     (note: number, velocity: number, duration?: number) => {
-      // Auto-start recording on first touch if nothing exists yet
-      if (!isRecording && !sequence) {
+      // Auto-start recording on first touch if nothing exists yet.
+      // Use the sequencer's imperative state (always current) instead of
+      // React state which may be stale in closures — otherwise the repeat
+      // clock's rapid re-triggers call startRecording() repeatedly, resetting
+      // the recording buffer and losing events.
+      const seq = sequencerRef.current;
+      if (!seq.isChannelRecording(channel) && !seq.getSequence(channel)) {
         startRecording();
       }
 
@@ -80,7 +88,7 @@ export default function Player({
       // Live visual feedback (not from sequencer, since we're recording live)
       gridRef.current?.setPadActive(note, true);
     },
-    [channel, isRecording, sequence, startRecording, pushNoteOn],
+    [channel, startRecording, pushNoteOn],
   );
 
   const rawNoteOff = useCallback(
