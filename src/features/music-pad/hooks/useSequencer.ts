@@ -32,9 +32,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const currentMusicalMs = useSharedValue(0);
   const windowWidth = Dimensions.get('window').width;
 
-  // ── Visual notes ref (mutated from RAF, read by MidiVisualizer) ────────
-  const visualNotesRef = useRef<VisualNote[]>([]);
+  // ── Visual notes (SharedValue — drives MidiVisualizer reactively) ─────
+  const visualNotes = useSharedValue<VisualNote[]>([]);
   const noteIdRef = useRef(0);
+  const recordingRafRef = useRef<number | null>(null);
+  const recordingStartTimeRef = useRef(0);
 
   // ── React state (only for UI that genuinely needs re-render) ───────────
   const [transportState, setTransportState] = useState<TransportState>(
@@ -86,17 +88,56 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     });
   }, [channel, sequencer]);
 
+  // ── Internal helpers ─────────────────────────────────────────────────────
+
+  const stopRecordingRaf = useCallback(() => {
+    if (recordingRafRef.current !== null) {
+      cancelAnimationFrame(recordingRafRef.current);
+      recordingRafRef.current = null;
+    }
+  }, []);
+
+  const rebuildVisualNotes = useCallback(
+    (loop: LoopSequence) => {
+      const pairs = pairNotes(loop.events);
+      visualNotes.value = pairs.map(p => ({
+        id: ++noteIdRef.current,
+        note: p.note,
+        startTime: p.start,
+        endTime: p.end,
+      }));
+    },
+    [visualNotes],
+  );
+
   // ── Actions exposed to the Player component ──────────────────────────────
 
   const startRecording = useCallback(() => {
     sequencer.startRecording(channel);
     setIsRecording(true);
-  }, [channel, sequencer]);
+
+    // Drive currentMusicalMs during first recording (no master loop playing).
+    // This gives MidiVisualizer a reactive time source for growing notes.
+    const noMasterLoop =
+      sequencer.transportState !== 'playing' ||
+      sequencer.getMasterDuration() === 0;
+    if (noMasterLoop) {
+      recordingStartTimeRef.current = performance.now();
+      const tick = () => {
+        currentMusicalMs.value =
+          performance.now() - recordingStartTimeRef.current;
+        recordingRafRef.current = requestAnimationFrame(tick);
+      };
+      recordingRafRef.current = requestAnimationFrame(tick);
+    }
+  }, [channel, sequencer, currentMusicalMs]);
 
   const clearRecording = useCallback(() => {
+    stopRecordingRaf();
     sequencer.stopRecording(channel); // discard events
     setIsRecording(false);
-  }, [channel, sequencer]);
+    visualNotes.value = [];
+  }, [channel, sequencer, stopRecordingRaf, visualNotes]);
 
   /**
    * Finalize a recording into a LoopSequence and assign it.
@@ -111,6 +152,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         minDurationMs?: number,
       ) => LoopSequence | null,
     ) => {
+      stopRecordingRaf();
       const events = sequencer.stopRecording(channel);
       if (events.length === 0) return;
 
@@ -141,17 +183,17 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         sequencer.play();
       }
     },
-    [channel, sequencer],
+    [channel, sequencer, stopRecordingRaf, rebuildVisualNotes],
   );
 
   const deleteSequence = useCallback(() => {
     sequencer.setSequence(channel, null);
-    visualNotesRef.current = [];
+    visualNotes.value = [];
     // If nothing left to play, stop
     if (!sequencer.hasAnySequence()) {
       sequencer.stop();
     }
-  }, [channel, sequencer]);
+  }, [channel, sequencer, visualNotes]);
 
   const quantize = useCallback(
     (
@@ -176,7 +218,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       sequencer.setSequence(channel, updated);
       rebuildVisualNotes(updated);
     },
-    [channel, sequencer],
+    [channel, sequencer, rebuildVisualNotes],
   );
 
   // ── Recording event push (called by Player on pad touch) ─────────────────
@@ -185,59 +227,32 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     (note: number, velocity: number) => {
       sequencer.pushRecordEvent(channel, 'noteOn', note, velocity);
 
-      // Use loop-relative time when master loop is playing (overdub),
-      // so visual notes appear at the playhead position, not from the left
-      const masterPlaying =
-        sequencer.transportState === 'playing' &&
-        sequencer.getMasterDuration() > 0;
-      const startTime = masterPlaying
-        ? currentMusicalMs.value
-        : performance.now();
-
       const vn: VisualNote = {
         id: ++noteIdRef.current,
         note,
-        startTime,
+        startTime: currentMusicalMs.value,
       };
-      visualNotesRef.current = [...visualNotesRef.current, vn];
+      visualNotes.value = [...visualNotes.value, vn];
     },
-    [channel, sequencer, currentMusicalMs],
+    [channel, sequencer, currentMusicalMs, visualNotes],
   );
 
   const pushNoteOff = useCallback(
     (note: number) => {
       sequencer.pushRecordEvent(channel, 'noteOff', note, 0);
 
-      const masterPlaying =
-        sequencer.transportState === 'playing' &&
-        sequencer.getMasterDuration() > 0;
-      const endTime = masterPlaying
-        ? currentMusicalMs.value
-        : performance.now();
-
-      // End live visual note
-      for (let i = visualNotesRef.current.length - 1; i >= 0; i--) {
-        const vn = visualNotesRef.current[i];
-        if (vn.note === note && vn.endTime == null) {
-          vn.endTime = endTime;
+      const endTime = currentMusicalMs.value;
+      const arr = [...visualNotes.value];
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i].note === note && arr[i].endTime == null) {
+          arr[i] = { ...arr[i], endTime };
           break;
         }
       }
+      visualNotes.value = arr;
     },
-    [channel, sequencer, currentMusicalMs],
+    [channel, sequencer, currentMusicalMs, visualNotes],
   );
-
-  // ── Internal helpers ─────────────────────────────────────────────────────
-
-  function rebuildVisualNotes(loop: LoopSequence) {
-    const pairs = pairNotes(loop.events);
-    visualNotesRef.current = pairs.map(p => ({
-      id: ++noteIdRef.current,
-      note: p.note,
-      startTime: p.start,
-      endTime: p.end,
-    }));
-  }
 
   // ── Return ───────────────────────────────────────────────────────────────
 
@@ -251,7 +266,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     // Shared values (for Reanimated-driven UI)
     playheadX,
     currentMusicalMs,
-    visualNotesRef,
+    visualNotes,
     masterDuration,
 
     // Global transport (any Player can trigger these)

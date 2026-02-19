@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Canvas, Picture, Skia } from '@shopify/react-native-skia';
 import Animated, {
   SharedValue,
@@ -7,7 +7,6 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { StyleSheet, View } from 'react-native';
-import performance from 'react-native-performance';
 import { LoopSequence, pairNotes, NotePair } from '../utils/loopUtils';
 
 export type VisualNote = {
@@ -20,7 +19,7 @@ export type VisualNote = {
 interface Props {
   width: number;
   height: number;
-  notesRef: React.MutableRefObject<VisualNote[]>;
+  notes: SharedValue<VisualNote[]>;
   playheadX?: SharedValue<number>;
   currentMusicalMs?: SharedValue<number>;
   sequence?: LoopSequence;
@@ -34,30 +33,41 @@ activePaint.setColor(Skia.Color('#3b82f6'));
 const inactivePaint = Skia.Paint();
 inactivePaint.setColor(Skia.Color('#60a5fa'));
 
-type RectData = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  active: boolean;
-};
+/**
+ * Compute unique pitches sorted descending and build a pitch → y-index map.
+ * Uses plain objects instead of Map/Set for worklet compatibility.
+ */
+function buildPitchIndex(pitchSource: number[]): {
+  pitches: number[];
+  index: Record<number, number>;
+} {
+  'worklet';
+  const seen: Record<number, boolean> = {};
+  const pitches: number[] = [];
+  for (let i = 0; i < pitchSource.length; i++) {
+    const p = pitchSource[i];
+    if (!seen[p]) {
+      seen[p] = true;
+      pitches.push(p);
+    }
+  }
+  pitches.sort((a, b) => b - a);
+  const index: Record<number, number> = {};
+  for (let i = 0; i < pitches.length; i++) {
+    index[pitches[i]] = i;
+  }
+  return { pitches, index };
+}
 
 export function MidiVisualizer({
   width,
   height,
-  notesRef,
+  notes,
   playheadX,
   currentMusicalMs,
   sequence,
   loopDuration,
 }: Props) {
-  const recordingStartRef = useRef<number | null>(null);
-  const pitchIndexRef = useRef<Map<number, number>>(new Map());
-  const cachedPairsRef = useRef<{
-    seq: LoopSequence | undefined;
-    pairs: NotePair[];
-  }>({ seq: undefined, pairs: [] });
-  const rectsData = useSharedValue<RectData[]>([]);
   const fallbackShared = useSharedValue(0);
   const resolvedPlayheadX = playheadX ?? fallbackShared;
 
@@ -69,172 +79,126 @@ export function MidiVisualizer({
     return Skia.PictureRecorder();
   }, []);
 
-  // Static mode: sequence exists but no currentMusicalMs (e.g. session clip previews).
-  // Compute rects once — no RAF loop needed.
-  const isStatic = !!sequence && !currentMusicalMs;
+  // Pre-compute sequence pairs on the JS thread when sequence changes.
+  // Stored in a SharedValue so the worklet can access them reactively.
+  const sequencePairs = useSharedValue<NotePair[]>([]);
+  const sequenceDuration = useSharedValue(0);
 
   useEffect(() => {
-    if (!isStatic) return;
+    if (sequence && sequence.events.length > 0) {
+      sequencePairs.value = pairNotes(sequence.events);
+      sequenceDuration.value = sequence.duration;
+    } else {
+      sequencePairs.value = [];
+      sequenceDuration.value = 0;
+    }
+  }, [sequence, sequencePairs, sequenceDuration]);
 
-    const pairs = pairNotes(sequence!.events);
-    cachedPairsRef.current = { seq: sequence, pairs };
+  // Compute rects reactively from SharedValue inputs — no RAF loop needed.
+  const rectsData = useDerivedValue(() => {
+    'worklet';
+    const pairs = sequencePairs.value;
+    const all = notes.value;
+    const nowMs = currentMusicalMs ? currentMusicalMs.value : 0;
 
-    const uniquePitches = Array.from(new Set(pairs.map(p => p.note))).sort(
-      (a, b) => b - a,
-    );
-    pitchIndexRef.current.clear();
-    uniquePitches.forEach((p, i) => pitchIndexRef.current.set(p, i));
+    // ── Playback mode (sequence exists) ──────────────────────────────────
+    if (pairs.length > 0) {
+      const dur = sequenceDuration.value;
+      if (dur <= 0) return [];
 
-    const sliceH = height / Math.max(1, uniquePitches.length);
+      const pitchData = buildPitchIndex(pairs.map(p => p.note));
+      const sliceH = height / Math.max(1, pitchData.pitches.length);
 
-    rectsData.value = pairs.map(p => {
-      const x = (p.start / sequence!.duration) * width;
-      const w = ((p.end - p.start) / sequence!.duration) * width;
-      const yIndex = pitchIndexRef.current.get(p.note) ?? 0;
-      return { x, w, y: yIndex * sliceH, h: sliceH, active: false };
+      // Build active-note lookup from live notes without endTime
+      const activeMap: Record<number, boolean> = {};
+      for (let i = 0; i < all.length; i++) {
+        if (all[i].endTime == null) {
+          activeMap[all[i].note] = true;
+        }
+      }
+
+      return pairs.map(p => {
+        const x = (p.start / dur) * width;
+        const w = ((p.end - p.start) / dur) * width;
+        const yIdx = pitchData.index[p.note] ?? 0;
+        return {
+          x,
+          w,
+          y: yIdx * sliceH,
+          h: sliceH,
+          active: !!activeMap[p.note],
+        };
+      });
+    }
+
+    // No notes at all → empty
+    if (all.length === 0) return [];
+
+    // ── Overdub mode (loopDuration provided) ─────────────────────────────
+    if (loopDuration && loopDuration > 0) {
+      const total = loopDuration;
+      const pitchData = buildPitchIndex(all.map(n => n.note));
+      const sliceH = height / Math.max(1, pitchData.pitches.length);
+
+      return all.map(n => {
+        const noteEnd = n.endTime ?? nowMs;
+        const yIdx = pitchData.index[n.note] ?? 0;
+        return {
+          x: (n.startTime / total) * width,
+          w: (Math.max(0, noteEnd - n.startTime) / total) * width,
+          y: yIdx * sliceH,
+          h: sliceH,
+          active: n.endTime == null,
+        };
+      });
+    }
+
+    // ── Live recording mode (auto-scaling timeline) ──────────────────────
+    let minStart = all[0].startTime;
+    let maxEnd = all[0].endTime ?? nowMs;
+    for (let i = 1; i < all.length; i++) {
+      if (all[i].startTime < minStart) minStart = all[i].startTime;
+      const e = all[i].endTime ?? nowMs;
+      if (e > maxEnd) maxEnd = e;
+    }
+    const total = Math.max(1, maxEnd - minStart);
+
+    const pitchData = buildPitchIndex(all.map(n => n.note));
+    const sliceH = height / Math.max(1, pitchData.pitches.length);
+
+    return all.map(n => {
+      const noteEnd = n.endTime ?? nowMs;
+      const yIdx = pitchData.index[n.note] ?? 0;
+      return {
+        x: ((n.startTime - minStart) / total) * width,
+        w: ((noteEnd - n.startTime) / total) * width,
+        y: yIdx * sliceH,
+        h: sliceH,
+        active: n.endTime == null,
+      };
     });
-  }, [isStatic, sequence, width, height, rectsData]);
-
-  // Dynamic mode: RAF loop for live recording, playback, and overdub.
-  useEffect(() => {
-    if (isStatic) return;
-
-    let raf: number;
-    let lastPitchCount = 0;
-
-    const loop = () => {
-      const now = performance.now();
-      const all = notesRef.current;
-
-      if (all.length === 0 && !(sequence && sequence.events.length > 0)) {
-        rectsData.value = [];
-        raf = requestAnimationFrame(loop);
-        return;
-      }
-
-      const pitchSource =
-        sequence && sequence.events.length > 0
-          ? sequence.events.filter(e => e.type === 'noteOn').map(e => e.note)
-          : all.map(n => n.note);
-      const uniquePitches = Array.from(new Set(pitchSource)).sort(
-        (a, b) => b - a,
-      );
-      const currentPitchCount = uniquePitches.length;
-
-      if (currentPitchCount !== lastPitchCount) {
-        pitchIndexRef.current.clear();
-        uniquePitches.forEach((p, i) => pitchIndexRef.current.set(p, i));
-        lastPitchCount = currentPitchCount;
-      }
-
-      const sliceH = height / Math.max(1, currentPitchCount);
-
-      let newRects: RectData[] = [];
-
-      if (sequence && sequence.events.length > 0) {
-        // Playback mode
-        if (cachedPairsRef.current.seq !== sequence) {
-          cachedPairsRef.current = {
-            seq: sequence,
-            pairs: pairNotes(sequence.events),
-          };
-        }
-        const pairs = cachedPairsRef.current.pairs;
-
-        const activeNotes = new Set(
-          all.filter(n => !n.endTime).map(n => n.note),
-        );
-
-        newRects = pairs.map(p => {
-          const x = (p.start / sequence.duration) * width;
-          const w = ((p.end - p.start) / sequence.duration) * width;
-          const yIndex = pitchIndexRef.current.get(p.note) ?? 0;
-
-          return {
-            x,
-            w,
-            y: yIndex * sliceH,
-            h: sliceH,
-            active: activeNotes.has(p.note),
-          };
-        });
-      } else if (loopDuration && loopDuration > 0 && currentMusicalMs) {
-        // Overdub mode
-        const total = loopDuration;
-        const musicalNow = currentMusicalMs.value;
-
-        newRects = all.map(n => {
-          const noteEnd = n.endTime ?? musicalNow;
-          const yIndex = pitchIndexRef.current.get(n.note) ?? 0;
-
-          return {
-            x: (n.startTime / total) * width,
-            w: (Math.max(0, noteEnd - n.startTime) / total) * width,
-            y: yIndex * sliceH,
-            h: sliceH,
-            active: !n.endTime,
-          };
-        });
-      } else {
-        // Live recording mode – auto-scale from wall clock
-        if (recordingStartRef.current == null) {
-          recordingStartRef.current = Math.min(...all.map(n => n.startTime));
-        }
-
-        const visualStart = recordingStartRef.current;
-        const visualEnd = Math.max(...all.map(n => n.endTime ?? now));
-        const total = Math.max(1, visualEnd - visualStart);
-
-        newRects = all.map(n => {
-          const noteEnd = n.endTime ?? now;
-          const yIndex = pitchIndexRef.current.get(n.note) ?? 0;
-
-          return {
-            x: ((n.startTime - visualStart) / total) * width,
-            w: ((noteEnd - n.startTime) / total) * width,
-            y: yIndex * sliceH,
-            h: sliceH,
-            active: !n.endTime,
-          };
-        });
-      }
-
-      rectsData.value = newRects;
-      raf = requestAnimationFrame(loop);
-    };
-
-    loop();
-    return () => cancelAnimationFrame(raf);
-  }, [
-    isStatic,
-    width,
-    height,
-    notesRef,
-    sequence,
-    currentMusicalMs,
-    rectsData,
-    loopDuration,
-  ]);
+  }, [sequencePairs, sequenceDuration, notes, currentMusicalMs, loopDuration]);
 
   const picture = useDerivedValue(() => {
     'worklet';
     const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, width, height));
 
-    rectsData.value.forEach(r => {
+    const rects = rectsData.value;
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
       if (r.x + r.w > 0 && r.x < width) {
-        // simple clip to avoid off-screen draws
         canvas.drawRect(
           Skia.XYWHRect(r.x, r.y, r.w, r.h),
           r.active ? activePaint : inactivePaint,
         );
       }
-    });
+    }
 
     return recorder.finishRecordingAsPicture();
   }, [rectsData]);
 
   return (
-    <>
+    <View style={{ width, height }}>
       <Canvas style={{ width, height }}>
         <Picture picture={picture} />
       </Canvas>
@@ -243,7 +207,7 @@ export function MidiVisualizer({
           <Animated.View style={[styles.playhead, playheadAnimatedStyle]} />
         </View>
       )}
-    </>
+    </View>
   );
 }
 

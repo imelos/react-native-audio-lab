@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,11 +6,12 @@ import {
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSharedValue } from 'react-native-reanimated';
 import { Props } from '../navigation/Navigation';
 import GlobalSequencer from '../features/music-pad/hooks/GlobalSequencer';
 import {
   MidiVisualizer,
-  VisualNote,
+  type VisualNote,
 } from '../features/music-pad/midi-visualiser/MidiVisualiser';
 import { pairNotes, LoopSequence } from '../features/music-pad/utils/loopUtils';
 
@@ -36,6 +37,38 @@ const createDefaultChannels = (): Channel[] => [
   { id: 2, name: 'Synth 2', color: CHANNEL_COLORS[1] },
   { id: 3, name: 'Synth 3', color: CHANNEL_COLORS[2] },
 ];
+
+/** Static clip preview — owns its own SharedValue for notes. */
+function ClipPreview({
+  sequence,
+  width,
+  height,
+}: {
+  sequence: LoopSequence;
+  width: number;
+  height: number;
+}) {
+  const notes = useSharedValue<VisualNote[]>([]);
+
+  useEffect(() => {
+    const pairs = pairNotes(sequence.events);
+    notes.value = pairs.map((p, i) => ({
+      id: i,
+      note: p.note,
+      startTime: p.start,
+      endTime: p.end,
+    }));
+  }, [sequence, notes]);
+
+  return (
+    <MidiVisualizer
+      width={width}
+      height={height}
+      notes={notes}
+      sequence={sequence}
+    />
+  );
+}
 
 const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   const [channels, setChannels] = useState<Channel[]>(createDefaultChannels);
@@ -67,34 +100,6 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
       });
     });
   }, [sequencer]);
-
-  // Cache visual notes refs per channel, only rebuild when sequence reference changes
-  const visualNotesCache = useRef<
-    Map<
-      number,
-      { seq: LoopSequence; ref: React.MutableRefObject<VisualNote[]> }
-    >
-  >(new Map());
-
-  const getVisualNotesRef = (
-    channelId: number,
-    seq: LoopSequence,
-  ): React.MutableRefObject<VisualNote[]> => {
-    const cached = visualNotesCache.current.get(channelId);
-    if (cached && cached.seq === seq) return cached.ref;
-
-    const pairs = pairNotes(seq.events);
-    const ref = {
-      current: pairs.map((p, i) => ({
-        id: i,
-        note: p.note,
-        startTime: p.start,
-        endTime: p.end,
-      })),
-    };
-    visualNotesCache.current.set(channelId, { seq, ref });
-    return ref;
-  };
 
   const addChannel = () => {
     const id = nextChannelId;
@@ -155,7 +160,6 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                   // Row 0: show recorded sequence preview or "+" to add
                   if (rowIndex === 0) {
                     if (seq) {
-                      const notesRef = getVisualNotesRef(ch.id, seq);
                       return (
                         <TouchableOpacity
                           key={`${ch.id}-${rowIndex}`}
@@ -171,11 +175,10 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                             navigation.navigate('synth', { channelId: ch.id })
                           }
                         >
-                          <MidiVisualizer
+                          <ClipPreview
+                            sequence={seq}
                             width={CELL_WIDTH - 2}
                             height={CELL_HEIGHT - 2}
-                            notesRef={notesRef}
-                            sequence={seq}
                           />
                         </TouchableOpacity>
                       );

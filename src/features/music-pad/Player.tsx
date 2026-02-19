@@ -43,7 +43,7 @@ export default function Player({
     isPlaying,
     playheadX,
     currentMusicalMs,
-    visualNotesRef,
+    visualNotes,
     masterDuration,
     // play,
     // stop,
@@ -97,7 +97,7 @@ export default function Player({
       <MidiVisualizer
         height={30}
         width={windowWidth}
-        notesRef={visualNotesRef}
+        notes={visualNotes}
         currentMusicalMs={currentMusicalMs}
         playheadX={playheadX}
         sequence={sequence ?? undefined}
@@ -111,7 +111,7 @@ export default function Player({
       currentMusicalMs,
       playheadX,
       windowWidth,
-      visualNotesRef,
+      visualNotes,
       masterDuration,
     ],
   );
