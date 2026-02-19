@@ -189,19 +189,17 @@ export default function Player({
         pointerEvents="box-none"
       >
         {/* Note repeat toggle */}
-        <View style={styles.repeatToggleRow} pointerEvents="auto">
-          <TouchableOpacity
-            style={[
-              styles.repeatToggleButton,
-              noteRepeatMode !== 'off' && styles.repeatToggleActive,
-            ]}
-            onPress={() => setShowRepeatSelector(prev => !prev)}
-          >
-            <Text style={styles.repeatToggleText}>
-              {noteRepeatMode === 'off' ? 'RPT' : noteRepeatMode}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[
+            styles.repeatToggleButton,
+            noteRepeatMode !== 'off' && styles.repeatToggleActive,
+          ]}
+          onPress={() => setShowRepeatSelector(prev => !prev)}
+        >
+          <Text style={styles.repeatToggleText}>
+            {noteRepeatMode === 'off' ? 'RPT' : noteRepeatMode}
+          </Text>
+        </TouchableOpacity>
 
         {showRecordingButtons && (
           <View style={styles.footerButtons} pointerEvents="auto">
@@ -257,12 +255,6 @@ const styles = StyleSheet.create({
     flex: 1,
     position: 'relative',
   },
-  repeatToggleRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    marginBottom: 4,
-    position: 'absolute',
-  },
   repeatToggleButton: {
     paddingHorizontal: 12,
     paddingVertical: 4,
@@ -272,6 +264,8 @@ const styles = StyleSheet.create({
     borderColor: '#444',
     minWidth: 52,
     alignItems: 'center',
+    position: 'absolute',
+    left: 16,
   },
   repeatToggleActive: {
     backgroundColor: '#6200ee',
@@ -279,7 +273,7 @@ const styles = StyleSheet.create({
   },
   repeatToggleText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
@@ -301,17 +295,12 @@ const styles = StyleSheet.create({
     height: 40,
     paddingHorizontal: 16,
     justifyContent: 'center',
-    // backgroundColor: 'rgba(44, 60, 167, 0.7)',
   },
   footerButtons: {
     alignItems: 'center',
     gap: 12,
     flexDirection: 'row',
     justifyContent: 'center',
-  },
-  footerButtonRow: {
-    // flexDirection: 'row',
-    // gap: 12,
   },
   footerButton: {
     paddingHorizontal: 20,
