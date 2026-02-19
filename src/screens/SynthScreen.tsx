@@ -11,6 +11,7 @@ import NativeAudioModule from '../specs/NativeAudioModule';
 import Slider from '@react-native-community/slider';
 import Player from '../features/music-pad/Player';
 import { Props } from '../navigation/Navigation';
+import { useHeaderHeight } from '@react-navigation/elements';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -119,6 +120,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
     : Array.from({ length: totalPads }, (_, i) => rootNote + i);
 
   const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
+
+  const headerHeight = useHeaderHeight();
 
   // Initialize audio engine on mount
   useEffect(() => {
@@ -645,64 +648,59 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.contentContainer}>
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'instrument' && styles.activeTab]}
-            onPress={() => setActiveTab('instrument')}
+    <View style={[styles.container, { paddingTop: headerHeight }]}>
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'instrument' && styles.activeTab]}
+          onPress={() => setActiveTab('instrument')}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'instrument' && styles.activeTabText,
+            ]}
           >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'instrument' && styles.activeTabText,
-              ]}
-            >
-              Instrument
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'filter' && styles.activeTab]}
-            onPress={() => setActiveTab('filter')}
+            Instrument
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'filter' && styles.activeTab]}
+          onPress={() => setActiveTab('filter')}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'filter' && styles.activeTabText,
+            ]}
           >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'filter' && styles.activeTabText,
-              ]}
-            >
-              Filter
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'fx' && styles.activeTab]}
-            onPress={() => setActiveTab('fx')}
+            Filter
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'fx' && styles.activeTab]}
+          onPress={() => setActiveTab('fx')}
+        >
+          <Text
+            style={[styles.tabText, activeTab === 'fx' && styles.activeTabText]}
           >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'fx' && styles.activeTabText,
-              ]}
-            >
-              FX
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Tab Content */}
-        <View style={styles.tabContentContainer}>{renderTabContent()}</View>
-
-        {/* Player: MidiVisualizer + Grid + Recording/Playback */}
-        <Player
-          channel={channelId}
-          gridNotes={gridNotes}
-          rows={rows}
-          cols={cols}
-          gridSize={gridSize}
-          useScale={useScale}
-          scaleNotes={scaleNotes}
-        />
+            FX
+          </Text>
+        </TouchableOpacity>
       </View>
+
+      {/* Tab Content */}
+      <View style={styles.tabContentContainer}>{renderTabContent()}</View>
+
+      {/* Player: MidiVisualizer + Grid + Recording/Playback */}
+      <Player
+        channel={channelId}
+        gridNotes={gridNotes}
+        rows={rows}
+        cols={cols}
+        gridSize={gridSize}
+        useScale={useScale}
+        scaleNotes={scaleNotes}
+      />
     </View>
   );
 };
@@ -713,10 +711,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
-  },
-  contentContainer: {
-    flex: 1,
-    paddingTop: 60,
   },
   title: {
     fontSize: 36,

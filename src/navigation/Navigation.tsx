@@ -9,6 +9,7 @@ import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
 
 import {
   createNativeStackNavigator,
+  NativeStackNavigationOptions,
   NativeStackNavigationProp,
 } from '@react-navigation/native-stack';
 
@@ -44,13 +45,13 @@ export type Props<T extends keyof RootStackParamList> = {
   navigation: ScreenNavigationProp<T>;
 };
 
-const headerWithoutTitleOptions = {
-  title: '',
+const headerWithoutTitleOptions: NativeStackNavigationOptions = {
+  // title: '',
   headerShown: true,
   headerTintColor: '#fff',
-  headerBackTitleVisible: false,
+  // headerBackTitleVisible: false,
   headerTransparent: true,
-  headerStyle: {backgroundColor: 'transparent'},
+  headerStyle: { backgroundColor: 'transparent' },
 };
 
 export default function Navigation(): JSX.Element {
@@ -66,7 +67,7 @@ export default function Navigation(): JSX.Element {
           <RootStack.Screen
             name="synth"
             component={SynthScreen}
-            // options={headerWithoutTitleOptions}
+            options={headerWithoutTitleOptions}
           />
         </RootStack.Group>
       </RootStack.Navigator>
