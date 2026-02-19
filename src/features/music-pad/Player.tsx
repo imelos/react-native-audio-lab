@@ -84,8 +84,6 @@ export default function Player({
     [channel, pushNoteOff],
   );
 
-  // ── Actions ──────────────────────────────────────────────────────────────
-
   const handleAdd = useCallback(() => {
     commitRecording(createLoopSequence);
   }, [commitRecording]);
@@ -94,12 +92,10 @@ export default function Player({
     quantize(quantizeEvents);
   }, [quantize]);
 
-  // ── Memoized visualizer ──────────────────────────────────────────────────
-
   const MemoizedVisualizer = useMemo(
     () => (
       <MidiVisualizer
-        height={50}
+        height={30}
         width={windowWidth}
         notesRef={visualNotesRef}
         currentMusicalMs={currentMusicalMs}
@@ -130,23 +126,20 @@ export default function Player({
     };
   }, [sequence]);
 
-  // ── Render ───────────────────────────────────────────────────────────────
-
   const showRecordingButtons = isRecording;
   const showTransportButtons = !!sequence && !isRecording;
 
   return (
     <>
-      <View style={styles.midiVisualiser}>{MemoizedVisualizer}</View>
-
-      {sequenceInfo && (
-        <View style={styles.sequenceInfo}>
+      {MemoizedVisualizer}
+      <View style={styles.sequenceInfo}>
+        {sequenceInfo && (
           <Text style={styles.sequenceInfoText}>
             BPM: {sequenceInfo.bpm} | Bars: {sequenceInfo.bars} | Duration:{' '}
             {sequenceInfo.duration}s | Confidence: {sequenceInfo.confidence}%
           </Text>
-        </View>
-      )}
+        )}
+      </View>
 
       <Grid
         ref={gridRef}
@@ -213,17 +206,15 @@ export default function Player({
 }
 
 const styles = StyleSheet.create({
-  midiVisualiser: {
-    height: 50,
-  },
   sequenceInfo: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(44, 60, 167, 0.7)',
+    height: 20,
   },
   sequenceInfoText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 12,
     fontFamily: 'monospace',
   },
   footer: {
