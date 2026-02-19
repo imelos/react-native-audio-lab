@@ -195,8 +195,10 @@ export function useNoteRepeat({
 
       heldNotesRef.current.set(note, velocity);
 
-      // Only play immediately + start clock if the clock is NOT running.
-      if (rafIdRef.current === null) {
+      const clockRunning = rafIdRef.current !== null;
+
+      if (!clockRunning) {
+        // First note — compute interval, play immediately, start clock
         const bpm = getBpm();
         const intervalMs = getIntervalMs(modeRef.current, bpm);
         intervalMsRef.current = intervalMs;
@@ -208,8 +210,17 @@ export function useNoteRepeat({
         );
         soundingNotesRef.current.add(note);
         startClock();
+      } else {
+        // Clock already running — play immediately with duration trimmed
+        // to the next grid boundary (like Ableton Note: initial trigger is
+        // always instant, only repeats are grid-aligned).
+        const remaining = nextTriggerRef.current - performance.now();
+        const dur =
+          remaining > 0 ? remaining : intervalMsRef.current;
+
+        onNoteOnRef.current(note, velocity, dur);
+        soundingNotesRef.current.add(note);
       }
-      // Otherwise: queued — fires on the next grid tick.
     },
     [startClock, getBpm],
   );

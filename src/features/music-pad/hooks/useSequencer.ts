@@ -200,8 +200,6 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
   const pushNoteOn = useCallback(
     (note: number, velocity: number, duration?: number) => {
-      sequencer.pushRecordEvent(channel, 'noteOn', note, velocity);
-
       let startTime = currentMusicalMs.value;
 
       // In repeat mode (duration provided), snap to the previous note's
@@ -217,6 +215,16 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         }
       }
 
+      // Pass the snapped startTime to the recording so committed sequences
+      // are grid-aligned (no wall-clock RAF jitter).
+      sequencer.pushRecordEvent(
+        channel,
+        'noteOn',
+        note,
+        velocity,
+        duration != null ? startTime : undefined,
+      );
+
       const vn: VisualNote = {
         id: ++noteIdRef.current,
         note,
@@ -230,17 +238,41 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
   const pushNoteOff = useCallback(
     (note: number) => {
-      sequencer.pushRecordEvent(channel, 'noteOff', note, 0);
-
       const endTime = currentMusicalMs.value;
-      const arr = [...visualNotes.value];
+      const arr = visualNotes.value;
+
+      // Find the latest open note for this pitch to get its predicted endTime
+      // (repeat mode) or use currentMusicalMs (non-repeat mode).
+      let snappedEnd: number | undefined;
       for (let i = arr.length - 1; i >= 0; i--) {
-        if (arr[i].note === note && arr[i].endTime == null) {
-          arr[i] = { ...arr[i], endTime };
+        if (arr[i].note === note) {
+          if (arr[i].endTime != null) {
+            // Repeat mode: note already has predicted endTime — use it for
+            // the recording so committed events are grid-aligned.
+            snappedEnd = arr[i].endTime!;
+          }
           break;
         }
       }
-      visualNotes.value = arr;
+
+      sequencer.pushRecordEvent(
+        channel,
+        'noteOff',
+        note,
+        0,
+        snappedEnd,
+      );
+
+      // Close the visual note (only needed for non-repeat mode where
+      // endTime is not predicted).
+      for (let i = arr.length - 1; i >= 0; i--) {
+        if (arr[i].note === note && arr[i].endTime == null) {
+          const updated = [...arr];
+          updated[i] = { ...arr[i], endTime };
+          visualNotes.value = updated;
+          return;
+        }
+      }
     },
     [channel, sequencer, currentMusicalMs, visualNotes],
   );

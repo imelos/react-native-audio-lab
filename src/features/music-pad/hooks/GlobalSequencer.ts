@@ -193,16 +193,20 @@ class GlobalSequencer {
     return this.channels.get(channel)?.isRecording ?? false;
   }
 
-  /** Called by the Player when the user touches a pad during recording. */
+  /** Called by the Player when the user touches a pad during recording.
+   *  An optional `timestamp` (ms since recording started) overrides the
+   *  auto-computed wall-clock time — used by note-repeat to record
+   *  grid-aligned events without RAF jitter. */
   pushRecordEvent(
     channel: number,
     type: 'noteOn' | 'noteOff',
     note: number,
     velocity = 0.85,
+    timestamp?: number,
   ): void {
     const s = this.channels.get(channel);
     if (!s?.isRecording) return;
-    const ts = performance.now() - s.recordingStartTime;
+    const ts = timestamp ?? performance.now() - s.recordingStartTime;
     s.recordedEvents.push({ type, note, timestamp: ts, velocity });
   }
 
