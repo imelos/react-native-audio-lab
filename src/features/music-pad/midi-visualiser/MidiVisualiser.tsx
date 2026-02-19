@@ -81,35 +81,42 @@ export function MidiVisualizer({
     return Skia.PictureRecorder();
   }, []);
 
-  // Pre-compute sequence pairs on the JS thread when sequence changes.
-  // Stored in a SharedValue so the worklet can access them reactively.
-  const sequencePairs = useSharedValue<NotePair[]>([]);
-  const sequenceDuration = useSharedValue(0);
+  // Pre-compute sequence pairs synchronously when sequence changes.
+  const pairs = useMemo(
+    () => (sequence ? pairNotes(sequence.events) : []),
+    [sequence],
+  );
+  const sequencePairs = useSharedValue<NotePair[]>(pairs);
+  const sequenceDuration = useSharedValue(sequence?.duration ?? 0);
 
   useEffect(() => {
-    if (sequence && sequence.events.length > 0) {
-      sequencePairs.value = pairNotes(sequence.events);
-      sequenceDuration.value = sequence.duration;
-    } else {
-      sequencePairs.value = [];
-      sequenceDuration.value = 0;
-    }
-  }, [sequence, sequencePairs, sequenceDuration]);
+    sequencePairs.value = pairs;
+    sequenceDuration.value = sequence?.duration ?? 0;
+  }, [pairs, sequence, sequencePairs, sequenceDuration]);
+
+  // Pitch layout — only recomputes when notes or sequence pairs change,
+  // NOT on every currentMusicalMs tick.
+  const pitchLayout = useDerivedValue(() => {
+    'worklet';
+    const sp = sequencePairs.value;
+    const all = resolvedNotes.value;
+    const source = sp.length > 0 ? sp.map(p => p.note) : all.map(n => n.note);
+    return buildPitchIndex(source);
+  }, [sequencePairs, resolvedNotes]);
 
   // Compute rects reactively from SharedValue inputs — no RAF loop needed.
   const rectsData = useDerivedValue(() => {
     'worklet';
-    const pairs = sequencePairs.value;
+    const sp = sequencePairs.value;
     const all = resolvedNotes.value;
     const nowMs = currentMusicalMs ? currentMusicalMs.value : 0;
+    const pl = pitchLayout.value;
+    const sliceH = height / Math.max(1, pl.pitches.length);
 
     // ── Playback mode (sequence exists) ──────────────────────────────────
-    if (pairs.length > 0) {
+    if (sp.length > 0) {
       const dur = sequenceDuration.value;
       if (dur <= 0) return [];
-
-      const pitchData = buildPitchIndex(pairs.map(p => p.note));
-      const sliceH = height / Math.max(1, pitchData.pitches.length);
 
       // Build active-note lookup from live notes without endTime
       const activeMap: Record<number, boolean> = {};
@@ -119,10 +126,10 @@ export function MidiVisualizer({
         }
       }
 
-      return pairs.map(p => {
+      return sp.map(p => {
         const x = (p.start / dur) * width;
         const w = ((p.end - p.start) / dur) * width;
-        const yIdx = pitchData.index[p.note] ?? 0;
+        const yIdx = pl.index[p.note] ?? 0;
         return {
           x,
           w,
@@ -139,12 +146,10 @@ export function MidiVisualizer({
     // ── Overdub mode (loopDuration provided) ─────────────────────────────
     if (loopDuration && loopDuration > 0) {
       const total = loopDuration;
-      const pitchData = buildPitchIndex(all.map(n => n.note));
-      const sliceH = height / Math.max(1, pitchData.pitches.length);
 
       return all.map(n => {
         const noteEnd = n.endTime ?? nowMs;
-        const yIdx = pitchData.index[n.note] ?? 0;
+        const yIdx = pl.index[n.note] ?? 0;
         return {
           x: (n.startTime / total) * width,
           w: (Math.max(0, noteEnd - n.startTime) / total) * width,
@@ -165,12 +170,9 @@ export function MidiVisualizer({
     }
     const total = Math.max(1, maxEnd - minStart);
 
-    const pitchData = buildPitchIndex(all.map(n => n.note));
-    const sliceH = height / Math.max(1, pitchData.pitches.length);
-
     return all.map(n => {
       const noteEnd = n.endTime ?? nowMs;
-      const yIdx = pitchData.index[n.note] ?? 0;
+      const yIdx = pl.index[n.note] ?? 0;
       return {
         x: ((n.startTime - minStart) / total) * width,
         w: ((noteEnd - n.startTime) / total) * width,
@@ -179,7 +181,14 @@ export function MidiVisualizer({
         active: n.endTime == null,
       };
     });
-  }, [sequencePairs, sequenceDuration, resolvedNotes, currentMusicalMs, loopDuration]);
+  }, [
+    sequencePairs,
+    sequenceDuration,
+    resolvedNotes,
+    currentMusicalMs,
+    pitchLayout,
+    loopDuration,
+  ]);
 
   const picture = useDerivedValue(() => {
     'worklet';

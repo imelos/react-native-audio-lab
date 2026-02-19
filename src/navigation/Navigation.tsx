@@ -66,7 +66,7 @@ export default function Navigation(): JSX.Element {
           <RootStack.Screen
             name="synth"
             component={SynthScreen}
-            options={headerWithoutTitleOptions}
+            // options={headerWithoutTitleOptions}
           />
         </RootStack.Group>
       </RootStack.Navigator>

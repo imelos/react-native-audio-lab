@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Dimensions } from 'react-native';
-import { useSharedValue } from 'react-native-reanimated';
+import { useFrameCallback, useSharedValue } from 'react-native-reanimated';
 import GlobalSequencer, {
   ChannelDelegate,
   TransportState,
 } from './GlobalSequencer';
 import { VisualNote } from '../midi-visualiser/MidiVisualiser';
-import performance from 'react-native-performance';
 import { GridHandle } from '../grid/Grid';
 import {
   pairNotes,
@@ -35,8 +34,6 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   // ── Visual notes (SharedValue — drives MidiVisualizer reactively) ─────
   const visualNotes = useSharedValue<VisualNote[]>([]);
   const noteIdRef = useRef(0);
-  const recordingRafRef = useRef<number | null>(null);
-  const recordingStartTimeRef = useRef(0);
 
   // ── React state (only for UI that genuinely needs re-render) ───────────
   const [transportState, setTransportState] = useState<TransportState>(
@@ -88,14 +85,13 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     });
   }, [channel, sequencer]);
 
-  // ── Internal helpers ─────────────────────────────────────────────────────
+  // ── Frame callback for first-recording clock (runs on UI thread) ────────
+  // Drives currentMusicalMs when there's no master loop to provide ticks.
+  const recordingClock = useFrameCallback(frameInfo => {
+    currentMusicalMs.value = frameInfo.timeSinceFirstFrame;
+  }, false); // autostart = false
 
-  const stopRecordingRaf = useCallback(() => {
-    if (recordingRafRef.current !== null) {
-      cancelAnimationFrame(recordingRafRef.current);
-      recordingRafRef.current = null;
-    }
-  }, []);
+  // ── Internal helpers ─────────────────────────────────────────────────────
 
   const rebuildVisualNotes = useCallback(
     (loop: LoopSequence) => {
@@ -117,27 +113,21 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     setIsRecording(true);
 
     // Drive currentMusicalMs during first recording (no master loop playing).
-    // This gives MidiVisualizer a reactive time source for growing notes.
+    // useFrameCallback runs on UI thread — no JS→UI bridge per frame.
     const noMasterLoop =
       sequencer.transportState !== 'playing' ||
       sequencer.getMasterDuration() === 0;
     if (noMasterLoop) {
-      recordingStartTimeRef.current = performance.now();
-      const tick = () => {
-        currentMusicalMs.value =
-          performance.now() - recordingStartTimeRef.current;
-        recordingRafRef.current = requestAnimationFrame(tick);
-      };
-      recordingRafRef.current = requestAnimationFrame(tick);
+      recordingClock.setActive(true);
     }
-  }, [channel, sequencer, currentMusicalMs]);
+  }, [channel, sequencer, recordingClock]);
 
   const clearRecording = useCallback(() => {
-    stopRecordingRaf();
+    recordingClock.setActive(false);
     sequencer.stopRecording(channel); // discard events
     setIsRecording(false);
     visualNotes.value = [];
-  }, [channel, sequencer, stopRecordingRaf, visualNotes]);
+  }, [channel, sequencer, recordingClock, visualNotes]);
 
   /**
    * Finalize a recording into a LoopSequence and assign it.
@@ -152,7 +142,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         minDurationMs?: number,
       ) => LoopSequence | null,
     ) => {
-      stopRecordingRaf();
+      recordingClock.setActive(false);
       const events = sequencer.stopRecording(channel);
       if (events.length === 0) return;
 
@@ -183,7 +173,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         sequencer.play();
       }
     },
-    [channel, sequencer, stopRecordingRaf, rebuildVisualNotes],
+    [channel, sequencer, recordingClock, rebuildVisualNotes],
   );
 
   const deleteSequence = useCallback(() => {
