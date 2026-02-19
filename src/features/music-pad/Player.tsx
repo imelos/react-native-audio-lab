@@ -68,14 +68,14 @@ export default function Player({
   // ── Grid note handlers ───────────────────────────────────────────────────
 
   const rawNoteOn = useCallback(
-    (note: number, velocity: number) => {
+    (note: number, velocity: number, duration?: number) => {
       // Auto-start recording on first touch if nothing exists yet
       if (!isRecording && !sequence) {
         startRecording();
       }
 
       NativeAudioModule.noteOn(channel, note, velocity);
-      pushNoteOn(note, velocity);
+      pushNoteOn(note, velocity, duration);
 
       // Live visual feedback (not from sequencer, since we're recording live)
       gridRef.current?.setPadActive(note, true);

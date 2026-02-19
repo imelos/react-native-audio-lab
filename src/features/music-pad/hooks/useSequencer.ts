@@ -199,13 +199,15 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   // ── Recording event push (called by Player on pad touch) ─────────────────
 
   const pushNoteOn = useCallback(
-    (note: number, velocity: number) => {
+    (note: number, velocity: number, duration?: number) => {
       sequencer.pushRecordEvent(channel, 'noteOn', note, velocity);
 
+      const startTime = currentMusicalMs.value;
       const vn: VisualNote = {
         id: ++noteIdRef.current,
         note,
-        startTime: currentMusicalMs.value,
+        startTime,
+        endTime: duration != null ? startTime + duration : undefined,
       };
       visualNotes.value = [...visualNotes.value, vn];
     },

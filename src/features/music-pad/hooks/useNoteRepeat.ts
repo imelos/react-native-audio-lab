@@ -63,7 +63,8 @@ export function getIntervalMs(mode: NoteRepeatMode, bpm: number): number {
 
 interface UseNoteRepeatOptions {
   mode: NoteRepeatMode;
-  onNoteOn: (note: number, velocity: number) => void;
+  /** Called to trigger a note. 3rd arg is the predicted visual duration (ms). */
+  onNoteOn: (note: number, velocity: number, duration?: number) => void;
   onNoteOff: (note: number) => void;
 }
 
@@ -78,6 +79,8 @@ interface UseNoteRepeatOptions {
  *   grid tick where it receives a proper noteOff (full grid-division length).
  * - After the last pad is released the clock runs one final tick to close
  *   all sounding notes, then stops.
+ * - Every noteOn passes the grid-interval duration so the visualizer can
+ *   render fixed-width rects instead of open-ended "stretching" notes.
  */
 export function useNoteRepeat({
   mode,
@@ -90,6 +93,8 @@ export function useNoteRepeat({
   const soundingNotesRef = useRef<Set<number>>(new Set());
   // The single shared grid clock
   const clockIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Cached interval so the clock and initial trigger use the same value
+  const intervalMsRef = useRef(0);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -113,8 +118,7 @@ export function useNoteRepeat({
   }, []);
 
   const startClock = useCallback(() => {
-    const bpm = getBpm();
-    const intervalMs = getIntervalMs(modeRef.current, bpm);
+    const intervalMs = intervalMsRef.current;
     if (intervalMs <= 0) return;
 
     clockIdRef.current = setInterval(() => {
@@ -131,12 +135,13 @@ export function useNoteRepeat({
       }
 
       // 3. Re-trigger ALL held notes together on this grid tick
+      const dur = intervalMsRef.current;
       heldNotesRef.current.forEach((velocity, note) => {
-        onNoteOnRef.current(note, velocity);
+        onNoteOnRef.current(note, velocity, dur);
         soundingNotesRef.current.add(note);
       });
     }, intervalMs);
-  }, [stopClock, getBpm]);
+  }, [stopClock]);
 
   // When mode changes, stop clock and silence everything cleanly
   useEffect(() => {
@@ -172,14 +177,18 @@ export function useNoteRepeat({
       // If the clock IS running (even if heldNotes was momentarily empty
       // between a release and a new press), the note waits for the next tick.
       if (clockIdRef.current === null) {
-        onNoteOnRef.current(note, velocity);
+        const bpm = getBpm();
+        const intervalMs = getIntervalMs(modeRef.current, bpm);
+        intervalMsRef.current = intervalMs;
+
+        onNoteOnRef.current(note, velocity, intervalMs > 0 ? intervalMs : undefined);
         soundingNotesRef.current.add(note);
         startClock();
       }
       // Otherwise: queued — will fire on the next grid tick with all other
       // held notes.
     },
-    [startClock],
+    [startClock, getBpm],
   );
 
   const handleNoteOff = useCallback(
