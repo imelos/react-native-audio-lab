@@ -119,9 +119,14 @@ class GlobalSequencer {
     if (!state) return;
 
     if (sequence) {
-      // Ensure sorted for cursor-based playback
+      // Ensure sorted for cursor-based playback.
+      // noteOff MUST come before noteOn at the same timestamp — otherwise
+      // pairNotes creates zero-length ghost notes when a note ends and
+      // restarts at the same grid boundary (repeat mode chords).
       sequence.events = [...sequence.events].sort(
-        (a, b) => a.timestamp - b.timestamp,
+        (a, b) =>
+          a.timestamp - b.timestamp ||
+          (a.type === 'noteOff' ? -1 : 1),
       );
     }
     state.sequence = sequence;
