@@ -44,6 +44,9 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     sequencer.getSequence(channel),
   );
   const [isRecording, setIsRecording] = useState(false);
+  const [masterDuration, setMasterDuration] = useState(
+    sequencer.getMasterDuration(),
+  );
 
   // ── Build the delegate (stable ref, mutated only internally) ───────────
   const delegateRef = useRef<ChannelDelegate>({
@@ -74,10 +77,12 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     return sequencer.onTransport(state => setTransportState(state));
   }, [sequencer]);
 
-  // ── Subscribe to sequence changes for this channel ───────────────────────
+  // ── Subscribe to sequence changes ───────────────────────────────────────
   useEffect(() => {
     return sequencer.onChannelSequence((ch, seq) => {
       if (ch === channel) setSequence(seq);
+      // Keep masterDuration reactive — it changes when ANY channel's sequence changes
+      setMasterDuration(sequencer.getMasterDuration());
     });
   }, [channel, sequencer]);
 
@@ -247,7 +252,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     playheadX,
     currentMusicalMs,
     visualNotesRef,
-    masterDuration: sequencer.getMasterDuration(),
+    masterDuration,
 
     // Global transport (any Player can trigger these)
     play: () => sequencer.play(),

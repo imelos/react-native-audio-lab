@@ -37,8 +37,6 @@ const createDefaultChannels = (): Channel[] => [
   { id: 3, name: 'Synth 3', color: CHANNEL_COLORS[2] },
 ];
 
-const EMPTY_NOTES: VisualNote[] = [];
-
 const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   const [channels, setChannels] = useState<Channel[]>(createDefaultChannels);
   const [nextChannelId, setNextChannelId] = useState(4);
@@ -72,7 +70,10 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
 
   // Cache visual notes refs per channel, only rebuild when sequence reference changes
   const visualNotesCache = useRef<
-    Map<number, { seq: LoopSequence; ref: React.MutableRefObject<VisualNote[]> }>
+    Map<
+      number,
+      { seq: LoopSequence; ref: React.MutableRefObject<VisualNote[]> }
+    >
   >(new Map());
 
   const getVisualNotesRef = (
@@ -83,12 +84,14 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
     if (cached && cached.seq === seq) return cached.ref;
 
     const pairs = pairNotes(seq.events);
-    const ref = { current: pairs.map((p, i) => ({
-      id: i,
-      note: p.note,
-      startTime: p.start,
-      endTime: p.end,
-    })) };
+    const ref = {
+      current: pairs.map((p, i) => ({
+        id: i,
+        note: p.note,
+        startTime: p.start,
+        endTime: p.end,
+      })),
+    };
     visualNotesCache.current.set(channelId, { seq, ref });
     return ref;
   };
