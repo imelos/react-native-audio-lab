@@ -29,7 +29,6 @@ export const NOTE_REPEAT_MODES: NoteRepeatMode[] = [
 ];
 
 const DEFAULT_BPM = 120;
-const GATE = 1.0; // note plays for 80% of the interval, silent for 20%
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interval calculation
@@ -59,13 +58,8 @@ export function getIntervalMs(mode: NoteRepeatMode, bpm: number): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Internal types
+// Hook
 // ─────────────────────────────────────────────────────────────────────────────
-
-interface NoteTimer {
-  intervalId: ReturnType<typeof setInterval>;
-  gateTimeoutId: ReturnType<typeof setTimeout> | null;
-}
 
 interface UseNoteRepeatOptions {
   mode: NoteRepeatMode;
@@ -73,27 +67,33 @@ interface UseNoteRepeatOptions {
   onNoteOff: (note: number) => void;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hook
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * Wraps noteOn/noteOff handlers to add Ableton Note–style note repeat.
+ * Ableton Note–style note repeat with a single shared grid clock.
  *
- * When mode !== 'off', holding a pad re-triggers the note at the selected
- * grid division (BPM-aware). Each repeat uses an 80 % gate so the ADSR
- * envelope re-attacks cleanly.
+ * - First pad press (when clock is idle) plays immediately and starts the
+ *   grid clock.
+ * - Any pad pressed while the clock is already running is queued and only
+ *   fires on the NEXT grid tick — all held notes re-trigger together.
+ * - Releasing a pad does NOT cut the note short. It sustains until the next
+ *   grid tick where it receives a proper noteOff (full grid-division length).
+ * - After the last pad is released the clock runs one final tick to close
+ *   all sounding notes, then stops.
  */
 export function useNoteRepeat({
   mode,
   onNoteOn,
   onNoteOff,
 }: UseNoteRepeatOptions) {
-  const timersRef = useRef<Map<number, NoteTimer>>(new Map());
+  // Currently held notes (finger down): note → velocity
+  const heldNotesRef = useRef<Map<number, number>>(new Map());
+  // Notes that are currently sounding (have received noteOn, awaiting noteOff)
+  const soundingNotesRef = useRef<Set<number>>(new Set());
+  // The single shared grid clock
+  const clockIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const modeRef = useRef(mode);
   modeRef.current = mode;
 
-  // Keep stable refs to the latest callbacks so timers always call current fns
   const onNoteOnRef = useRef(onNoteOn);
   onNoteOnRef.current = onNoteOn;
   const onNoteOffRef = useRef(onNoteOff);
@@ -103,76 +103,83 @@ export function useNoteRepeat({
     return GlobalSequencer.getInstance().getGlobalBPM() ?? DEFAULT_BPM;
   }, []);
 
-  // ── Timer management ────────────────────────────────────────────────────
+  // ── Clock management ───────────────────────────────────────────────────
 
-  const clearNoteTimer = useCallback((note: number) => {
-    const timer = timersRef.current.get(note);
-    if (!timer) return;
-    clearInterval(timer.intervalId);
-    if (timer.gateTimeoutId) clearTimeout(timer.gateTimeoutId);
-    timersRef.current.delete(note);
+  const stopClock = useCallback(() => {
+    if (clockIdRef.current !== null) {
+      clearInterval(clockIdRef.current);
+      clockIdRef.current = null;
+    }
   }, []);
 
-  const clearAllTimers = useCallback(() => {
-    timersRef.current.forEach(timer => {
-      clearInterval(timer.intervalId);
-      if (timer.gateTimeoutId) clearTimeout(timer.gateTimeoutId);
-    });
-    timersRef.current.clear();
-  }, []);
+  const startClock = useCallback(() => {
+    const bpm = getBpm();
+    const intervalMs = getIntervalMs(modeRef.current, bpm);
+    if (intervalMs <= 0) return;
 
-  // When mode changes, kill all running timers.
-  // User must release and re-press pads for the new division.
+    clockIdRef.current = setInterval(() => {
+      // 1. NoteOff ALL currently sounding notes (completes their full duration)
+      soundingNotesRef.current.forEach(note => {
+        onNoteOffRef.current(note);
+      });
+      soundingNotesRef.current.clear();
+
+      // 2. If no fingers are held, we just sent the final noteOffs — done
+      if (heldNotesRef.current.size === 0) {
+        stopClock();
+        return;
+      }
+
+      // 3. Re-trigger ALL held notes together on this grid tick
+      heldNotesRef.current.forEach((velocity, note) => {
+        onNoteOnRef.current(note, velocity);
+        soundingNotesRef.current.add(note);
+      });
+    }, intervalMs);
+  }, [stopClock, getBpm]);
+
+  // When mode changes, stop clock and silence everything cleanly
   useEffect(() => {
-    clearAllTimers();
-  }, [mode, clearAllTimers]);
+    soundingNotesRef.current.forEach(note => {
+      onNoteOffRef.current(note);
+    });
+    soundingNotesRef.current.clear();
+    heldNotesRef.current.clear();
+    stopClock();
+  }, [mode, stopClock]);
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => clearAllTimers();
-  }, [clearAllTimers]);
+    return () => {
+      stopClock();
+      heldNotesRef.current.clear();
+      soundingNotesRef.current.clear();
+    };
+  }, [stopClock]);
 
   // ── Wrapped handlers ───────────────────────────────────────────────────
 
   const handleNoteOn = useCallback(
     (note: number, velocity: number) => {
-      // Always fire the initial note immediately
-      onNoteOnRef.current(note, velocity);
-
-      if (modeRef.current === 'off') return;
-
-      // Tear down any existing timer for this note (e.g. rapid re-press)
-      clearNoteTimer(note);
-
-      const bpm = getBpm();
-      const intervalMs = getIntervalMs(modeRef.current, bpm);
-      if (intervalMs <= 0) return;
-
-      const gateMs = intervalMs * GATE;
-
-      // Gate-off for the initial note
-      const initialGateTimeout = setTimeout(() => {
-        onNoteOffRef.current(note);
-      }, gateMs);
-
-      // Repeating re-trigger
-      const intervalId = setInterval(() => {
+      if (modeRef.current === 'off') {
         onNoteOnRef.current(note, velocity);
+        return;
+      }
 
-        const gateTimeout = setTimeout(() => {
-          onNoteOffRef.current(note);
-        }, gateMs);
+      heldNotesRef.current.set(note, velocity);
 
-        const timer = timersRef.current.get(note);
-        if (timer) timer.gateTimeoutId = gateTimeout;
-      }, intervalMs);
-
-      timersRef.current.set(note, {
-        intervalId,
-        gateTimeoutId: initialGateTimeout,
-      });
+      // Only play immediately + start clock if the clock is NOT running.
+      // If the clock IS running (even if heldNotes was momentarily empty
+      // between a release and a new press), the note waits for the next tick.
+      if (clockIdRef.current === null) {
+        onNoteOnRef.current(note, velocity);
+        soundingNotesRef.current.add(note);
+        startClock();
+      }
+      // Otherwise: queued — will fire on the next grid tick with all other
+      // held notes.
     },
-    [clearNoteTimer, getBpm],
+    [startClock],
   );
 
   const handleNoteOff = useCallback(
@@ -182,11 +189,12 @@ export function useNoteRepeat({
         return;
       }
 
-      // Stop repeating and silence
-      clearNoteTimer(note);
-      onNoteOffRef.current(note);
+      // Remove from held — the note keeps sounding until the next grid tick
+      // where the clock sends a proper noteOff (full grid-division duration).
+      // Do NOT call onNoteOff or stop the clock here.
+      heldNotesRef.current.delete(note);
     },
-    [clearNoteTimer],
+    [],
   );
 
   return { handleNoteOn, handleNoteOff };
