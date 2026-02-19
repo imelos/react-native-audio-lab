@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react';
+import performance from 'react-native-performance';
 import GlobalSequencer from './GlobalSequencer';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,18 +70,17 @@ interface UseNoteRepeatOptions {
 }
 
 /**
- * Ableton Note–style note repeat with a single shared grid clock.
+ * Ableton Note–style note repeat driven by requestAnimationFrame with
+ * additive timestamps (zero drift).
  *
  * - First pad press (when clock is idle) plays immediately and starts the
- *   grid clock.
+ *   RAF clock.
  * - Any pad pressed while the clock is already running is queued and only
  *   fires on the NEXT grid tick — all held notes re-trigger together.
  * - Releasing a pad does NOT cut the note short. It sustains until the next
  *   grid tick where it receives a proper noteOff (full grid-division length).
  * - After the last pad is released the clock runs one final tick to close
  *   all sounding notes, then stops.
- * - Every noteOn passes the grid-interval duration so the visualizer can
- *   render fixed-width rects instead of open-ended "stretching" notes.
  */
 export function useNoteRepeat({
   mode,
@@ -89,11 +89,13 @@ export function useNoteRepeat({
 }: UseNoteRepeatOptions) {
   // Currently held notes (finger down): note → velocity
   const heldNotesRef = useRef<Map<number, number>>(new Map());
-  // Notes that are currently sounding (have received noteOn, awaiting noteOff)
+  // Notes currently sounding (received noteOn, awaiting noteOff)
   const soundingNotesRef = useRef<Set<number>>(new Set());
-  // The single shared grid clock
-  const clockIdRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Cached interval so the clock and initial trigger use the same value
+  // RAF handle (non-null while the clock is running)
+  const rafIdRef = useRef<number | null>(null);
+  // Next grid boundary (absolute performance.now timestamp)
+  const nextTriggerRef = useRef(0);
+  // Cached interval
   const intervalMsRef = useRef(0);
 
   const modeRef = useRef(mode);
@@ -108,40 +110,60 @@ export function useNoteRepeat({
     return GlobalSequencer.getInstance().getGlobalBPM() ?? DEFAULT_BPM;
   }, []);
 
-  // ── Clock management ───────────────────────────────────────────────────
+  // ── RAF clock ──────────────────────────────────────────────────────────
 
   const stopClock = useCallback(() => {
-    if (clockIdRef.current !== null) {
-      clearInterval(clockIdRef.current);
-      clockIdRef.current = null;
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
     }
+  }, []);
+
+  /** Single RAF tick — checks if we've crossed a grid boundary. */
+  const tick = useCallback(() => {
+    const now = performance.now();
+
+    if (now >= nextTriggerRef.current) {
+      // ── Grid boundary crossed ────────────────────────────────────────
+
+      // 1. NoteOff all sounding notes (completes their full duration)
+      soundingNotesRef.current.forEach(note => {
+        onNoteOffRef.current(note);
+      });
+      soundingNotesRef.current.clear();
+
+      // Advance past any missed boundaries (e.g. if a frame took too long)
+      while (nextTriggerRef.current <= now) {
+        nextTriggerRef.current += intervalMsRef.current;
+      }
+
+      // 2. If no fingers are held, we just sent the final noteOffs — done
+      if (heldNotesRef.current.size === 0) {
+        rafIdRef.current = null;
+        return;
+      }
+
+      // 3. Re-trigger all held notes together on this grid tick
+      const dur = intervalMsRef.current;
+      heldNotesRef.current.forEach((velocity, note) => {
+        onNoteOnRef.current(note, velocity, dur);
+        soundingNotesRef.current.add(note);
+      });
+    }
+
+    // Schedule next check
+    rafIdRef.current = requestAnimationFrame(tick);
   }, []);
 
   const startClock = useCallback(() => {
     const intervalMs = intervalMsRef.current;
     if (intervalMs <= 0) return;
 
-    clockIdRef.current = setInterval(() => {
-      // 1. NoteOff ALL currently sounding notes (completes their full duration)
-      soundingNotesRef.current.forEach(note => {
-        onNoteOffRef.current(note);
-      });
-      soundingNotesRef.current.clear();
+    nextTriggerRef.current = performance.now() + intervalMs;
+    rafIdRef.current = requestAnimationFrame(tick);
+  }, [tick]);
 
-      // 2. If no fingers are held, we just sent the final noteOffs — done
-      if (heldNotesRef.current.size === 0) {
-        stopClock();
-        return;
-      }
-
-      // 3. Re-trigger ALL held notes together on this grid tick
-      const dur = intervalMsRef.current;
-      heldNotesRef.current.forEach((velocity, note) => {
-        onNoteOnRef.current(note, velocity, dur);
-        soundingNotesRef.current.add(note);
-      });
-    }, intervalMs);
-  }, [stopClock]);
+  // ── Lifecycle ──────────────────────────────────────────────────────────
 
   // When mode changes, stop clock and silence everything cleanly
   useEffect(() => {
@@ -174,19 +196,20 @@ export function useNoteRepeat({
       heldNotesRef.current.set(note, velocity);
 
       // Only play immediately + start clock if the clock is NOT running.
-      // If the clock IS running (even if heldNotes was momentarily empty
-      // between a release and a new press), the note waits for the next tick.
-      if (clockIdRef.current === null) {
+      if (rafIdRef.current === null) {
         const bpm = getBpm();
         const intervalMs = getIntervalMs(modeRef.current, bpm);
         intervalMsRef.current = intervalMs;
 
-        onNoteOnRef.current(note, velocity, intervalMs > 0 ? intervalMs : undefined);
+        onNoteOnRef.current(
+          note,
+          velocity,
+          intervalMs > 0 ? intervalMs : undefined,
+        );
         soundingNotesRef.current.add(note);
         startClock();
       }
-      // Otherwise: queued — will fire on the next grid tick with all other
-      // held notes.
+      // Otherwise: queued — fires on the next grid tick.
     },
     [startClock, getBpm],
   );
@@ -198,9 +221,7 @@ export function useNoteRepeat({
         return;
       }
 
-      // Remove from held — the note keeps sounding until the next grid tick
-      // where the clock sends a proper noteOff (full grid-division duration).
-      // Do NOT call onNoteOff or stop the clock here.
+      // Remove from held — note sustains until the next grid tick.
       heldNotesRef.current.delete(note);
     },
     [],

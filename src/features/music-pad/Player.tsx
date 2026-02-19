@@ -148,15 +148,6 @@ export default function Player({
   return (
     <>
       {MemoizedVisualizer}
-      <View style={styles.sequenceInfo}>
-        {sequenceInfo && (
-          <Text style={styles.sequenceInfoText}>
-            BPM: {sequenceInfo.bpm} | Bars: {sequenceInfo.bars} | Duration:{' '}
-            {sequenceInfo.duration}s | Confidence: {sequenceInfo.confidence}%
-          </Text>
-        )}
-      </View>
-
       <View style={styles.gridContainer}>
         <Grid
           ref={gridRef}
@@ -169,6 +160,14 @@ export default function Player({
           onNoteOn={handleNoteOn}
           onNoteOff={handleNoteOff}
         />
+        <View style={styles.sequenceInfo}>
+          {sequenceInfo && (
+            <Text style={styles.sequenceInfoText}>
+              BPM: {sequenceInfo.bpm} | Bars: {sequenceInfo.bars} | Duration:{' '}
+              {sequenceInfo.duration}s | Confidence: {sequenceInfo.confidence}%
+            </Text>
+          )}
+        </View>
         <NoteRepeatSelector
           mode={noteRepeatMode}
           visible={showRepeatSelector}

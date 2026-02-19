@@ -202,7 +202,21 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     (note: number, velocity: number, duration?: number) => {
       sequencer.pushRecordEvent(channel, 'noteOn', note, velocity);
 
-      const startTime = currentMusicalMs.value;
+      let startTime = currentMusicalMs.value;
+
+      // In repeat mode (duration provided), snap to the previous note's
+      // endTime for the same pitch so notes are perfectly back-to-back
+      // without RAF-jitter micro-gaps.
+      if (duration != null) {
+        const arr = visualNotes.value;
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (arr[i].note === note && arr[i].endTime != null) {
+            startTime = arr[i].endTime!;
+            break;
+          }
+        }
+      }
+
       const vn: VisualNote = {
         id: ++noteIdRef.current,
         note,
