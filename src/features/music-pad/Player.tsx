@@ -156,20 +156,18 @@ export default function Player({
       <View style={styles.footer} pointerEvents="box-none">
         {showRecordingButtons && (
           <View style={styles.footerButtons} pointerEvents="auto">
-            <View style={styles.footerButtonRow}>
-              <TouchableOpacity
-                style={[styles.footerButton, styles.addButton]}
-                onPress={handleAdd}
-              >
-                <Text style={styles.footerButtonText}>ADD</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.footerButton, styles.clearButton]}
-                onPress={clearRecording}
-              >
-                <Text style={styles.footerButtonText}>CLEAR</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={[styles.footerButton, styles.addButton]}
+              onPress={handleAdd}
+            >
+              <Text style={styles.footerButtonText}>ADD</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.footerButton, styles.clearButton]}
+              onPress={clearRecording}
+            >
+              <Text style={styles.footerButtonText}>CLEAR</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -221,10 +219,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 50,
+    height: 40,
     paddingHorizontal: 16,
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+    // backgroundColor: 'rgba(44, 60, 167, 0.7)',
   },
   footerButtons: {
     alignItems: 'center',
@@ -233,20 +231,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   footerButtonRow: {
-    flexDirection: 'row',
-    gap: 12,
+    // flexDirection: 'row',
+    // gap: 12,
   },
   footerButton: {
     paddingHorizontal: 20,
-    paddingVertical: 3,
-    borderRadius: 20,
+    paddingVertical: 5,
+    borderRadius: 4,
     minWidth: 90,
     alignItems: 'center',
   },
   footerButtonText: {
     color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: 700,
   },
   addButton: {
     backgroundColor: '#4caf50',

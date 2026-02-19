@@ -312,7 +312,6 @@ export default Grid;
 const styles = StyleSheet.create({
   gridContainer: {
     width: '100%',
-    marginTop: 8,
     aspectRatio: 1,
   },
   gridWrapper: {
