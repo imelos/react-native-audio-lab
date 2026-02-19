@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Canvas, Picture, Skia } from '@shopify/react-native-skia';
 import Animated, {
   SharedValue,
@@ -28,7 +28,6 @@ interface Props {
   loopDuration?: number;
 }
 
-const recorder = Skia.PictureRecorder();
 const activePaint = Skia.Paint();
 activePaint.setColor(Skia.Color('#3b82f6'));
 
@@ -54,7 +53,10 @@ export function MidiVisualizer({
 }: Props) {
   const recordingStartRef = useRef<number | null>(null);
   const pitchIndexRef = useRef<Map<number, number>>(new Map());
-  const cachedPairsRef = useRef<{ seq: LoopSequence | undefined; pairs: NotePair[] }>({ seq: undefined, pairs: [] });
+  const cachedPairsRef = useRef<{
+    seq: LoopSequence | undefined;
+    pairs: NotePair[];
+  }>({ seq: undefined, pairs: [] });
   const rectsData = useSharedValue<RectData[]>([]);
   const fallbackShared = useSharedValue(0);
   const resolvedPlayheadX = playheadX ?? fallbackShared;
@@ -62,6 +64,10 @@ export function MidiVisualizer({
   const playheadAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: resolvedPlayheadX.value }],
   }));
+
+  const recorder = useMemo(() => {
+    return Skia.PictureRecorder();
+  }, []);
 
   useEffect(() => {
     let raf: number;
@@ -102,7 +108,10 @@ export function MidiVisualizer({
       if (sequence && sequence.events.length > 0) {
         // Recompute pairs only when the sequence reference changes
         if (cachedPairsRef.current.seq !== sequence) {
-          cachedPairsRef.current = { seq: sequence, pairs: pairNotes(sequence.events) };
+          cachedPairsRef.current = {
+            seq: sequence,
+            pairs: pairNotes(sequence.events),
+          };
         }
         const pairs = cachedPairsRef.current.pairs;
 
@@ -171,7 +180,15 @@ export function MidiVisualizer({
 
     loop();
     return () => cancelAnimationFrame(raf);
-  }, [width, height, notesRef, sequence, currentMusicalMs, rectsData, loopDuration]);
+  }, [
+    width,
+    height,
+    notesRef,
+    sequence,
+    currentMusicalMs,
+    rectsData,
+    loopDuration,
+  ]);
 
   const picture = useDerivedValue(() => {
     'worklet';
