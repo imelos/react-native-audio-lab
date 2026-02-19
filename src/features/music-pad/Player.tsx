@@ -13,6 +13,7 @@ import { createLoopSequence, quantizeEvents } from './utils/loopUtils.ts';
 import { useSequencer } from './hooks/useSequencer.ts';
 import { useNoteRepeat, NoteRepeatMode } from './hooks/useNoteRepeat';
 import NoteRepeatSelector from './NoteRepeatSelector';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface PlayerProps {
   channel: number;
@@ -33,12 +34,12 @@ export default function Player({
   useScale,
   scaleNotes,
 }: PlayerProps) {
+  const insets = useSafeAreaInsets();
   const gridRef = useRef<GridHandle>(null);
   const windowWidth = Dimensions.get('window').width;
 
   // ── Note repeat state ──────────────────────────────────────────────────
-  const [noteRepeatMode, setNoteRepeatMode] =
-    useState<NoteRepeatMode>('off');
+  const [noteRepeatMode, setNoteRepeatMode] = useState<NoteRepeatMode>('off');
   const [showRepeatSelector, setShowRepeatSelector] = useState(false);
 
   // ── Hook into the global sequencer ───────────────────────────────────────
@@ -176,7 +177,10 @@ export default function Player({
         />
       </View>
 
-      <View style={styles.footer} pointerEvents="box-none">
+      <View
+        style={[styles.footer, { marginBottom: insets.bottom }]}
+        pointerEvents="box-none"
+      >
         {/* Note repeat toggle */}
         <View style={styles.repeatToggleRow} pointerEvents="auto">
           <TouchableOpacity
@@ -250,6 +254,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-start',
     marginBottom: 4,
+    position: 'absolute',
   },
   repeatToggleButton: {
     paddingHorizontal: 12,
