@@ -210,7 +210,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const pushNoteOn = useCallback(
     (note: number, velocity: number, duration?: number) => {
       const arr = visualNotesRef.current;
-      let startTime = currentMusicalMs.value;
+      // Use fresh performance.now()-based time instead of the stale
+      // SharedValue (~16ms behind). This ensures all notes triggered in
+      // the same synchronous tick get the same startTime, fixing chord
+      // alignment permanently.
+      let startTime = sequencer.getCurrentMusicalMs(channel);
 
       if (duration != null) {
         // Repeat mode: snap to the previous endTime for the SAME pitch so
@@ -243,12 +247,12 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       visualNotesRef.current = updated;
       visualNotes.value = updated;
     },
-    [channel, sequencer, currentMusicalMs, visualNotes],
+    [channel, sequencer, visualNotes],
   );
 
   const pushNoteOff = useCallback(
     (note: number) => {
-      const endTime = currentMusicalMs.value;
+      const endTime = sequencer.getCurrentMusicalMs(channel);
       const arr = visualNotesRef.current;
 
       // Find the latest note for this pitch to get its predicted endTime
@@ -283,7 +287,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         }
       }
     },
-    [channel, sequencer, currentMusicalMs, visualNotes],
+    [channel, sequencer, visualNotes],
   );
 
   // ── Return ───────────────────────────────────────────────────────────────

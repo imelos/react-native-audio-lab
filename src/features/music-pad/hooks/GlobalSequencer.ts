@@ -397,6 +397,27 @@ class GlobalSequencer {
     return out;
   }
 
+  /**
+   * Returns the current musical time (ms) for a channel computed from a
+   * fresh performance.now() call — NOT from the RAF-updated SharedValue
+   * which can be up to ~16ms stale.  This eliminates timing discrepancies
+   * when multiple notes are triggered in the same synchronous loop.
+   */
+  getCurrentMusicalMs(channel: number): number {
+    const s = this.channels.get(channel);
+    if (!s) return 0;
+    if (this._transportState === 'playing') {
+      const seq = s.sequence;
+      const elapsed = performance.now() - this.globalStartTime;
+      const dur = seq ? seq.duration : this.masterDuration;
+      return dur > 0 ? elapsed % dur : elapsed;
+    }
+    if (s.isRecording) {
+      return performance.now() - s.recordingStartTime;
+    }
+    return 0;
+  }
+
   /** Returns the BPM from the first channel that has a sequence, or null. */
   getGlobalBPM(): number | null {
     for (const [, s] of this.channels) {
