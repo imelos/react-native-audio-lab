@@ -102,16 +102,18 @@ export default function Player({
 
   // Wrap with note repeat — when mode !== 'off', holding a pad re-triggers
   // the note at the selected grid division (Ableton Note–style).
-  const { handleNoteOn, handleNoteOff, getActiveBpm } = useNoteRepeat({
+  const { handleNoteOn, handleNoteOff, getActiveBpm, flushRepeat } = useNoteRepeat({
     mode: noteRepeatMode,
     onNoteOn: rawNoteOn,
     onNoteOff: rawNoteOff,
   });
 
   const handleAdd = useCallback(() => {
-    // Pass repeat BPM so first-recording skips BPM detection (avoids wrong bar count)
+    // Flush pending noteOffs before committing — prevents a cut last note
+    // when ADD is pressed before the final RAF tick fires.
+    flushRepeat();
     commitRecording(createLoopSequence, getActiveBpm() ?? undefined);
-  }, [commitRecording, getActiveBpm]);
+  }, [commitRecording, getActiveBpm, flushRepeat]);
 
   const handleQuantize = useCallback(() => {
     quantize(quantizeEvents);

@@ -253,5 +253,20 @@ export function useNoteRepeat({
     return getBpmRef.current();
   }, []);
 
-  return { handleNoteOn, handleNoteOff, getActiveBpm };
+  /**
+   * Synchronously close all sounding notes and stop the clock.
+   * Call this before commitRecording to ensure the final noteOff events are
+   * pushed to the recording buffer before stopRecording() drains it.
+   */
+  const flushRepeat = useCallback(() => {
+    soundingNotesRef.current.forEach(note => {
+      onNoteOffRef.current(note);
+    });
+    soundingNotesRef.current.clear();
+    heldNotesRef.current.clear();
+    collectStartRef.current = 0;
+    stopClock();
+  }, [stopClock]);
+
+  return { handleNoteOn, handleNoteOff, getActiveBpm, flushRepeat };
 }
