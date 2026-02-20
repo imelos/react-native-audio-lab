@@ -102,15 +102,16 @@ export default function Player({
 
   // Wrap with note repeat — when mode !== 'off', holding a pad re-triggers
   // the note at the selected grid division (Ableton Note–style).
-  const { handleNoteOn, handleNoteOff } = useNoteRepeat({
+  const { handleNoteOn, handleNoteOff, getActiveBpm } = useNoteRepeat({
     mode: noteRepeatMode,
     onNoteOn: rawNoteOn,
     onNoteOff: rawNoteOff,
   });
 
   const handleAdd = useCallback(() => {
-    commitRecording(createLoopSequence);
-  }, [commitRecording]);
+    // Pass repeat BPM so first-recording skips BPM detection (avoids wrong bar count)
+    commitRecording(createLoopSequence, getActiveBpm() ?? undefined);
+  }, [commitRecording, getActiveBpm]);
 
   const handleQuantize = useCallback(() => {
     quantize(quantizeEvents);

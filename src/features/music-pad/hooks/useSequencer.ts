@@ -135,6 +135,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         referenceBPM?: number,
         minDurationMs?: number,
       ) => LoopSequence | null,
+      overrideBPM?: number,
     ) => {
       const events = sequencer.stopRecording(channel);
       if (events.length === 0) return;
@@ -144,13 +145,15 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         ? `${existing.name} (take ${Date.now()})`
         : `Ch ${channel} Loop`;
 
-      // Use global BPM and master duration so all channels stay in sync
+      // Use global BPM and master duration so all channels stay in sync.
+      // overrideBPM (from repeat mode) takes priority over detection when
+      // recording the first sequence — avoids BPM detection inaccuracy.
       const globalBPM = sequencer.getGlobalBPM();
       const masterDuration = sequencer.getMasterDuration();
       const loop = createLoopFn(
         events,
         name,
-        globalBPM ?? undefined,
+        overrideBPM ?? globalBPM ?? undefined,
         masterDuration > 0 ? masterDuration : undefined,
       );
       if (!loop) return;

@@ -31,7 +31,7 @@ export const NOTE_REPEAT_MODES: NoteRepeatMode[] = [
 
 const DEFAULT_BPM = 120;
 /** How long to wait for additional fingers before firing the first chord (ms). */
-const CHORD_WINDOW_MS = 50;
+const CHORD_WINDOW_MS = 20;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interval calculation
@@ -237,18 +237,21 @@ export function useNoteRepeat({
     [tick],
   );
 
-  const handleNoteOff = useCallback(
-    (note: number) => {
-      if (modeRef.current === 'off') {
-        onNoteOffRef.current(note);
-        return;
-      }
+  const handleNoteOff = useCallback((note: number) => {
+    if (modeRef.current === 'off') {
+      onNoteOffRef.current(note);
+      return;
+    }
 
-      // Remove from held — note sustains until the next grid tick.
-      heldNotesRef.current.delete(note);
-    },
-    [],
-  );
+    // Remove from held — note sustains until the next grid tick.
+    heldNotesRef.current.delete(note);
+  }, []);
 
-  return { handleNoteOn, handleNoteOff };
+  /** Returns the BPM the repeat clock is currently using (or null if off/idle). */
+  const getActiveBpm = useCallback((): number | null => {
+    if (modeRef.current === 'off') return null;
+    return getBpmRef.current();
+  }, []);
+
+  return { handleNoteOn, handleNoteOff, getActiveBpm };
 }
