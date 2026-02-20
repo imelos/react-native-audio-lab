@@ -100,11 +100,14 @@ void Instrument::prepareToPlay(double sampleRate, int samplesPerBlock)
     effectsBuffer.setSize(2, samplesPerBlock);
     
     // Prepare all effects
-    for (auto& effect : effectsChain)
     {
-        if (effect->processor)
+        const juce::SpinLock::ScopedLockType lock(effectsLock);
+        for (auto& effect : effectsChain)
         {
-            effect->processor->prepareToPlay(sampleRate, samplesPerBlock);
+            if (effect->processor)
+            {
+                effect->processor->prepareToPlay(sampleRate, samplesPerBlock);
+            }
         }
     }
 }
@@ -229,24 +232,28 @@ int Instrument::addEffect(EffectType type)
     auto processor = createEffect(type);
     if (!processor)
         return -1;
-    
+
     int effectId = nextEffectId++;
-    
+
     // Prepare the effect if we're already playing
     if (currentSampleRate > 0.0)
     {
         processor->prepareToPlay(currentSampleRate, currentBlockSize);
     }
-    
-    effectsChain.push_back(
-        std::make_unique<Effect>(effectId, type, std::move(processor))
-    );
-    
+
+    {
+        const juce::SpinLock::ScopedLockType lock(effectsLock);
+        effectsChain.push_back(
+            std::make_unique<Effect>(effectId, type, std::move(processor))
+        );
+    }
+
     return effectId;
 }
 
 void Instrument::removeEffect(int effectId)
 {
+    const juce::SpinLock::ScopedLockType lock(effectsLock);
     effectsChain.erase(
         std::remove_if(effectsChain.begin(), effectsChain.end(),
             [effectId](const auto& effect) { return effect->id == effectId; }),
@@ -256,11 +263,13 @@ void Instrument::removeEffect(int effectId)
 
 void Instrument::clearEffects()
 {
+    const juce::SpinLock::ScopedLockType lock(effectsLock);
     effectsChain.clear();
 }
 
 void Instrument::setEffectEnabled(int effectId, bool enabled)
 {
+    const juce::SpinLock::ScopedLockType lock(effectsLock);
     for (auto& effect : effectsChain)
     {
         if (effect->id == effectId)
@@ -273,6 +282,7 @@ void Instrument::setEffectEnabled(int effectId, bool enabled)
 
 void Instrument::setEffectParameter(int effectId, const juce::String& paramName, float value)
 {
+    const juce::SpinLock::ScopedLockType lock(effectsLock);
     for (auto& effect : effectsChain)
     {
         if (effect->id == effectId && effect->processor)
@@ -391,7 +401,8 @@ std::unique_ptr<Instrument::EffectProcessor> Instrument::createEffect(EffectType
 void Instrument::processEffectsChain(juce::AudioBuffer<float>& buffer, int numSamples)
 {
     juce::ignoreUnused(numSamples);
-    
+
+    const juce::SpinLock::ScopedLockType lock(effectsLock);
     for (auto& effect : effectsChain)
     {
         if (effect->enabled && effect->processor)

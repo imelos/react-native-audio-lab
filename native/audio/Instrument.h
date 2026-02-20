@@ -125,12 +125,13 @@ private:
     Config config;
     juce::Synthesiser synth;
     std::vector<std::unique_ptr<Effect>> effectsChain;
-    
+    juce::SpinLock effectsLock;  // Protects effectsChain (audio-thread safe)
+
     double currentSampleRate = 44100.0;
     int currentBlockSize = 512;
-    
+
     int nextEffectId = 1;
-    
+
     // Temporary buffers for effects processing
     juce::AudioBuffer<float> effectsBuffer;
     juce::MidiBuffer emptyMidiBuffer;  // For effects that need MIDI input
