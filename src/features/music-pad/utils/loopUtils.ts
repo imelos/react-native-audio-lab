@@ -423,8 +423,13 @@ function createLoopWithBPM(
   const phaseInfo = detectPhase(events, bpmInfo);
   const downbeatOffset = phaseInfo.downbeatOffset;
 
-  // No phase shifting — events stay as-is, first note = beat 1
-  const aligned = events;
+  // No phase shifting — events stay as-is, first note = beat 1.
+  // Sort by timestamp (noteOff before noteOn at same time) so pairNotes
+  // processes events in correct order — raw recording may be unsorted.
+  const aligned = [...events].sort(
+    (a, b) =>
+      a.timestamp - b.timestamp || (a.type === 'noteOff' ? -1 : 1),
+  );
 
   // ── Determine loop length ────────────────────────────────────────────────
   const pairs = pairNotes(aligned);
@@ -521,8 +526,9 @@ function deduplicateOverlaps(pairs: NotePair[]): NotePair[] {
     const merged: NotePair[] = [];
     for (const p of notePairs) {
       const last = merged[merged.length - 1];
-      if (last && p.start < last.end) {
-        // Overlap — extend the existing note, keep higher velocity
+      if (last && p.start < last.end - 1) {
+        // Overlap (with 1ms tolerance to avoid merging back-to-back notes
+        // that have micro floating-point drift) — extend, keep higher velocity
         last.end = Math.max(last.end, p.end);
         last.velocity = Math.max(last.velocity, p.velocity);
       } else {

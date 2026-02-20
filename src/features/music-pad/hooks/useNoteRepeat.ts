@@ -30,6 +30,8 @@ export const NOTE_REPEAT_MODES: NoteRepeatMode[] = [
 ];
 
 const DEFAULT_BPM = 120;
+/** How long to wait for additional fingers before firing the first chord (ms). */
+const CHORD_WINDOW_MS = 50;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interval calculation
@@ -73,10 +75,11 @@ interface UseNoteRepeatOptions {
  * Ableton Note–style note repeat driven by requestAnimationFrame with
  * additive timestamps (zero drift).
  *
- * - First pad press (when clock is idle) plays immediately and starts the
- *   RAF clock.
- * - Any pad pressed while the clock is already running is queued and only
- *   fires on the NEXT grid tick — all held notes re-trigger together.
+ * - First pad press starts a chord collection window (CHORD_WINDOW_MS).
+ *   All fingers placed during this window fire together on the first tick.
+ * - After the window, repeats fire on a grid-aligned RAF clock.
+ * - Any pad pressed while the clock is already running fires immediately
+ *   with duration trimmed to the next grid boundary.
  * - Releasing a pad does NOT cut the note short. It sustains until the next
  *   grid tick where it receives a proper noteOff (full grid-division length).
  * - After the last pad is released the clock runs one final tick to close
@@ -97,6 +100,8 @@ export function useNoteRepeat({
   const nextTriggerRef = useRef(0);
   // Cached interval
   const intervalMsRef = useRef(0);
+  // Chord collection: timestamp when first finger landed (0 = not collecting)
+  const collectStartRef = useRef(0);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -109,6 +114,8 @@ export function useNoteRepeat({
   const getBpm = useCallback(() => {
     return GlobalSequencer.getInstance().getGlobalBPM() ?? DEFAULT_BPM;
   }, []);
+  const getBpmRef = useRef(getBpm);
+  getBpmRef.current = getBpm;
 
   // ── RAF clock ──────────────────────────────────────────────────────────
 
@@ -119,13 +126,38 @@ export function useNoteRepeat({
     }
   }, []);
 
-  /** Single RAF tick — checks if we've crossed a grid boundary. */
+  /** Single RAF tick — handles chord collection window, then grid repeats. */
   const tick = useCallback(() => {
     const now = performance.now();
 
-    if (now >= nextTriggerRef.current) {
-      // ── Grid boundary crossed ────────────────────────────────────────
+    // ── Chord collection phase ─────────────────────────────────────────
+    // Wait CHORD_WINDOW_MS after first finger before firing anything.
+    if (collectStartRef.current > 0) {
+      if (now - collectStartRef.current < CHORD_WINDOW_MS) {
+        // Still collecting — keep waiting
+        rafIdRef.current = requestAnimationFrame(tick);
+        return;
+      }
 
+      // Window elapsed — fire all collected notes and transition to repeat
+      collectStartRef.current = 0;
+      const bpm = getBpmRef.current();
+      const intervalMs = getIntervalMs(modeRef.current, bpm);
+      intervalMsRef.current = intervalMs;
+      nextTriggerRef.current = now + intervalMs;
+
+      const dur = intervalMs > 0 ? intervalMs : undefined;
+      heldNotesRef.current.forEach((velocity, note) => {
+        onNoteOnRef.current(note, velocity, dur);
+        soundingNotesRef.current.add(note);
+      });
+
+      rafIdRef.current = requestAnimationFrame(tick);
+      return;
+    }
+
+    // ── Normal repeat phase ────────────────────────────────────────────
+    if (now >= nextTriggerRef.current) {
       // 1. NoteOff all sounding notes (completes their full duration)
       soundingNotesRef.current.forEach(note => {
         onNoteOffRef.current(note);
@@ -155,14 +187,6 @@ export function useNoteRepeat({
     rafIdRef.current = requestAnimationFrame(tick);
   }, []);
 
-  const startClock = useCallback(() => {
-    const intervalMs = intervalMsRef.current;
-    if (intervalMs <= 0) return;
-
-    nextTriggerRef.current = performance.now() + intervalMs;
-    rafIdRef.current = requestAnimationFrame(tick);
-  }, [tick]);
-
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
   // When mode changes, stop clock and silence everything cleanly
@@ -172,6 +196,7 @@ export function useNoteRepeat({
     });
     soundingNotesRef.current.clear();
     heldNotesRef.current.clear();
+    collectStartRef.current = 0;
     stopClock();
   }, [mode, stopClock]);
 
@@ -181,6 +206,7 @@ export function useNoteRepeat({
       stopClock();
       heldNotesRef.current.clear();
       soundingNotesRef.current.clear();
+      collectStartRef.current = 0;
     };
   }, [stopClock]);
 
@@ -198,31 +224,18 @@ export function useNoteRepeat({
       const clockRunning = rafIdRef.current !== null;
 
       if (!clockRunning) {
-        // First note — compute interval, play immediately, start clock
-        const bpm = getBpm();
-        const intervalMs = getIntervalMs(modeRef.current, bpm);
-        intervalMsRef.current = intervalMs;
-
-        onNoteOnRef.current(
-          note,
-          velocity,
-          intervalMs > 0 ? intervalMs : undefined,
-        );
-        soundingNotesRef.current.add(note);
-        startClock();
+        // First finger — start chord collection window + RAF
+        collectStartRef.current = performance.now();
+        rafIdRef.current = requestAnimationFrame(tick);
+      } else if (collectStartRef.current > 0) {
+        // Still in collection window — just add to heldNotes (already done above)
       } else {
-        // Clock already running — play immediately with duration trimmed
-        // to the next grid boundary (like Ableton Note: initial trigger is
-        // always instant, only repeats are grid-aligned).
-        const remaining = nextTriggerRef.current - performance.now();
-        const dur =
-          remaining > 0 ? remaining : intervalMsRef.current;
-
-        onNoteOnRef.current(note, velocity, dur);
-        soundingNotesRef.current.add(note);
+        // Clock already running (repeat phase) — just add to heldNotes
+        // (already done above). The next grid tick will fire it together
+        // with all other held notes, keeping everything aligned.
       }
     },
-    [startClock, getBpm],
+    [tick],
   );
 
   const handleNoteOff = useCallback(
