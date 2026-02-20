@@ -12,6 +12,7 @@ struct Config
 {
     int polyphony = 16;
     BaseOscillatorVoice::Waveform waveform = BaseOscillatorVoice::Waveform::Sine;
+    BaseOscillatorVoice::VoiceParams voiceParams;
     juce::ADSR::Parameters adsrParams { 0.01f, 0.1f, 0.8f, 0.3f };
     float volume = 0.7f;
     float pan = 0.5f;  // 0.0 = left, 0.5 = center, 1.0 = right
@@ -49,7 +50,8 @@ public:
     void setVolume(float volume);  // 0.0 to 1.0
     void setPan(float pan);        // 0.0 (left) to 1.0 (right)
     void setDetune(float cents);
-    
+    void setVoiceParams(const BaseOscillatorVoice::VoiceParams& params);
+
     // ──────────────────────────────────────────
     // Effects chain management
     // ──────────────────────────────────────────

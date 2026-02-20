@@ -6,6 +6,14 @@
 #import "JuceInitializer.h"
 #import <Foundation/Foundation.h>
 
+static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
+    NSString *lower = [str lowercaseString];
+    if ([lower isEqualToString:@"saw"]) return BaseOscillatorVoice::Waveform::Saw;
+    if ([lower isEqualToString:@"square"]) return BaseOscillatorVoice::Waveform::Square;
+    if ([lower isEqualToString:@"triangle"]) return BaseOscillatorVoice::Waveform::Triangle;
+    return BaseOscillatorVoice::Waveform::Sine;
+}
+
 @implementation AudioModule
 
 - (instancetype)init {
@@ -72,18 +80,8 @@
     Config config;
     config.polyphony = static_cast<int>(polyphony);
     config.name = juce::String([name UTF8String]);
-    
-    NSString *lowerWaveform = [waveform lowercaseString];
-    if ([lowerWaveform isEqualToString:@"sine"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Sine;
-    } else if ([lowerWaveform isEqualToString:@"saw"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Saw;
-    } else if ([lowerWaveform isEqualToString:@"square"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Square;
-    } else if ([lowerWaveform isEqualToString:@"triangle"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Triangle;
-    }
-    
+    config.waveform = waveformFromString(waveform);
+
     _audioEngine->createOscillatorInstrument(static_cast<int>(channel), config);
 }
 
@@ -286,22 +284,7 @@
 - (void)setWaveform:(double)channel
                type:(NSString *)type {
     if (!_audioEngine) return;
-    
-    NSString *lowerType = [type lowercaseString];
-    
-    if ([lowerType isEqualToString:@"sine"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Sine);
-    } else if ([lowerType isEqualToString:@"saw"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Saw);
-    } else if ([lowerType isEqualToString:@"square"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Square);
-    } else if ([lowerType isEqualToString:@"triangle"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Triangle);
-    }
+    _audioEngine->setWaveform(static_cast<int>(channel), waveformFromString(type));
 }
 
 - (void)setDetune:(double)channel
@@ -380,6 +363,55 @@
                                         juce::String([paramName UTF8String]),
                                         static_cast<float>(value));
     }
+}
+
+// ────────────────────────────────────────────────
+// Preset Application
+// ────────────────────────────────────────────────
+
+- (void)applyPreset:(double)channel
+          waveform1:(NSString *)waveform1
+        detuneCents1:(double)detuneCents1
+          waveform2:(NSString *)waveform2
+        detuneCents2:(double)detuneCents2
+           osc2Level:(double)osc2Level
+            osc2Semi:(double)osc2Semi
+            subLevel:(double)subLevel
+          noiseLevel:(double)noiseLevel
+       filterEnabled:(BOOL)filterEnabled
+        filterCutoff:(double)filterCutoff
+     filterResonance:(double)filterResonance
+     filterEnvAmount:(double)filterEnvAmount
+              attack:(double)attack
+               decay:(double)decay
+             sustain:(double)sustain
+             release:(double)release
+              volume:(double)volume {
+    if (!_audioEngine) return;
+
+    int ch = static_cast<int>(channel);
+
+    BaseOscillatorVoice::VoiceParams params;
+    params.waveform1 = waveformFromString(waveform1);
+    params.detuneCents1 = static_cast<float>(detuneCents1);
+    params.waveform2 = waveformFromString(waveform2);
+    params.detuneCents2 = static_cast<float>(detuneCents2);
+    params.osc2Level = static_cast<float>(osc2Level);
+    params.osc2Semi = static_cast<int>(osc2Semi);
+    params.subLevel = static_cast<float>(subLevel);
+    params.noiseLevel = static_cast<float>(noiseLevel);
+    params.filterEnabled = filterEnabled;
+    params.filterCutoff = static_cast<float>(filterCutoff);
+    params.filterResonance = static_cast<float>(filterResonance);
+    params.filterEnvAmount = static_cast<float>(filterEnvAmount);
+
+    _audioEngine->setVoiceParams(ch, params);
+    _audioEngine->setADSR(ch,
+                          static_cast<float>(attack),
+                          static_cast<float>(decay),
+                          static_cast<float>(sustain),
+                          static_cast<float>(release));
+    _audioEngine->setVolume(ch, static_cast<float>(volume));
 }
 
 // ────────────────────────────────────────────────

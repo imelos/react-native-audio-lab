@@ -103,6 +103,30 @@ export interface Spec extends TurboModule {
   setEffectParameter(channel: number, effectId: number, paramName: string, value: number): void;
 
   // ────────────────────────────────────────────────
+  // Preset Application (sets voice params + ADSR + volume in one call)
+  // ────────────────────────────────────────────────
+  applyPreset(
+    channel: number,
+    waveform1: string,
+    detuneCents1: number,
+    waveform2: string,
+    detuneCents2: number,
+    osc2Level: number,
+    osc2Semi: number,
+    subLevel: number,
+    noiseLevel: number,
+    filterEnabled: boolean,
+    filterCutoff: number,
+    filterResonance: number,
+    filterEnvAmount: number,
+    attack: number,
+    decay: number,
+    sustain: number,
+    release: number,
+    volume: number
+  ): void;
+
+  // ────────────────────────────────────────────────
   // Global Controls
   // ────────────────────────────────────────────────
   setMasterVolume(volume: number): void;

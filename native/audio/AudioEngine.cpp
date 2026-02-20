@@ -357,6 +357,14 @@ void AudioEngine::setDetune(int channel, float cents)
     }
 }
 
+void AudioEngine::setVoiceParams(int channel, const BaseOscillatorVoice::VoiceParams& params)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+    {
+        instrument->setVoiceParams(params);
+    }
+}
+
 // ──────────────────────────────────────────
 // Common parameter control
 // ──────────────────────────────────────────

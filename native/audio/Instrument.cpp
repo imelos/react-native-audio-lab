@@ -69,11 +69,14 @@ Instrument::Instrument(const Config& cfg)
     // Add sound
     synth.addSound(new BasicSynthSound());
     
+    // Sync voiceParams.waveform1 with legacy waveform field
+    config.voiceParams.waveform1 = config.waveform;
+
     // Add voices based on polyphony
     for (int i = 0; i < config.polyphony; ++i)
     {
         auto* voice = new BaseOscillatorVoice();
-        voice->setWaveform(config.waveform);
+        voice->setVoiceParams(config.voiceParams);
         voice->setADSR(config.adsrParams);
         synth.addVoice(voice);
     }
@@ -158,7 +161,8 @@ void Instrument::allNotesOff()
 void Instrument::setWaveform(BaseOscillatorVoice::Waveform waveform)
 {
     config.waveform = waveform;
-    
+    config.voiceParams.waveform1 = waveform;
+
     for (int i = 0; i < synth.getNumVoices(); ++i)
     {
         if (auto* voice = dynamic_cast<BaseOscillatorVoice*>(synth.getVoice(i)))
@@ -198,6 +202,20 @@ void Instrument::setDetune(float cents)
         if (auto* voice = dynamic_cast<BaseOscillatorVoice*>(synth.getVoice(i)))
         {
             voice->setDetune(cents);
+        }
+    }
+}
+
+void Instrument::setVoiceParams(const BaseOscillatorVoice::VoiceParams& params)
+{
+    config.voiceParams = params;
+    config.waveform = params.waveform1;
+
+    for (int i = 0; i < synth.getNumVoices(); ++i)
+    {
+        if (auto* voice = dynamic_cast<BaseOscillatorVoice*>(synth.getVoice(i)))
+        {
+            voice->setVoiceParams(params);
         }
     }
 }
@@ -340,7 +358,7 @@ void Instrument::updateVoiceParameters()
     {
         if (auto* voice = dynamic_cast<BaseOscillatorVoice*>(synth.getVoice(i)))
         {
-            voice->setWaveform(config.waveform);
+            voice->setVoiceParams(config.voiceParams);
             voice->setADSR(config.adsrParams);
         }
     }

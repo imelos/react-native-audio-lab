@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,12 +6,21 @@ import {
   Button,
   TouchableOpacity,
   ScrollView,
+  FlatList,
 } from 'react-native';
 import NativeAudioModule from '../specs/NativeAudioModule';
 import Slider from '@react-native-community/slider';
 import Player from '../features/music-pad/Player';
 import { Props } from '../navigation/Navigation';
 import { useHeaderHeight } from '@react-navigation/elements';
+import {
+  PRESET_CATEGORIES,
+  SYNTH_PRESETS,
+  getPresetsByCategory,
+  type PresetCategory,
+  type SynthPreset,
+} from '../data/synthPresets';
+import { applyPreset } from '../utils/applyPreset';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -84,6 +93,55 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
   const [scaleType, setScaleType] = useState<ScaleType>('Major');
   const [useScale, setUseScale] = useState(true);
   const [octaveShift, setOctaveShift] = useState(0);
+
+  // Preset state
+  const [selectedCategory, setSelectedCategory] =
+    useState<PresetCategory>('Keys');
+  const [activePresetName, setActivePresetName] = useState<string | null>(null);
+
+  const handlePresetSelect = useCallback(
+    (preset: SynthPreset) => {
+      applyPreset(channelId, preset);
+      setActivePresetName(preset.name);
+      setCurrentWaveform(preset.waveform1);
+      // Sync filter state
+      setFilterEnabled(preset.filterEnabled);
+      if (preset.filterEnabled) {
+        setFilterCutoff(preset.filterCutoff);
+        setFilterResonance(preset.filterResonance);
+      }
+      // Sync FX state
+      setReverbEnabled(
+        preset.effects?.some(e => e.type === 'reverb') ?? false,
+      );
+      setDelayEnabled(
+        preset.effects?.some(e => e.type === 'delay') ?? false,
+      );
+      if (preset.effects) {
+        for (const effect of preset.effects) {
+          if (effect.type === 'reverb') {
+            if (effect.params.roomSize != null)
+              setReverbRoomSize(effect.params.roomSize);
+            if (effect.params.wetLevel != null)
+              setReverbWetLevel(effect.params.wetLevel);
+          }
+          if (effect.type === 'delay') {
+            if (effect.params.delayTime != null)
+              setDelayTime(effect.params.delayTime);
+            if (effect.params.feedback != null)
+              setDelayFeedback(effect.params.feedback);
+            if (effect.params.wetLevel != null)
+              setDelayWetLevel(effect.params.wetLevel);
+          }
+        }
+      }
+      // Reset effect ID refs since applyPreset clears and re-adds effects
+      filterEffectIdRef.current = null;
+      reverbEffectIdRef.current = null;
+      delayEffectIdRef.current = null;
+    },
+    [channelId],
+  );
 
   // Filter state
   const [filterEnabled, setFilterEnabled] = useState(false);
@@ -347,6 +405,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
     const nextWave = WAVEFORMS[nextIndex];
 
     setCurrentWaveform(nextWave);
+    setActivePresetName(null); // Mark as custom
     NativeAudioModule.setWaveform(channelId, nextWave);
   };
 
@@ -442,28 +501,61 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
               />
             </View>
 
-            <View style={styles.controlRow}>
-              <Text style={styles.label}>Presets:</Text>
-              <View style={styles.buttonGroup}>
-                <Button
-                  title="Pluck"
-                  onPress={() =>
-                    NativeAudioModule.setADSR(channelId, 0.005, 0.1, 0.0, 0.2)
-                  }
-                />
-                <Button
-                  title="Pad"
-                  onPress={() =>
-                    NativeAudioModule.setADSR(channelId, 0.3, 1.5, 0.7, 2.0)
-                  }
-                />
-                <Button
-                  title="Organ"
-                  onPress={() =>
-                    NativeAudioModule.setADSR(channelId, 0.01, 0.05, 1.0, 0.4)
-                  }
-                />
-              </View>
+            {/* Preset Picker */}
+            <View style={styles.presetSection}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryBar}
+              >
+                {PRESET_CATEGORIES.map(cat => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[
+                      styles.categoryChip,
+                      selectedCategory === cat && styles.categoryChipActive,
+                    ]}
+                    onPress={() => setSelectedCategory(cat)}
+                  >
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        selectedCategory === cat &&
+                          styles.categoryChipTextActive,
+                      ]}
+                    >
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <FlatList
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                data={getPresetsByCategory(selectedCategory)}
+                keyExtractor={item => item.name}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[
+                      styles.presetChip,
+                      activePresetName === item.name &&
+                        styles.presetChipActive,
+                    ]}
+                    onPress={() => handlePresetSelect(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.presetChipText,
+                        activePresetName === item.name &&
+                          styles.presetChipTextActive,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                style={styles.presetList}
+              />
             </View>
           </ScrollView>
         );
@@ -797,5 +889,53 @@ const styles = StyleSheet.create({
   slider: {
     width: '100%',
     height: 40,
+  },
+  presetSection: {
+    marginBottom: 12,
+  },
+  categoryBar: {
+    flexGrow: 0,
+    marginBottom: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#2a2a2a',
+    marginRight: 8,
+  },
+  categoryChipActive: {
+    backgroundColor: '#6200ee',
+  },
+  categoryChipText: {
+    color: '#999',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+  },
+  presetList: {
+    flexGrow: 0,
+  },
+  presetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#1e1e1e',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  presetChipActive: {
+    borderColor: '#6200ee',
+    backgroundColor: '#2a1a4a',
+  },
+  presetChipText: {
+    color: '#ccc',
+    fontSize: 13,
+  },
+  presetChipTextActive: {
+    color: '#fff',
   },
 });

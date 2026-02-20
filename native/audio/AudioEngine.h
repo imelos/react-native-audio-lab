@@ -104,6 +104,7 @@ public:
     // ──────────────────────────────────────────
     void setWaveform(int channel, BaseOscillatorVoice::Waveform waveform);
     void setDetune(int channel, float cents);
+    void setVoiceParams(int channel, const BaseOscillatorVoice::VoiceParams& params);
 
     // ──────────────────────────────────────────
     // Common parameter control (works for both instrument types)
