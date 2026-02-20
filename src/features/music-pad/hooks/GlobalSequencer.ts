@@ -423,6 +423,19 @@ class GlobalSequencer {
     return 0;
   }
 
+  /**
+   * Returns the absolute performance.now() timestamp of the next grid
+   * boundary aligned to the global transport.  When the transport is not
+   * playing, returns `now` (fire immediately).
+   */
+  getNextGridTime(intervalMs: number): number {
+    const now = performance.now();
+    if (this._transportState !== 'playing' || intervalMs <= 0) return now;
+    const elapsed = now - this.globalStartTime;
+    const nextGrid = Math.ceil(elapsed / intervalMs) * intervalMs;
+    return this.globalStartTime + nextGrid;
+  }
+
   /** Returns the BPM from the first channel that has a sequence, or null. */
   getGlobalBPM(): number | null {
     for (const [, s] of this.channels) {

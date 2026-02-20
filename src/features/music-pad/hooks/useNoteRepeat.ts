@@ -139,18 +139,17 @@ export function useNoteRepeat({
         return;
       }
 
-      // Window elapsed — fire all collected notes and transition to repeat
+      // Window elapsed — transition to repeat phase aligned to global grid.
+      // Don't fire notes here; let the normal repeat phase handle it on the
+      // next grid boundary so all channels share the same grid.
       collectStartRef.current = 0;
       const bpm = getBpmRef.current();
       const intervalMs = getIntervalMs(modeRef.current, bpm);
       intervalMsRef.current = intervalMs;
-      nextTriggerRef.current = now + intervalMs;
 
-      const dur = intervalMs > 0 ? intervalMs : undefined;
-      heldNotesRef.current.forEach((velocity, note) => {
-        onNoteOnRef.current(note, velocity, dur);
-        soundingNotesRef.current.add(note);
-      });
+      // Align to global transport grid (fires immediately if not playing)
+      nextTriggerRef.current =
+        GlobalSequencer.getInstance().getNextGridTime(intervalMs);
 
       rafIdRef.current = requestAnimationFrame(tick);
       return;
