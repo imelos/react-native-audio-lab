@@ -219,9 +219,15 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       if (duration != null) {
         // Repeat mode: snap to the previous endTime for the SAME pitch so
         // notes are perfectly back-to-back without RAF-jitter micro-gaps.
+        // Only snap if the previous note ended recently (within 1.5× the
+        // repeat interval) — otherwise the pitch was released and re-pressed
+        // later, and snapping would teleport the note backwards in time.
+        const tolerance = duration * 1.5;
         for (let i = arr.length - 1; i >= 0; i--) {
           if (arr[i].note === note && arr[i].endTime != null) {
-            startTime = arr[i].endTime!;
+            if (Math.abs(startTime - arr[i].endTime!) < tolerance) {
+              startTime = arr[i].endTime!;
+            }
             break;
           }
         }
