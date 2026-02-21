@@ -203,7 +203,9 @@ export function useNoteRepeat({
   useEffect(() => {
     return () => {
       stopClock();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       heldNotesRef.current.clear();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       soundingNotesRef.current.clear();
       collectStartRef.current = 0;
     };

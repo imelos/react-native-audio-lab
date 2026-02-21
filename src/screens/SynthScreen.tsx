@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -53,15 +53,12 @@ const SCALES = {
   Major: [0, 2, 4, 5, 7, 9, 11],
   Minor: [0, 2, 3, 5, 7, 8, 10],
 } as const;
-
 type ScaleType = keyof typeof SCALES;
 
 const FILTER_TYPES = ['LowPass', 'HighPass', 'BandPass'] as const;
 type FilterType = (typeof FILTER_TYPES)[number];
 
 type TabType = 'instrument' | 'filter' | 'fx';
-
-// CHANNEL CONSTANTS - Define which channel to use
 
 function generateScale(
   rootNote: number,
@@ -70,16 +67,12 @@ function generateScale(
 ): number[] {
   const intervals = SCALES[scaleType];
   const notes: number[] = [];
-
   let octaveOffset = 0;
   for (let i = 0; i < count; i++) {
     const scaleIndex = i % intervals.length;
-    if (i > 0 && scaleIndex === 0) {
-      octaveOffset += 12;
-    }
+    if (i > 0 && scaleIndex === 0) octaveOffset += 12;
     notes.push(rootNote + intervals[scaleIndex] + octaveOffset);
   }
-
   return notes;
 }
 
@@ -88,6 +81,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
     channelId: 1,
     color: '#6200ee',
   };
+
+  // ── UI / instrument state ────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabType>('instrument');
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
   const [gridSize, setGridSize] = useState<GridSize>('5x5');
@@ -95,332 +90,279 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   const [scaleType, setScaleType] = useState<ScaleType>('Major');
   const [useScale, setUseScale] = useState(true);
   const [octaveShift, setOctaveShift] = useState(0);
-
-  // Preset state
   const [selectedCategory, setSelectedCategory] =
     useState<PresetCategory>('Keys');
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
 
-  const handlePresetSelect = useCallback(
-    (preset: SynthPreset) => {
-      const { reverbId, delayId, filterId } = applyPreset(channelId, preset);
-      setActivePresetName(preset.name);
-      setCurrentWaveform(preset.waveform1);
-      // Store native effect IDs returned by applyPreset
-      reverbEffectIdRef.current = reverbId;
-      delayEffectIdRef.current = delayId;
-      filterEffectIdRef.current = filterId;
-      // Sync toggle state and slider values from preset
-      setReverbEnabled(reverbId !== null);
-      setDelayEnabled(delayId !== null);
-      setFilterEnabled(filterId !== null);
-      if (preset.effects) {
-        for (const effect of preset.effects) {
-          if (effect.type === 'reverb') {
-            if (effect.params.roomSize != null)
-              setReverbRoomSize(effect.params.roomSize);
-            if (effect.params.wetLevel != null)
-              setReverbWetLevel(effect.params.wetLevel);
-          }
-          if (effect.type === 'delay') {
-            if (effect.params.delayTime != null)
-              setDelayTime(effect.params.delayTime);
-            if (effect.params.feedback != null)
-              setDelayFeedback(effect.params.feedback);
-            if (effect.params.wetLevel != null)
-              setDelayWetLevel(effect.params.wetLevel);
-          }
-        }
-      }
-      if (preset.filterEnabled) {
-        setFilterCutoff(preset.filterCutoff);
-        setFilterResonance(preset.filterResonance);
-      }
-    },
-    [channelId],
-  );
-
-  // Filter state
+  // ── Chain filter state (user-controlled, never touched by presets) ───
   const [filterEnabled, setFilterEnabled] = useState(false);
-  const filterEffectIdRef = useRef<number | null>(null);
   const [filterType, setFilterType] = useState<FilterType>('LowPass');
-  const [filterCutoff, setFilterCutoff] = useState(1000); // 20 - 20000 Hz
-  const [filterResonance, setFilterResonance] = useState(0.7); // 0.1 - 10
+  const [filterCutoff, setFilterCutoff] = useState(1000);
+  const [filterResonance, setFilterResonance] = useState(0.7);
 
-  // Reverb state
+  // ── Reverb state ─────────────────────────────────────────────────────
   const [reverbEnabled, setReverbEnabled] = useState(false);
-  const reverbEffectIdRef = useRef<number | null>(null);
-  const [reverbRoomSize, setReverbRoomSize] = useState(0.5); // 0 - 1
-  const [reverbWetLevel, setReverbWetLevel] = useState(0.33); // 0 - 1
+  const [reverbRoomSize, setReverbRoomSize] = useState(0.5);
+  const [reverbWetLevel, setReverbWetLevel] = useState(0.33);
 
-  // Delay state
+  // ── Delay state ──────────────────────────────────────────────────────
   const [delayEnabled, setDelayEnabled] = useState(false);
-  const delayEffectIdRef = useRef<number | null>(null);
-  const [delayTime, setDelayTime] = useState(500); // 1 - 2000 ms
-  const [delayFeedback, setDelayFeedback] = useState(0.4); // 0 - 0.95
-  const [delayWetLevel, setDelayWetLevel] = useState(0.5); // 0 - 1
+  const [delayTime, setDelayTime] = useState(500);
+  const [delayFeedback, setDelayFeedback] = useState(0.4);
+  const [delayWetLevel, setDelayWetLevel] = useState(0.5);
 
-  const { rows, cols } = GRID_CONFIGS[gridSize];
-  const totalPads = rows * cols;
+  // ── Permanent effect IDs (set once on mount, never change) ───────────
+  // Refs so callbacks always read the current ID with no stale closures
+  // and without triggering re-renders.
+  const filterIdRef = useRef<number | null>(null);
+  const reverbIdRef = useRef<number | null>(null);
+  const delayIdRef = useRef<number | null>(null);
 
-  const baseOctave = 3;
-  const keyOffset = KEYS.indexOf(selectedKey);
-  const rootNote = 12 * (baseOctave + 1) + keyOffset + octaveShift * 12;
-
-  const gridNotes = useScale
-    ? generateScale(rootNote, scaleType, totalPads)
-    : Array.from({ length: totalPads }, (_, i) => rootNote + i);
-
-  const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
-
-  const headerHeight = useHeaderHeight();
-
-  // Initialize audio engine on mount
+  // ── Mount: create instrument + all three effects (disabled) ──────────
   useEffect(() => {
-    // Create main instrument on channel
     NativeAudioModule.createOscillatorInstrument(
       channelId,
       'Main Synth',
       16,
       'sine',
     );
-
-    // Set initial ADSR
     NativeAudioModule.setADSR(channelId, 0.01, 0.1, 0.8, 0.3);
 
+    // Chain filter — disabled, params match initial state above
+    const fId = NativeAudioModule.addEffect(channelId, 'filter');
+    NativeAudioModule.setEffectEnabled(channelId, fId, false);
+    NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', 1000);
+    NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', 0.7);
+    NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0); // LowPass
+    filterIdRef.current = fId;
+
+    // Reverb — disabled
+    const rId = NativeAudioModule.addEffect(channelId, 'reverb');
+    NativeAudioModule.setEffectEnabled(channelId, rId, false);
+    NativeAudioModule.setEffectParameter(channelId, rId, 'roomSize', 0.5);
+    NativeAudioModule.setEffectParameter(channelId, rId, 'wetLevel', 0.33);
+    reverbIdRef.current = rId;
+
+    // Delay — disabled
+    const dId = NativeAudioModule.addEffect(channelId, 'delay');
+    NativeAudioModule.setEffectEnabled(channelId, dId, false);
+    NativeAudioModule.setEffectParameter(channelId, dId, 'delayTime', 500);
+    NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', 0.4);
+    NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', 0.5);
+    delayIdRef.current = dId;
+
     return () => {
-      // Cleanup: stop all notes and remove instruments
       NativeAudioModule.allNotesOff(channelId);
     };
   }, [channelId]);
 
-  // Toggle Filter
+  // ── Preset selection ─────────────────────────────────────────────────
+  // Applies voice params + updates reverb/delay. Chain filter is untouched.
+  const handlePresetSelect = useCallback(
+    (preset: SynthPreset) => {
+      applyPreset(channelId, preset);
+      setActivePresetName(preset.name);
+      setCurrentWaveform(preset.waveform1);
+
+      const reverbEffect =
+        preset.effects?.find(e => e.type === 'reverb') ?? null;
+      const delayEffect = preset.effects?.find(e => e.type === 'delay') ?? null;
+
+      // Reverb
+      const hasReverb = reverbEffect !== null;
+      if (reverbIdRef.current !== null) {
+        NativeAudioModule.setEffectEnabled(
+          channelId,
+          reverbIdRef.current,
+          hasReverb,
+        );
+        if (hasReverb) {
+          const roomSize = reverbEffect!.params.roomSize ?? reverbRoomSize;
+          const wetLevel = reverbEffect!.params.wetLevel ?? reverbWetLevel;
+          NativeAudioModule.setEffectParameter(
+            channelId,
+            reverbIdRef.current,
+            'roomSize',
+            roomSize,
+          );
+          NativeAudioModule.setEffectParameter(
+            channelId,
+            reverbIdRef.current,
+            'wetLevel',
+            wetLevel,
+          );
+          setReverbRoomSize(roomSize);
+          setReverbWetLevel(wetLevel);
+        }
+      }
+      setReverbEnabled(hasReverb);
+
+      // Delay
+      const hasDelay = delayEffect !== null;
+      if (delayIdRef.current !== null) {
+        NativeAudioModule.setEffectEnabled(
+          channelId,
+          delayIdRef.current,
+          hasDelay,
+        );
+        if (hasDelay) {
+          const dt = delayEffect!.params.delayTime ?? delayTime;
+          const fb = delayEffect!.params.feedback ?? delayFeedback;
+          const wl = delayEffect!.params.wetLevel ?? delayWetLevel;
+          NativeAudioModule.setEffectParameter(
+            channelId,
+            delayIdRef.current,
+            'delayTime',
+            dt,
+          );
+          NativeAudioModule.setEffectParameter(
+            channelId,
+            delayIdRef.current,
+            'feedback',
+            fb,
+          );
+          NativeAudioModule.setEffectParameter(
+            channelId,
+            delayIdRef.current,
+            'wetLevel',
+            wl,
+          );
+          setDelayTime(dt);
+          setDelayFeedback(fb);
+          setDelayWetLevel(wl);
+        }
+      }
+      setDelayEnabled(hasDelay);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [channelId],
+    // reverbRoomSize / delayTime etc. are used only as fallbacks when the preset
+    // doesn't supply a value — stale closure is acceptable there. Effect IDs
+    // are read from refs (always current). State setters are stable.
+  );
+
+  // ── Chain filter toggle ───────────────────────────────────────────────
   const toggleFilter = () => {
-    if (!filterEnabled) {
-      const effectId = NativeAudioModule.addEffect(channelId, 'filter');
-      filterEffectIdRef.current = effectId;
+    const id = filterIdRef.current;
+    if (id === null) return;
+    const newEnabled = !filterEnabled;
+    NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
+    if (newEnabled) {
+      // Sync current UI values to native on enable
       NativeAudioModule.setEffectParameter(
         channelId,
-        effectId,
+        id,
         'cutoff',
         filterCutoff,
       );
       NativeAudioModule.setEffectParameter(
         channelId,
-        effectId,
+        id,
         'resonance',
         filterResonance,
       );
       NativeAudioModule.setEffectParameter(
         channelId,
-        effectId,
+        id,
         'type',
         FILTER_TYPES.indexOf(filterType),
       );
-
-      setFilterEnabled(true);
-    } else {
-      if (filterEffectIdRef.current !== null) {
-        NativeAudioModule.removeEffect(channelId, filterEffectIdRef.current);
-      }
-      setFilterEnabled(false);
-      filterEffectIdRef.current = null;
     }
+    setFilterEnabled(newEnabled);
   };
-
-  // Update filter parameters
-  useEffect(() => {
-    if (filterEnabled && filterEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        filterEffectIdRef.current,
-        'cutoff',
-        filterCutoff,
-      );
-    }
-  }, [filterCutoff, filterEnabled, channelId]);
-
-  useEffect(() => {
-    if (filterEnabled && filterEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        filterEffectIdRef.current,
-        'resonance',
-        filterResonance,
-      );
-    }
-  }, [filterResonance, filterEnabled, channelId]);
-
-  useEffect(() => {
-    if (filterEnabled && filterEffectIdRef.current !== null) {
-      const typeIndex = FILTER_TYPES.indexOf(filterType);
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        filterEffectIdRef.current,
-        'type',
-        typeIndex,
-      );
-    }
-  }, [filterType, filterEnabled, channelId]);
-
-  // Toggle Reverb
-  const toggleReverb = () => {
-    if (!reverbEnabled) {
-      const effectId = NativeAudioModule.addEffect(channelId, 'reverb');
-      reverbEffectIdRef.current = effectId;
-
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        effectId,
-        'roomSize',
-        reverbRoomSize,
-      );
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        effectId,
-        'wetLevel',
-        reverbWetLevel,
-      );
-
-      setReverbEnabled(true);
-    } else {
-      if (reverbEffectIdRef.current !== null) {
-        NativeAudioModule.removeEffect(channelId, reverbEffectIdRef.current);
-      }
-      setReverbEnabled(false);
-      reverbEffectIdRef.current = null;
-    }
-  };
-
-  // Update reverb parameters
-  useEffect(() => {
-    if (reverbEnabled && reverbEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        reverbEffectIdRef.current,
-        'roomSize',
-        reverbRoomSize,
-      );
-    }
-  }, [reverbRoomSize, reverbEnabled, channelId]);
-
-  useEffect(() => {
-    if (reverbEnabled && reverbEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        reverbEffectIdRef.current,
-        'wetLevel',
-        reverbWetLevel,
-      );
-    }
-  }, [reverbWetLevel, reverbEnabled, channelId]);
-
-  // Toggle Delay
-  const toggleDelay = () => {
-    if (!delayEnabled) {
-      const effectId = NativeAudioModule.addEffect(channelId, 'delay');
-      delayEffectIdRef.current = effectId;
-
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        effectId,
-        'delayTime',
-        delayTime,
-      );
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        effectId,
-        'feedback',
-        delayFeedback,
-      );
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        effectId,
-        'wetLevel',
-        delayWetLevel,
-      );
-
-      setDelayEnabled(true);
-    } else {
-      if (delayEffectIdRef.current !== null) {
-        NativeAudioModule.removeEffect(channelId, delayEffectIdRef.current);
-      }
-      setDelayEnabled(false);
-      delayEffectIdRef.current = null;
-    }
-  };
-
-  // Update delay parameters
-  useEffect(() => {
-    if (delayEnabled && delayEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        delayEffectIdRef.current,
-        'delayTime',
-        delayTime,
-      );
-    }
-  }, [delayTime, delayEnabled, channelId]);
-
-  useEffect(() => {
-    if (delayEnabled && delayEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        delayEffectIdRef.current,
-        'feedback',
-        delayFeedback,
-      );
-    }
-  }, [delayFeedback, delayEnabled, channelId]);
-
-  useEffect(() => {
-    if (delayEnabled && delayEffectIdRef.current !== null) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        delayEffectIdRef.current,
-        'wetLevel',
-        delayWetLevel,
-      );
-    }
-  }, [delayWetLevel, delayEnabled, channelId]);
 
   const changeFilterType = () => {
-    const currentIndex = FILTER_TYPES.indexOf(filterType);
-    const nextIndex = (currentIndex + 1) % FILTER_TYPES.length;
+    const nextIndex =
+      (FILTER_TYPES.indexOf(filterType) + 1) % FILTER_TYPES.length;
     setFilterType(FILTER_TYPES[nextIndex]);
+    const id = filterIdRef.current;
+    if (filterEnabled && id !== null) {
+      NativeAudioModule.setEffectParameter(channelId, id, 'type', nextIndex);
+    }
   };
 
-  const changeWaveform = () => {
-    const currentIndex = WAVEFORMS.indexOf(currentWaveform);
-    const nextIndex = (currentIndex + 1) % WAVEFORMS.length;
-    const nextWave = WAVEFORMS[nextIndex];
+  // ── Reverb toggle ─────────────────────────────────────────────────────
+  const toggleReverb = () => {
+    const id = reverbIdRef.current;
+    if (id === null) return;
+    const newEnabled = !reverbEnabled;
+    NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
+    if (newEnabled) {
+      NativeAudioModule.setEffectParameter(
+        channelId,
+        id,
+        'roomSize',
+        reverbRoomSize,
+      );
+      NativeAudioModule.setEffectParameter(
+        channelId,
+        id,
+        'wetLevel',
+        reverbWetLevel,
+      );
+    }
+    setReverbEnabled(newEnabled);
+  };
 
-    setCurrentWaveform(nextWave);
-    setActivePresetName(null); // Mark as custom
-    NativeAudioModule.setWaveform(channelId, nextWave);
+  // ── Delay toggle ──────────────────────────────────────────────────────
+  const toggleDelay = () => {
+    const id = delayIdRef.current;
+    if (id === null) return;
+    const newEnabled = !delayEnabled;
+    NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
+    if (newEnabled) {
+      NativeAudioModule.setEffectParameter(
+        channelId,
+        id,
+        'delayTime',
+        delayTime,
+      );
+      NativeAudioModule.setEffectParameter(
+        channelId,
+        id,
+        'feedback',
+        delayFeedback,
+      );
+      NativeAudioModule.setEffectParameter(
+        channelId,
+        id,
+        'wetLevel',
+        delayWetLevel,
+      );
+    }
+    setDelayEnabled(newEnabled);
+  };
+
+  // ── Waveform / grid / key helpers ─────────────────────────────────────
+  const changeWaveform = () => {
+    const next =
+      WAVEFORMS[(WAVEFORMS.indexOf(currentWaveform) + 1) % WAVEFORMS.length];
+    setCurrentWaveform(next);
+    setActivePresetName(null);
+    NativeAudioModule.setWaveform(channelId, next);
   };
 
   const changeGridSize = () => {
     const sizes: GridSize[] = ['4x4', '5x5', '6x6', '8x8'];
-    const currentIndex = sizes.indexOf(gridSize);
-    const nextIndex = (currentIndex + 1) % sizes.length;
-    setGridSize(sizes[nextIndex]);
+    setGridSize(sizes[(sizes.indexOf(gridSize) + 1) % sizes.length]);
   };
 
   const changeKey = () => {
-    const currentIndex = KEYS.indexOf(selectedKey);
-    const nextIndex = (currentIndex + 1) % KEYS.length;
-    setSelectedKey(KEYS[nextIndex]);
+    setSelectedKey(KEYS[(KEYS.indexOf(selectedKey) + 1) % KEYS.length]);
   };
 
-  const toggleScale = () => {
-    setScaleType(current => (current === 'Major' ? 'Minor' : 'Major'));
-  };
+  // ── Notes / grid ──────────────────────────────────────────────────────
+  const { rows, cols } = GRID_CONFIGS[gridSize];
+  const totalPads = rows * cols;
+  const rootNote = 12 * (3 + 1) + KEYS.indexOf(selectedKey) + octaveShift * 12;
+  const gridNotes = useScale
+    ? generateScale(rootNote, scaleType, totalPads)
+    : Array.from({ length: totalPads }, (_, i) => rootNote + i);
+  const scaleNotes = new Set(generateScale(rootNote, scaleType, 88));
 
-  const toggleScaleMode = () => {
-    setUseScale(current => !current);
-  };
+  const headerHeight = useHeaderHeight();
 
+  // ── Tab content ───────────────────────────────────────────────────────
   const renderTabContent = () => {
     switch (activeTab) {
       case 'instrument':
@@ -428,7 +370,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
           <ScrollView
             style={styles.tabContent}
             showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
+            nestedScrollEnabled
           >
             <View style={styles.controlRow}>
               <Text style={styles.label}>Waveform: {currentWaveform}</Text>
@@ -439,7 +381,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               />
             </View>
 
-            {/* Preset Picker */}
             <View style={styles.presetSection}>
               <ScrollView
                 horizontal
@@ -497,16 +438,21 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 style={styles.presetList}
               />
             </View>
+
             <View style={styles.controlRow}>
               <Text style={styles.label}>Key: {selectedKey}</Text>
               <Button title="Change Key" onPress={changeKey} color={color} />
             </View>
-
             <View style={styles.controlRow}>
               <Text style={styles.label}>Scale: {scaleType}</Text>
-              <Button title="Major/Minor" onPress={toggleScale} color={color} />
+              <Button
+                title="Major/Minor"
+                onPress={() =>
+                  setScaleType(s => (s === 'Major' ? 'Minor' : 'Major'))
+                }
+                color={color}
+              />
             </View>
-
             <View style={styles.controlRow}>
               <Text style={styles.label}>
                 Octave: {octaveShift >= 0 ? '+' : ''}
@@ -525,18 +471,16 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 />
               </View>
             </View>
-
             <View style={styles.controlRow}>
               <Text style={styles.label}>
                 Mode: {useScale ? 'Scale' : 'Chromatic'}
               </Text>
               <Button
                 title="Toggle Mode"
-                onPress={toggleScaleMode}
+                onPress={() => setUseScale(v => !v)}
                 color={color}
               />
             </View>
-
             <View style={styles.controlRow}>
               <Text style={styles.label}>Grid: {gridSize}</Text>
               <Button
@@ -553,7 +497,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
           <ScrollView
             style={styles.tabContent}
             showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
+            nestedScrollEnabled
           >
             <View style={styles.effectHeader}>
               <Text style={styles.effectTitle}>Filter</Text>
@@ -563,7 +507,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 color={filterEnabled ? '#4caf50' : '#757575'}
               />
             </View>
-
             {filterEnabled && (
               <>
                 <View style={styles.controlRow}>
@@ -574,7 +517,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                     color={color}
                   />
                 </View>
-
                 <View style={styles.sliderContainer}>
                   <Text style={styles.sliderLabel}>
                     Cutoff: {Math.round(filterCutoff)} Hz
@@ -584,12 +526,21 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                     minimumValue={20}
                     maximumValue={20000}
                     value={filterCutoff}
-                    onValueChange={setFilterCutoff}
+                    onValueChange={v => {
+                      setFilterCutoff(v);
+                      if (filterIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          filterIdRef.current,
+                          'cutoff',
+                          v,
+                        );
+                      }
+                    }}
                     minimumTrackTintColor={color}
                     maximumTrackTintColor="#444"
                   />
                 </View>
-
                 <View style={styles.sliderContainer}>
                   <Text style={styles.sliderLabel}>
                     Resonance: {filterResonance.toFixed(2)}
@@ -599,7 +550,17 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                     minimumValue={0.1}
                     maximumValue={10}
                     value={filterResonance}
-                    onValueChange={setFilterResonance}
+                    onValueChange={v => {
+                      setFilterResonance(v);
+                      if (filterIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          filterIdRef.current,
+                          'resonance',
+                          v,
+                        );
+                      }
+                    }}
                     minimumTrackTintColor={color}
                     maximumTrackTintColor="#444"
                   />
@@ -614,7 +575,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
           <ScrollView
             style={styles.tabContent}
             showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
+            nestedScrollEnabled
           >
             {/* Reverb */}
             <View style={styles.effectSection}>
@@ -626,7 +587,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                   color={reverbEnabled ? '#4caf50' : '#757575'}
                 />
               </View>
-
               {reverbEnabled && (
                 <>
                   <View style={styles.sliderContainer}>
@@ -638,12 +598,21 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                       minimumValue={0}
                       maximumValue={1}
                       value={reverbRoomSize}
-                      onValueChange={setReverbRoomSize}
+                      onValueChange={v => {
+                        setReverbRoomSize(v);
+                        if (reverbIdRef.current !== null) {
+                          NativeAudioModule.setEffectParameter(
+                            channelId,
+                            reverbIdRef.current,
+                            'roomSize',
+                            v,
+                          );
+                        }
+                      }}
                       minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
-
                   <View style={styles.sliderContainer}>
                     <Text style={styles.sliderLabel}>
                       Wet: {(reverbWetLevel * 100).toFixed(0)}%
@@ -653,7 +622,17 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                       minimumValue={0}
                       maximumValue={1}
                       value={reverbWetLevel}
-                      onValueChange={setReverbWetLevel}
+                      onValueChange={v => {
+                        setReverbWetLevel(v);
+                        if (reverbIdRef.current !== null) {
+                          NativeAudioModule.setEffectParameter(
+                            channelId,
+                            reverbIdRef.current,
+                            'wetLevel',
+                            v,
+                          );
+                        }
+                      }}
                       minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
@@ -672,7 +651,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                   color={delayEnabled ? '#4caf50' : '#757575'}
                 />
               </View>
-
               {delayEnabled && (
                 <>
                   <View style={styles.sliderContainer}>
@@ -684,12 +662,21 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                       minimumValue={1}
                       maximumValue={2000}
                       value={delayTime}
-                      onValueChange={setDelayTime}
+                      onValueChange={v => {
+                        setDelayTime(v);
+                        if (delayIdRef.current !== null) {
+                          NativeAudioModule.setEffectParameter(
+                            channelId,
+                            delayIdRef.current,
+                            'delayTime',
+                            v,
+                          );
+                        }
+                      }}
                       minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
-
                   <View style={styles.sliderContainer}>
                     <Text style={styles.sliderLabel}>
                       Feedback: {(delayFeedback * 100).toFixed(0)}%
@@ -699,12 +686,21 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                       minimumValue={0}
                       maximumValue={0.95}
                       value={delayFeedback}
-                      onValueChange={setDelayFeedback}
+                      onValueChange={v => {
+                        setDelayFeedback(v);
+                        if (delayIdRef.current !== null) {
+                          NativeAudioModule.setEffectParameter(
+                            channelId,
+                            delayIdRef.current,
+                            'feedback',
+                            v,
+                          );
+                        }
+                      }}
                       minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
-
                   <View style={styles.sliderContainer}>
                     <Text style={styles.sliderLabel}>
                       Wet: {(delayWetLevel * 100).toFixed(0)}%
@@ -714,7 +710,17 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                       minimumValue={0}
                       maximumValue={1}
                       value={delayWetLevel}
-                      onValueChange={setDelayWetLevel}
+                      onValueChange={v => {
+                        setDelayWetLevel(v);
+                        if (delayIdRef.current !== null) {
+                          NativeAudioModule.setEffectParameter(
+                            channelId,
+                            delayIdRef.current,
+                            'wetLevel',
+                            v,
+                          );
+                        }
+                      }}
                       minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
@@ -730,57 +736,33 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   return (
     <View style={[styles.container, { paddingTop: headerHeight }]}>
       <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === 'instrument' && { borderBottomColor: color },
-          ]}
-          onPress={() => setActiveTab('instrument')}
-        >
-          <Text
+        {(['instrument', 'filter', 'fx'] as TabType[]).map(tab => (
+          <TouchableOpacity
+            key={tab}
             style={[
-              styles.tabText,
-              activeTab === 'instrument' && styles.activeTabText,
+              styles.tab,
+              activeTab === tab && { borderBottomColor: color },
             ]}
+            onPress={() => setActiveTab(tab)}
           >
-            Instrument
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === 'filter' && { borderBottomColor: color },
-          ]}
-          onPress={() => setActiveTab('filter')}
-        >
-          <Text
-            style={[
-              styles.tabText,
-              activeTab === 'filter' && styles.activeTabText,
-            ]}
-          >
-            Filter
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === 'fx' && { borderBottomColor: color },
-          ]}
-          onPress={() => setActiveTab('fx')}
-        >
-          <Text
-            style={[styles.tabText, activeTab === 'fx' && styles.activeTabText]}
-          >
-            FX
-          </Text>
-        </TouchableOpacity>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === tab && styles.activeTabText,
+              ]}
+            >
+              {tab === 'instrument'
+                ? 'Instrument'
+                : tab === 'filter'
+                ? 'Filter'
+                : 'FX'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {/* Tab Content */}
       <View style={styles.tabContentContainer}>{renderTabContent()}</View>
 
-      {/* Player: MidiVisualizer + Grid + Recording/Playback */}
       <Player
         channel={channelId}
         color={color}
@@ -802,13 +784,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
-  title: {
-    fontSize: 36,
-    color: '#ffffff',
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: '#1a1a1a',
@@ -823,7 +798,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  activeTab: {},
   tabText: {
     color: '#888',
     fontSize: 16,
@@ -900,7 +874,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a2a2a',
     marginRight: 8,
   },
-  categoryChipActive: {},
   categoryChipText: {
     color: '#999',
     fontSize: 13,
@@ -921,7 +894,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
-  presetChipActive: {},
   presetChipText: {
     color: '#ccc',
     fontSize: 13,

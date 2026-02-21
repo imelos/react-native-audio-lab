@@ -128,11 +128,10 @@ void Instrument::renderNextBlock(juce::AudioBuffer<float>& buffer,
     // Render synth output
     synth.renderNextBlock(bufferView, midiMessages, 0, numSamples);
     
-    // Process effects chain
-    if (!effectsChain.empty())
-    {
-        processEffectsChain(bufferView, numSamples);
-    }
+    // Process effects chain (always call — avoids ARM memory ordering issue
+    // where an unlocked effectsChain.empty() read returns a stale value after
+    // clearEffects() + addEffect() from the JS thread)
+    processEffectsChain(bufferView, numSamples);
     
     // Apply volume and pan
     applyVolumeAndPan(bufferView, numSamples);

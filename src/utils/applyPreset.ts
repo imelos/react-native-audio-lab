@@ -1,21 +1,15 @@
 import NativeAudioModule from '../specs/NativeAudioModule';
 import { SynthPreset } from '../data/synthPresets';
 
-export interface PresetEffectIds {
-  reverbId: number | null;
-  delayId: number | null;
-  filterId: number | null;
-}
-
 /**
- * Apply a full synth preset to a channel.
- * Sets voice params + ADSR + volume via one native call,
- * then clears and re-adds post-effects.
- * Returns the native effect IDs for each effect type so the caller
- * can wire up real-time parameter updates.
+ * Apply a preset's voice-level parameters to a channel:
+ * oscillators, sub/noise, per-voice filter envelope, ADSR, and volume.
+ *
+ * Post-processing effects (chain filter, reverb, delay) are managed
+ * separately via permanent effect IDs stored in SynthScreen — this
+ * function never adds, removes, or clears any effects.
  */
-export function applyPreset(channel: number, preset: SynthPreset): PresetEffectIds {
-  // Apply voice params + ADSR + volume in one call
+export function applyPreset(channel: number, preset: SynthPreset): void {
   NativeAudioModule.applyPreset(
     channel,
     preset.waveform1,
@@ -36,35 +30,4 @@ export function applyPreset(channel: number, preset: SynthPreset): PresetEffectI
     preset.release,
     preset.volume,
   );
-
-  // Clear existing effects and re-add from preset
-  NativeAudioModule.clearEffects(channel);
-
-  let reverbId: number | null = null;
-  let delayId: number | null = null;
-  let filterId: number | null = null;
-
-  if (preset.effects) {
-    for (const effect of preset.effects) {
-      const effectId = NativeAudioModule.addEffect(channel, effect.type);
-      if (effect.type === 'reverb') reverbId = effectId;
-      else if (effect.type === 'delay') delayId = effectId;
-      else if (effect.type === 'filter') filterId = effectId;
-      for (const [paramName, value] of Object.entries(effect.params)) {
-        NativeAudioModule.setEffectParameter(channel, effectId, paramName, value);
-      }
-    }
-  }
-
-  // If the preset has a per-voice filter, also add a matching chain filter so
-  // the UI sliders can control the cutoff in real-time. Both run simultaneously:
-  // the voice filter provides the envelope-modulated sweep; the chain filter
-  // acts as a user-adjustable static cutoff on top.
-  if (preset.filterEnabled) {
-    filterId = NativeAudioModule.addEffect(channel, 'filter');
-    NativeAudioModule.setEffectParameter(channel, filterId, 'cutoff', preset.filterCutoff);
-    NativeAudioModule.setEffectParameter(channel, filterId, 'resonance', preset.filterResonance);
-  }
-
-  return { reverbId, delayId, filterId };
 }
