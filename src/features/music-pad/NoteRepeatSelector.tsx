@@ -72,8 +72,9 @@ const styles = StyleSheet.create({
   panel: {
     width: 72,
     backgroundColor: '#1a1a1a',
-    borderRightWidth: 1,
-    borderRightColor: '#333',
+    borderWidth: 1,
+    borderRadius: 4,
+    borderColor: '#333',
     paddingVertical: 8,
     paddingHorizontal: 4,
     justifyContent: 'center',
