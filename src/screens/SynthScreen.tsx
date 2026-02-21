@@ -355,12 +355,22 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             nestedScrollEnabled
           >
             <View style={styles.controlRow}>
-              <Text style={styles.label}>Waveform: {currentWaveform}</Text>
-              <Button
-                title="Change Wave"
-                onPress={changeWaveform}
-                color={color}
-              />
+              <Text style={styles.label}>
+                Octave: {octaveShift >= 0 ? '+' : ''}
+                {octaveShift}
+              </Text>
+              <View style={styles.buttonGroup}>
+                <Button
+                  title="-12st"
+                  onPress={() => setOctaveShift(o => Math.max(o - 1, -3))}
+                  color={color}
+                />
+                <Button
+                  title="+12st"
+                  onPress={() => setOctaveShift(o => Math.min(o + 1, 3))}
+                  color={color}
+                />
+              </View>
             </View>
 
             <View style={styles.presetSection}>
@@ -422,6 +432,15 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             </View>
 
             <View style={styles.controlRow}>
+              <Text style={styles.label}>Waveform: {currentWaveform}</Text>
+              <Button
+                title="Change Wave"
+                onPress={changeWaveform}
+                color={color}
+              />
+            </View>
+
+            <View style={styles.controlRow}>
               <Text style={styles.label}>Key: {selectedKey}</Text>
               <Button title="Change Key" onPress={changeKey} color={color} />
             </View>
@@ -435,24 +454,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 color={color}
               />
             </View>
-            <View style={styles.controlRow}>
-              <Text style={styles.label}>
-                Octave: {octaveShift >= 0 ? '+' : ''}
-                {octaveShift}
-              </Text>
-              <View style={styles.buttonGroup}>
-                <Button
-                  title="-12st"
-                  onPress={() => setOctaveShift(o => Math.max(o - 1, -3))}
-                  color={color}
-                />
-                <Button
-                  title="+12st"
-                  onPress={() => setOctaveShift(o => Math.min(o + 1, 3))}
-                  color={color}
-                />
-              </View>
-            </View>
+
             <View style={styles.controlRow}>
               <Text style={styles.label}>
                 Mode: {useScale ? 'Scale' : 'Chromatic'}

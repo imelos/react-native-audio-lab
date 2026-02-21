@@ -190,7 +190,6 @@ export default function Player({
             styles.repeatToggleButton,
             noteRepeatMode !== 'off' && {
               backgroundColor: color,
-              borderColor: color,
             },
           ]}
           onPress={() => setShowRepeatSelector(prev => !prev)}
@@ -269,13 +268,12 @@ const styles = StyleSheet.create({
   repeatToggleButton: {
     paddingHorizontal: 12,
     paddingVertical: 4,
-    borderRadius: 4,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
     backgroundColor: '#2a2a2a',
-    borderWidth: 1,
+    borderTopWidth: 1,
     borderColor: '#444',
     alignItems: 'center',
-    // position: 'absolute',
-    // left: 16,
   },
   repeatToggleActive: {},
   repeatToggleText: {
@@ -287,7 +285,6 @@ const styles = StyleSheet.create({
   sequenceInfo: {
     paddingHorizontal: 16,
     justifyContent: 'center',
-    backgroundColor: 'rgba(44, 60, 167, 0.7)',
     height: 20,
   },
   sequenceInfoText: {
