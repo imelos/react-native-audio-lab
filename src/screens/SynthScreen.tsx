@@ -159,9 +159,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
   const [delayFeedback, setDelayFeedback] = useState(0.4); // 0 - 0.95
   const [delayWetLevel, setDelayWetLevel] = useState(0.5); // 0 - 1
 
-  // Effect ID counter to ensure unique IDs
-  const nextEffectIdRef = useRef(1);
-
   const { rows, cols } = GRID_CONFIGS[gridSize];
   const totalPads = rows * cols;
 
@@ -199,8 +196,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
   // Toggle Filter
   const toggleFilter = () => {
     if (!filterEnabled) {
-      NativeAudioModule.addEffect(channelId, 'filter');
-      const effectId = nextEffectIdRef.current++;
+      const effectId = NativeAudioModule.addEffect(channelId, 'filter');
       filterEffectIdRef.current = effectId;
       NativeAudioModule.setEffectParameter(
         channelId,
@@ -269,8 +265,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
   // Toggle Reverb
   const toggleReverb = () => {
     if (!reverbEnabled) {
-      NativeAudioModule.addEffect(channelId, 'reverb');
-      const effectId = nextEffectIdRef.current++;
+      const effectId = NativeAudioModule.addEffect(channelId, 'reverb');
       reverbEffectIdRef.current = effectId;
 
       NativeAudioModule.setEffectParameter(
@@ -322,8 +317,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
   // Toggle Delay
   const toggleDelay = () => {
     if (!delayEnabled) {
-      NativeAudioModule.addEffect(channelId, 'delay');
-      const effectId = nextEffectIdRef.current++;
+      const effectId = NativeAudioModule.addEffect(channelId, 'delay');
       delayEffectIdRef.current = effectId;
 
       NativeAudioModule.setEffectParameter(
