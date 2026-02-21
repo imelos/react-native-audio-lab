@@ -431,55 +431,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             nestedScrollEnabled={true}
           >
             <View style={styles.controlRow}>
-              <Text style={styles.label}>Key: {selectedKey}</Text>
-              <Button title="Change Key" onPress={changeKey} color={color} />
-            </View>
-
-            <View style={styles.controlRow}>
-              <Text style={styles.label}>Scale: {scaleType}</Text>
-              <Button title="Major/Minor" onPress={toggleScale} color={color} />
-            </View>
-
-            <View style={styles.controlRow}>
-              <Text style={styles.label}>
-                Octave: {octaveShift >= 0 ? '+' : ''}
-                {octaveShift}
-              </Text>
-              <View style={styles.buttonGroup}>
-                <Button
-                  title="-12st"
-                  onPress={() => setOctaveShift(o => Math.max(o - 1, -3))}
-                  color={color}
-                />
-                <Button
-                  title="+12st"
-                  onPress={() => setOctaveShift(o => Math.min(o + 1, 3))}
-                  color={color}
-                />
-              </View>
-            </View>
-
-            <View style={styles.controlRow}>
-              <Text style={styles.label}>
-                Mode: {useScale ? 'Scale' : 'Chromatic'}
-              </Text>
-              <Button
-                title="Toggle Mode"
-                onPress={toggleScaleMode}
-                color={color}
-              />
-            </View>
-
-            <View style={styles.controlRow}>
-              <Text style={styles.label}>Grid: {gridSize}</Text>
-              <Button
-                title="Change Grid"
-                onPress={changeGridSize}
-                color={color}
-              />
-            </View>
-
-            <View style={styles.controlRow}>
               <Text style={styles.label}>Waveform: {currentWaveform}</Text>
               <Button
                 title="Change Wave"
@@ -544,6 +495,54 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                   </TouchableOpacity>
                 )}
                 style={styles.presetList}
+              />
+            </View>
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Key: {selectedKey}</Text>
+              <Button title="Change Key" onPress={changeKey} color={color} />
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Scale: {scaleType}</Text>
+              <Button title="Major/Minor" onPress={toggleScale} color={color} />
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>
+                Octave: {octaveShift >= 0 ? '+' : ''}
+                {octaveShift}
+              </Text>
+              <View style={styles.buttonGroup}>
+                <Button
+                  title="-12st"
+                  onPress={() => setOctaveShift(o => Math.max(o - 1, -3))}
+                  color={color}
+                />
+                <Button
+                  title="+12st"
+                  onPress={() => setOctaveShift(o => Math.min(o + 1, 3))}
+                  color={color}
+                />
+              </View>
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>
+                Mode: {useScale ? 'Scale' : 'Chromatic'}
+              </Text>
+              <Button
+                title="Toggle Mode"
+                onPress={toggleScaleMode}
+                color={color}
+              />
+            </View>
+
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Grid: {gridSize}</Text>
+              <Button
+                title="Change Grid"
+                onPress={changeGridSize}
+                color={color}
               />
             </View>
           </ScrollView>
