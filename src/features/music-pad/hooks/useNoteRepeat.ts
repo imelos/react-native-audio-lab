@@ -31,7 +31,7 @@ export const NOTE_REPEAT_MODES: NoteRepeatMode[] = [
 
 const DEFAULT_BPM = 120;
 /** How long to wait for additional fingers before firing the first chord (ms). */
-const CHORD_WINDOW_MS = 20;
+const CHORD_WINDOW_MS = 10;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Interval calculation

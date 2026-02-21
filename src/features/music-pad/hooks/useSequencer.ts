@@ -225,7 +225,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         // Only snap if the previous note ended recently (within 1.5× the
         // repeat interval) — otherwise the pitch was released and re-pressed
         // later, and snapping would teleport the note backwards in time.
-        const tolerance = duration * 1.5;
+        const tolerance = duration * 0.5;
         for (let i = arr.length - 1; i >= 0; i--) {
           if (arr[i].note === note && arr[i].endTime != null) {
             if (Math.abs(startTime - arr[i].endTime!) < tolerance) {
