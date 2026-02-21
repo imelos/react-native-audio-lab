@@ -104,11 +104,12 @@ export default function Player({
 
   // Wrap with note repeat — when mode !== 'off', holding a pad re-triggers
   // the note at the selected grid division (Ableton Note–style).
-  const { handleNoteOn, handleNoteOff, getActiveBpm, flushRepeat } = useNoteRepeat({
-    mode: noteRepeatMode,
-    onNoteOn: rawNoteOn,
-    onNoteOff: rawNoteOff,
-  });
+  const { handleNoteOn, handleNoteOff, getActiveBpm, flushRepeat } =
+    useNoteRepeat({
+      mode: noteRepeatMode,
+      onNoteOn: rawNoteOn,
+      onNoteOff: rawNoteOff,
+    });
 
   const handleAdd = useCallback(() => {
     // Flush pending noteOffs before committing — prevents a cut last note
@@ -176,7 +177,7 @@ export default function Player({
           onNoteOn={handleNoteOn}
           onNoteOff={handleNoteOff}
         />
-        <View style={styles.sequenceInfo}>
+        <View style={[styles.sequenceInfo, { backgroundColor: color }]}>
           {sequenceInfo && (
             <Text style={styles.sequenceInfoText}>
               BPM: {sequenceInfo.bpm} | Bars: {sequenceInfo.bars} | Duration:{' '}
@@ -184,6 +185,20 @@ export default function Player({
             </Text>
           )}
         </View>
+        <TouchableOpacity
+          style={[
+            styles.repeatToggleButton,
+            noteRepeatMode !== 'off' && {
+              backgroundColor: color,
+              borderColor: color,
+            },
+          ]}
+          onPress={() => setShowRepeatSelector(prev => !prev)}
+        >
+          <Text style={styles.repeatToggleText}>
+            {noteRepeatMode === 'off' ? 'RPT' : noteRepeatMode}
+          </Text>
+        </TouchableOpacity>
         <NoteRepeatSelector
           color={color}
           mode={noteRepeatMode}
@@ -197,19 +212,6 @@ export default function Player({
         style={[styles.footer, { marginBottom: insets.bottom }]}
         pointerEvents="box-none"
       >
-        {/* Note repeat toggle */}
-        <TouchableOpacity
-          style={[
-            styles.repeatToggleButton,
-            noteRepeatMode !== 'off' && { backgroundColor: color, borderColor: color },
-          ]}
-          onPress={() => setShowRepeatSelector(prev => !prev)}
-        >
-          <Text style={styles.repeatToggleText}>
-            {noteRepeatMode === 'off' ? 'RPT' : noteRepeatMode}
-          </Text>
-        </TouchableOpacity>
-
         {showRecordingButtons && (
           <View style={styles.footerButtons} pointerEvents="auto">
             <TouchableOpacity
@@ -271,10 +273,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a2a2a',
     borderWidth: 1,
     borderColor: '#444',
-    minWidth: 52,
     alignItems: 'center',
-    position: 'absolute',
-    left: 16,
+    // position: 'absolute',
+    // left: 16,
   },
   repeatToggleActive: {},
   repeatToggleText: {
