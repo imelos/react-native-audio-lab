@@ -10,6 +10,7 @@ import { Props } from '../navigation/Navigation';
 import GlobalSequencer from '../features/music-pad/hooks/GlobalSequencer';
 import { MidiVisualizer } from '../features/music-pad/midi-visualiser/MidiVisualiser';
 import { LoopSequence } from '../features/music-pad/utils/loopUtils';
+import Knob from '../components/knob/Knob';
 
 interface Channel {
   id: number;
@@ -85,7 +86,12 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
       <View style={styles.header}>
         <Text style={styles.title}>Session</Text>
       </View>
-
+      <Knob
+        value={0.5}
+        onValueChange={val => {
+          console.log(val);
+        }}
+      />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}

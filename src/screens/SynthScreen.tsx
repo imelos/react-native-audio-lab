@@ -20,6 +20,7 @@ import {
   type SynthPreset,
 } from '../data/synthPresets';
 import { applyPreset } from '../utils/applyPreset';
+// import Knob from '../components/knob/Knob';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
