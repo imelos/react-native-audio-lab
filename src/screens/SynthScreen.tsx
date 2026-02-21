@@ -15,7 +15,6 @@ import { Props } from '../navigation/Navigation';
 import { useHeaderHeight } from '@react-navigation/elements';
 import {
   PRESET_CATEGORIES,
-  SYNTH_PRESETS,
   getPresetsByCategory,
   type PresetCategory,
   type SynthPreset,
@@ -84,8 +83,11 @@ function generateScale(
   return notes;
 }
 
-const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
-  const { channelId, color } = route?.params || { channelId: 1, color: '#6200ee' };
+const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
+  const { channelId, color } = route?.params || {
+    channelId: 1,
+    color: '#6200ee',
+  };
   const [activeTab, setActiveTab] = useState<TabType>('instrument');
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
   const [gridSize, setGridSize] = useState<GridSize>('5x5');
@@ -232,7 +234,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         filterCutoff,
       );
     }
-  }, [filterCutoff, filterEnabled]);
+  }, [filterCutoff, filterEnabled, channelId]);
 
   useEffect(() => {
     if (filterEnabled && filterEffectIdRef.current !== null) {
@@ -243,7 +245,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         filterResonance,
       );
     }
-  }, [filterResonance, filterEnabled]);
+  }, [filterResonance, filterEnabled, channelId]);
 
   useEffect(() => {
     if (filterEnabled && filterEffectIdRef.current !== null) {
@@ -255,7 +257,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         typeIndex,
       );
     }
-  }, [filterType, filterEnabled]);
+  }, [filterType, filterEnabled, channelId]);
 
   // Toggle Reverb
   const toggleReverb = () => {
@@ -296,7 +298,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         reverbRoomSize,
       );
     }
-  }, [reverbRoomSize, reverbEnabled]);
+  }, [reverbRoomSize, reverbEnabled, channelId]);
 
   useEffect(() => {
     if (reverbEnabled && reverbEffectIdRef.current !== null) {
@@ -307,7 +309,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         reverbWetLevel,
       );
     }
-  }, [reverbWetLevel, reverbEnabled]);
+  }, [reverbWetLevel, reverbEnabled, channelId]);
 
   // Toggle Delay
   const toggleDelay = () => {
@@ -354,7 +356,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         delayTime,
       );
     }
-  }, [delayTime, delayEnabled]);
+  }, [delayTime, delayEnabled, channelId]);
 
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
@@ -365,7 +367,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         delayFeedback,
       );
     }
-  }, [delayFeedback, delayEnabled]);
+  }, [delayFeedback, delayEnabled, channelId]);
 
   useEffect(() => {
     if (delayEnabled && delayEffectIdRef.current !== null) {
@@ -376,7 +378,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         delayWetLevel,
       );
     }
-  }, [delayWetLevel, delayEnabled]);
+  }, [delayWetLevel, delayEnabled, channelId]);
 
   const changeFilterType = () => {
     const currentIndex = FILTER_TYPES.indexOf(filterType);
@@ -431,11 +433,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
 
             <View style={styles.controlRow}>
               <Text style={styles.label}>Scale: {scaleType}</Text>
-              <Button
-                title="Major/Minor"
-                onPress={toggleScale}
-                color={color}
-              />
+              <Button title="Major/Minor" onPress={toggleScale} color={color} />
             </View>
 
             <View style={styles.controlRow}>
@@ -523,7 +521,10 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                   <TouchableOpacity
                     style={[
                       styles.presetChip,
-                      activePresetName === item.name && { borderColor: color, backgroundColor: color + '26' },
+                      activePresetName === item.name && {
+                        borderColor: color,
+                        backgroundColor: color + '26',
+                      },
                     ]}
                     onPress={() => handlePresetSelect(item)}
                   >
@@ -727,7 +728,10 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
     <View style={[styles.container, { paddingTop: headerHeight }]}>
       <View style={styles.tabBar}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'instrument' && { borderBottomColor: color }]}
+          style={[
+            styles.tab,
+            activeTab === 'instrument' && { borderBottomColor: color },
+          ]}
           onPress={() => setActiveTab('instrument')}
         >
           <Text
@@ -740,7 +744,10 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'filter' && { borderBottomColor: color }]}
+          style={[
+            styles.tab,
+            activeTab === 'filter' && { borderBottomColor: color },
+          ]}
           onPress={() => setActiveTab('filter')}
         >
           <Text
@@ -753,7 +760,10 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'fx' && { borderBottomColor: color }]}
+          style={[
+            styles.tab,
+            activeTab === 'fx' && { borderBottomColor: color },
+          ]}
           onPress={() => setActiveTab('fx')}
         >
           <Text
