@@ -110,7 +110,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
       reverbEffectIdRef.current = reverbId;
       delayEffectIdRef.current = delayId;
       filterEffectIdRef.current = filterId;
-      // Sync FX toggle state and slider values from preset
+      // Sync toggle state and slider values from preset
       setReverbEnabled(reverbId !== null);
       setDelayEnabled(delayId !== null);
       setFilterEnabled(filterId !== null);
@@ -131,6 +131,10 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               setDelayWetLevel(effect.params.wetLevel);
           }
         }
+      }
+      if (preset.filterEnabled) {
+        setFilterCutoff(preset.filterCutoff);
+        setFilterResonance(preset.filterResonance);
       }
     },
     [channelId],

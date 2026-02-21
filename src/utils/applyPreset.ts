@@ -56,5 +56,15 @@ export function applyPreset(channel: number, preset: SynthPreset): PresetEffectI
     }
   }
 
+  // If the preset has a per-voice filter, also add a matching chain filter so
+  // the UI sliders can control the cutoff in real-time. Both run simultaneously:
+  // the voice filter provides the envelope-modulated sweep; the chain filter
+  // acts as a user-adjustable static cutoff on top.
+  if (preset.filterEnabled) {
+    filterId = NativeAudioModule.addEffect(channel, 'filter');
+    NativeAudioModule.setEffectParameter(channel, filterId, 'cutoff', preset.filterCutoff);
+    NativeAudioModule.setEffectParameter(channel, filterId, 'resonance', preset.filterResonance);
+  }
+
   return { reverbId, delayId, filterId };
 }
