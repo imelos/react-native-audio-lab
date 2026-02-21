@@ -25,6 +25,7 @@ interface Props {
   sequence?: LoopSequence;
   /** Master loop duration — used to position live notes against the loop when overdubbing */
   loopDuration?: number;
+  color: string;
 }
 
 /**
@@ -61,6 +62,7 @@ export function MidiVisualizer({
   currentMusicalMs,
   sequence,
   loopDuration,
+  color = '#6200ee',
 }: Props) {
   const emptyNotes = useSharedValue<VisualNote[]>([]);
   const resolvedNotes = notes ?? emptyNotes;
@@ -77,15 +79,15 @@ export function MidiVisualizer({
 
   const activePaint = useMemo(() => {
     const _activePaint = Skia.Paint();
-    _activePaint.setColor(Skia.Color('#3b82f6'));
+    _activePaint.setColor(Skia.Color(color));
     return _activePaint;
-  }, []);
+  }, [color]);
 
   const inactivePaint = useMemo(() => {
     const _inactivePaint = Skia.Paint();
-    _inactivePaint.setColor(Skia.Color('#60a5fa'));
+    _inactivePaint.setColor(Skia.Color(desaturate(color, 0.4)));
     return _inactivePaint;
-  }, []);
+  }, [color]);
 
   // Pre-compute sequence pairs synchronously when sequence changes.
   const pairs = useMemo(
@@ -221,7 +223,13 @@ export function MidiVisualizer({
       </Canvas>
       {playheadX && (
         <View style={[styles.playHeadContainer, { width, height }]}>
-          <Animated.View style={[styles.playhead, playheadAnimatedStyle]} />
+          <Animated.View
+            style={[
+              styles.playhead,
+              { backgroundColor: color },
+              playheadAnimatedStyle,
+            ]}
+          />
         </View>
       )}
     </View>
@@ -237,7 +245,17 @@ const styles = StyleSheet.create({
   playhead: {
     width: 2,
     height: '100%',
-    backgroundColor: '#8c48d5',
     opacity: 0.9,
   },
 });
+
+function desaturate(hex: string, amount: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const gray = 0.299 * r + 0.587 * g + 0.114 * b; // luminance-weighted gray
+  const mix = (c: number) => Math.round(c + (gray - c) * amount);
+  return `#${[r, g, b]
+    .map(c => mix(c).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
