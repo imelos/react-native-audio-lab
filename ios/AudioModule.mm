@@ -71,20 +71,19 @@ static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
 // Instrument Management
 // ────────────────────────────────────────────────
 
-- (void)createOscillatorInstrument:(double)channel
-                              name:(NSString *)name
-                         polyphony:(double)polyphony
-                          waveform:(NSString *)waveform {
-    if (!_audioEngine) return;
+- (NSNumber *)createOscillatorInstrument:(double)channel
+                                    name:(NSString *)name
+                               polyphony:(double)polyphony
+                                waveform:(NSString *)waveform {
+    if (!_audioEngine) return @NO;
 
-    int ch = static_cast<int>(channel);
     Config config;
     config.polyphony = static_cast<int>(polyphony);
     config.name = juce::String([name UTF8String]);
     config.waveform = waveformFromString(waveform);
 
-    bool ok = _audioEngine->createOscillatorInstrument(ch, config);
-    NSLog(@"[AudioModule] createOscillatorInstrument channel=%d result=%@", ch, ok ? @"ok" : @"FAILED");
+    bool ok = _audioEngine->createOscillatorInstrument(static_cast<int>(channel), config);
+    return @(ok);
 }
 
 - (void)createMultiSamplerInstrument:(double)channel
@@ -325,13 +324,7 @@ static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
         return @(-1);
     }
     
-    int ch = static_cast<int>(channel);
-    bool exists = _audioEngine->hasInstrument(ch);
-    NSLog(@"[AudioModule] addEffect channel=%d type=%@ hasInstrument=%@", ch, type, exists ? @"YES" : @"NO");
-
-    int effectId = _audioEngine->addEffect(ch, effectType);
-    NSLog(@"[AudioModule] addEffect result: channel=%d type=%@ effectId=%d", ch, type, effectId);
-    
+    int effectId = _audioEngine->addEffect(static_cast<int>(channel), effectType);
     return @(effectId);
 }
 

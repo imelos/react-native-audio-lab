@@ -8,7 +8,7 @@ export interface Spec extends TurboModule {
   // ────────────────────────────────────────────────
   
   // Create oscillator-based instrument
-  createOscillatorInstrument(channel: number, name: string, polyphony: number, waveform: string): void;
+  createOscillatorInstrument(channel: number, name: string, polyphony: number, waveform: string): boolean;
   
   // Create multi-sampler instrument
   createMultiSamplerInstrument(channel: number, name: string, polyphony: number): void;

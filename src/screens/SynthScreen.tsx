@@ -102,41 +102,40 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
 
   // ── Mount: create instrument + all three effects (disabled) ──────────
   useEffect(() => {
-    NativeAudioModule.createOscillatorInstrument(
+    const success = NativeAudioModule.createOscillatorInstrument(
       channelId,
       'Main Synth',
       16,
       'sine',
     );
-    NativeAudioModule.setADSR(channelId, 0.01, 0.1, 0.8, 0.3);
+    if (success) {
+      NativeAudioModule.setADSR(channelId, 0.01, 0.1, 0.8, 0.3);
 
-    // Chain filter — disabled, params match initial state above
-    const fId = NativeAudioModule.addEffect(channelId, 'filter');
-    if (fId >= 0) {
-      NativeAudioModule.setEffectEnabled(channelId, fId, false);
-      NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', 1000);
-      NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', 0.7);
-      NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0); // LowPass
-      filterIdRef.current = fId;
-    }
+      const fId = NativeAudioModule.addEffect(channelId, 'filter');
+      if (fId >= 0) {
+        NativeAudioModule.setEffectEnabled(channelId, fId, false);
+        NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', 1000);
+        NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', 0.7);
+        NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0); // LowPass
+        filterIdRef.current = fId;
+      }
 
-    // Reverb — disabled
-    const rId = NativeAudioModule.addEffect(channelId, 'reverb');
-    if (rId >= 0) {
-      NativeAudioModule.setEffectEnabled(channelId, rId, false);
-      NativeAudioModule.setEffectParameter(channelId, rId, 'roomSize', 0.5);
-      NativeAudioModule.setEffectParameter(channelId, rId, 'wetLevel', 0.33);
-      reverbIdRef.current = rId;
-    }
+      const rId = NativeAudioModule.addEffect(channelId, 'reverb');
+      if (rId >= 0) {
+        NativeAudioModule.setEffectEnabled(channelId, rId, false);
+        NativeAudioModule.setEffectParameter(channelId, rId, 'roomSize', 0.5);
+        NativeAudioModule.setEffectParameter(channelId, rId, 'wetLevel', 0.33);
+        reverbIdRef.current = rId;
+      }
 
-    // Delay — disabled
-    const dId = NativeAudioModule.addEffect(channelId, 'delay');
-    if (dId >= 0) {
-      NativeAudioModule.setEffectEnabled(channelId, dId, false);
-      NativeAudioModule.setEffectParameter(channelId, dId, 'delayTime', 500);
-      NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', 0.4);
-      NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', 0.5);
-      delayIdRef.current = dId;
+      const dId = NativeAudioModule.addEffect(channelId, 'delay');
+      if (dId >= 0) {
+        NativeAudioModule.setEffectEnabled(channelId, dId, false);
+        NativeAudioModule.setEffectParameter(channelId, dId, 'delayTime', 500);
+        NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', 0.4);
+        NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', 0.5);
+        delayIdRef.current = dId;
+      }
     }
 
     return () => {
