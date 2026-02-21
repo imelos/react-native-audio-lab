@@ -112,26 +112,32 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
 
     // Chain filter — disabled, params match initial state above
     const fId = NativeAudioModule.addEffect(channelId, 'filter');
-    NativeAudioModule.setEffectEnabled(channelId, fId, false);
-    NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', 1000);
-    NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', 0.7);
-    NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0); // LowPass
-    filterIdRef.current = fId;
+    if (fId >= 0) {
+      NativeAudioModule.setEffectEnabled(channelId, fId, false);
+      NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', 1000);
+      NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', 0.7);
+      NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0); // LowPass
+      filterIdRef.current = fId;
+    }
 
     // Reverb — disabled
     const rId = NativeAudioModule.addEffect(channelId, 'reverb');
-    NativeAudioModule.setEffectEnabled(channelId, rId, false);
-    NativeAudioModule.setEffectParameter(channelId, rId, 'roomSize', 0.5);
-    NativeAudioModule.setEffectParameter(channelId, rId, 'wetLevel', 0.33);
-    reverbIdRef.current = rId;
+    if (rId >= 0) {
+      NativeAudioModule.setEffectEnabled(channelId, rId, false);
+      NativeAudioModule.setEffectParameter(channelId, rId, 'roomSize', 0.5);
+      NativeAudioModule.setEffectParameter(channelId, rId, 'wetLevel', 0.33);
+      reverbIdRef.current = rId;
+    }
 
     // Delay — disabled
     const dId = NativeAudioModule.addEffect(channelId, 'delay');
-    NativeAudioModule.setEffectEnabled(channelId, dId, false);
-    NativeAudioModule.setEffectParameter(channelId, dId, 'delayTime', 500);
-    NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', 0.4);
-    NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', 0.5);
-    delayIdRef.current = dId;
+    if (dId >= 0) {
+      NativeAudioModule.setEffectEnabled(channelId, dId, false);
+      NativeAudioModule.setEffectParameter(channelId, dId, 'delayTime', 500);
+      NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', 0.4);
+      NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', 0.5);
+      delayIdRef.current = dId;
+    }
 
     return () => {
       NativeAudioModule.allNotesOff(channelId);
@@ -226,7 +232,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   // ── Chain filter toggle ───────────────────────────────────────────────
   const toggleFilter = () => {
     const id = filterIdRef.current;
-    if (id === null) return;
+    if (id === null || id < 0) return;
     const newEnabled = !filterEnabled;
     NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
     if (newEnabled) {
@@ -266,7 +272,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   // ── Reverb toggle ─────────────────────────────────────────────────────
   const toggleReverb = () => {
     const id = reverbIdRef.current;
-    if (id === null) return;
+    if (id === null || id < 0) return;
     const newEnabled = !reverbEnabled;
     NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
     if (newEnabled) {
@@ -289,7 +295,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   // ── Delay toggle ──────────────────────────────────────────────────────
   const toggleDelay = () => {
     const id = delayIdRef.current;
-    if (id === null) return;
+    if (id === null || id < 0) return;
     const newEnabled = !delayEnabled;
     NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
     if (newEnabled) {
