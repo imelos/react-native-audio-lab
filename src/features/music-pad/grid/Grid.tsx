@@ -8,7 +8,6 @@ import { View, StyleSheet, Text } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
 } from 'react-native-reanimated';
 
 function midiToNoteName(midiNote: number): string {
@@ -51,7 +50,7 @@ const GridPad = forwardRef<GridPadHandle, GridPadProps>(
 
     useImperativeHandle(ref, () => ({
       setActive: (active: boolean) => {
-        backgroundColor.value = withTiming(active ? 1 : 0, { duration: 0 });
+        backgroundColor.value = active ? 1 : 0;
       },
       view: viewRef.current,
     }));
