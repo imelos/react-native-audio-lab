@@ -53,6 +53,7 @@ const SCALES = {
   Major: [0, 2, 4, 5, 7, 9, 11],
   Minor: [0, 2, 3, 5, 7, 8, 10],
 } as const;
+
 type ScaleType = keyof typeof SCALES;
 
 const FILTER_TYPES = ['LowPass', 'HighPass', 'BandPass'] as const;
@@ -60,27 +61,8 @@ type FilterType = (typeof FILTER_TYPES)[number];
 
 type TabType = 'instrument' | 'filter' | 'fx';
 
-function generateScale(
-  rootNote: number,
-  scaleType: ScaleType,
-  count: number,
-): number[] {
-  const intervals = SCALES[scaleType];
-  const notes: number[] = [];
-  let octaveOffset = 0;
-  for (let i = 0; i < count; i++) {
-    const scaleIndex = i % intervals.length;
-    if (i > 0 && scaleIndex === 0) octaveOffset += 12;
-    notes.push(rootNote + intervals[scaleIndex] + octaveOffset);
-  }
-  return notes;
-}
-
 const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
-  const { channelId, color } = route?.params || {
-    channelId: 1,
-    color: '#6200ee',
-  };
+  const { channelId, color } = route.params;
 
   // ── UI / instrument state ────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<TabType>('instrument');
@@ -776,6 +758,22 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
     </View>
   );
 };
+
+function generateScale(
+  rootNote: number,
+  scaleType: ScaleType,
+  count: number,
+): number[] {
+  const intervals = SCALES[scaleType];
+  const notes: number[] = [];
+  let octaveOffset = 0;
+  for (let i = 0; i < count; i++) {
+    const scaleIndex = i % intervals.length;
+    if (i > 0 && scaleIndex === 0) octaveOffset += 12;
+    notes.push(rootNote + intervals[scaleIndex] + octaveOffset);
+  }
+  return notes;
+}
 
 export default SynthScreen;
 
