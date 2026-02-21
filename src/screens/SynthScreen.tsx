@@ -101,18 +101,17 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
 
   const handlePresetSelect = useCallback(
     (preset: SynthPreset) => {
-      applyPreset(channelId, preset);
+      const { reverbId, delayId, filterId } = applyPreset(channelId, preset);
       setActivePresetName(preset.name);
       setCurrentWaveform(preset.waveform1);
-      // Sync filter state
-      setFilterEnabled(preset.filterEnabled);
-      if (preset.filterEnabled) {
-        setFilterCutoff(preset.filterCutoff);
-        setFilterResonance(preset.filterResonance);
-      }
-      // Sync FX state
-      setReverbEnabled(preset.effects?.some(e => e.type === 'reverb') ?? false);
-      setDelayEnabled(preset.effects?.some(e => e.type === 'delay') ?? false);
+      // Store native effect IDs returned by applyPreset
+      reverbEffectIdRef.current = reverbId;
+      delayEffectIdRef.current = delayId;
+      filterEffectIdRef.current = filterId;
+      // Sync FX toggle state and slider values from preset
+      setReverbEnabled(reverbId !== null);
+      setDelayEnabled(delayId !== null);
+      setFilterEnabled(filterId !== null);
       if (preset.effects) {
         for (const effect of preset.effects) {
           if (effect.type === 'reverb') {
@@ -131,10 +130,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
           }
         }
       }
-      // Reset effect ID refs since applyPreset clears and re-adds effects
-      filterEffectIdRef.current = null;
-      reverbEffectIdRef.current = null;
-      delayEffectIdRef.current = null;
     },
     [channelId],
   );
