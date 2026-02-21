@@ -85,7 +85,7 @@ function generateScale(
 }
 
 const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
-  const { channelId } = route?.params || { channelId: 1 };
+  const { channelId, color } = route?.params || { channelId: 1, color: '#6200ee' };
   const [activeTab, setActiveTab] = useState<TabType>('instrument');
   const [currentWaveform, setCurrentWaveform] = useState<Waveform>('sine');
   const [gridSize, setGridSize] = useState<GridSize>('5x5');
@@ -437,7 +437,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
           >
             <View style={styles.controlRow}>
               <Text style={styles.label}>Key: {selectedKey}</Text>
-              <Button title="Change Key" onPress={changeKey} color="#6200ee" />
+              <Button title="Change Key" onPress={changeKey} color={color} />
             </View>
 
             <View style={styles.controlRow}>
@@ -445,7 +445,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
               <Button
                 title="Major/Minor"
                 onPress={toggleScale}
-                color="#6200ee"
+                color={color}
               />
             </View>
 
@@ -458,12 +458,12 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                 <Button
                   title="-12st"
                   onPress={() => setOctaveShift(o => Math.max(o - 1, -3))}
-                  color="#6200ee"
+                  color={color}
                 />
                 <Button
                   title="+12st"
                   onPress={() => setOctaveShift(o => Math.min(o + 1, 3))}
-                  color="#6200ee"
+                  color={color}
                 />
               </View>
             </View>
@@ -475,7 +475,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
               <Button
                 title="Toggle Mode"
                 onPress={toggleScaleMode}
-                color="#6200ee"
+                color={color}
               />
             </View>
 
@@ -484,7 +484,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
               <Button
                 title="Change Grid"
                 onPress={changeGridSize}
-                color="#6200ee"
+                color={color}
               />
             </View>
 
@@ -493,7 +493,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
               <Button
                 title="Change Wave"
                 onPress={changeWaveform}
-                color="#6200ee"
+                color={color}
               />
             </View>
 
@@ -509,7 +509,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                     key={cat}
                     style={[
                       styles.categoryChip,
-                      selectedCategory === cat && styles.categoryChipActive,
+                      selectedCategory === cat && { backgroundColor: color },
                     ]}
                     onPress={() => setSelectedCategory(cat)}
                   >
@@ -534,7 +534,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                   <TouchableOpacity
                     style={[
                       styles.presetChip,
-                      activePresetName === item.name && styles.presetChipActive,
+                      activePresetName === item.name && { borderColor: color, backgroundColor: color + '26' },
                     ]}
                     onPress={() => handlePresetSelect(item)}
                   >
@@ -578,7 +578,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                   <Button
                     title="Change Type"
                     onPress={changeFilterType}
-                    color="#6200ee"
+                    color={color}
                   />
                 </View>
 
@@ -592,7 +592,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                     maximumValue={20000}
                     value={filterCutoff}
                     onValueChange={setFilterCutoff}
-                    minimumTrackTintColor="#6200ee"
+                    minimumTrackTintColor={color}
                     maximumTrackTintColor="#444"
                   />
                 </View>
@@ -607,7 +607,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                     maximumValue={10}
                     value={filterResonance}
                     onValueChange={setFilterResonance}
-                    minimumTrackTintColor="#6200ee"
+                    minimumTrackTintColor={color}
                     maximumTrackTintColor="#444"
                   />
                 </View>
@@ -646,7 +646,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                       maximumValue={1}
                       value={reverbRoomSize}
                       onValueChange={setReverbRoomSize}
-                      minimumTrackTintColor="#6200ee"
+                      minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
@@ -661,7 +661,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                       maximumValue={1}
                       value={reverbWetLevel}
                       onValueChange={setReverbWetLevel}
-                      minimumTrackTintColor="#6200ee"
+                      minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
@@ -692,7 +692,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                       maximumValue={2000}
                       value={delayTime}
                       onValueChange={setDelayTime}
-                      minimumTrackTintColor="#6200ee"
+                      minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
@@ -707,7 +707,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                       maximumValue={0.95}
                       value={delayFeedback}
                       onValueChange={setDelayFeedback}
-                      minimumTrackTintColor="#6200ee"
+                      minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
@@ -722,7 +722,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                       maximumValue={1}
                       value={delayWetLevel}
                       onValueChange={setDelayWetLevel}
-                      minimumTrackTintColor="#6200ee"
+                      minimumTrackTintColor={color}
                       maximumTrackTintColor="#444"
                     />
                   </View>
@@ -738,7 +738,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
     <View style={[styles.container, { paddingTop: headerHeight }]}>
       <View style={styles.tabBar}>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'instrument' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'instrument' && { borderBottomColor: color }]}
           onPress={() => setActiveTab('instrument')}
         >
           <Text
@@ -751,7 +751,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'filter' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'filter' && { borderBottomColor: color }]}
           onPress={() => setActiveTab('filter')}
         >
           <Text
@@ -764,7 +764,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'fx' && styles.activeTab]}
+          style={[styles.tab, activeTab === 'fx' && { borderBottomColor: color }]}
           onPress={() => setActiveTab('fx')}
         >
           <Text
@@ -781,6 +781,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
       {/* Player: MidiVisualizer + Grid + Recording/Playback */}
       <Player
         channel={channelId}
+        color={color}
         gridNotes={gridNotes}
         rows={rows}
         cols={cols}
@@ -820,9 +821,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
-  activeTab: {
-    borderBottomColor: '#6200ee',
-  },
+  activeTab: {},
   tabText: {
     color: '#888',
     fontSize: 16,
@@ -899,9 +898,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2a2a2a',
     marginRight: 8,
   },
-  categoryChipActive: {
-    backgroundColor: '#6200ee',
-  },
+  categoryChipActive: {},
   categoryChipText: {
     color: '#999',
     fontSize: 13,
@@ -922,10 +919,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#333',
   },
-  presetChipActive: {
-    borderColor: '#6200ee',
-    backgroundColor: '#2a1a4a',
-  },
+  presetChipActive: {},
   presetChipText: {
     color: '#ccc',
     fontSize: 13,

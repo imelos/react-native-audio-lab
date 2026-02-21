@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface PlayerProps {
   channel: number;
+  color: string;
   gridNotes: number[];
   rows: number;
   cols: number;
@@ -28,6 +29,7 @@ export interface PlayerProps {
 
 export default function Player({
   channel,
+  color,
   gridNotes,
   rows,
   cols,
@@ -131,6 +133,7 @@ export default function Player({
         loopDuration={
           !sequence && masterDuration > 0 ? masterDuration : undefined
         }
+        color={color}
       />
     ),
     [
@@ -140,6 +143,7 @@ export default function Player({
       windowWidth,
       visualNotes,
       masterDuration,
+      color,
     ],
   );
 
@@ -162,6 +166,7 @@ export default function Player({
       <View style={styles.gridContainer}>
         <Grid
           ref={gridRef}
+          color={color}
           gridNotes={gridNotes}
           rows={rows}
           cols={cols}
@@ -180,6 +185,7 @@ export default function Player({
           )}
         </View>
         <NoteRepeatSelector
+          color={color}
           mode={noteRepeatMode}
           visible={showRepeatSelector}
           onSelect={setNoteRepeatMode}
@@ -195,7 +201,7 @@ export default function Player({
         <TouchableOpacity
           style={[
             styles.repeatToggleButton,
-            noteRepeatMode !== 'off' && styles.repeatToggleActive,
+            noteRepeatMode !== 'off' && { backgroundColor: color, borderColor: color },
           ]}
           onPress={() => setShowRepeatSelector(prev => !prev)}
         >
@@ -270,10 +276,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 16,
   },
-  repeatToggleActive: {
-    backgroundColor: '#6200ee',
-    borderColor: '#6200ee',
-  },
+  repeatToggleActive: {},
   repeatToggleText: {
     color: '#fff',
     fontSize: 14,

@@ -12,6 +12,7 @@ import {
 } from './hooks/useNoteRepeat';
 
 interface NoteRepeatSelectorProps {
+  color: string;
   mode: NoteRepeatMode;
   visible: boolean;
   onSelect: (mode: NoteRepeatMode) => void;
@@ -19,6 +20,7 @@ interface NoteRepeatSelectorProps {
 }
 
 export default function NoteRepeatSelector({
+  color,
   mode,
   visible,
   onSelect,
@@ -39,7 +41,7 @@ export default function NoteRepeatSelector({
           return (
             <TouchableOpacity
               key={m}
-              style={[styles.modeButton, isActive && styles.activeModeButton]}
+              style={[styles.modeButton, isActive && { backgroundColor: color }]}
               onPress={() => {
                 onSelect(m);
                 onClose();
@@ -91,9 +93,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
   },
-  activeModeButton: {
-    backgroundColor: '#6200ee',
-  },
+  activeModeButton: {},
   modeText: {
     color: '#888',
     fontSize: 14,

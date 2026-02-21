@@ -39,12 +39,13 @@ interface GridPadHandle {
 interface GridPadProps {
   note: number;
   index: number;
+  color: string;
   onLayout: (index: number, event: any) => void;
   isInScale?: boolean;
 }
 
 const GridPad = forwardRef<GridPadHandle, GridPadProps>(
-  ({ note, index, onLayout, isInScale = true }, ref) => {
+  ({ note, index, color, onLayout, isInScale = true }, ref) => {
     const backgroundColor = useSharedValue(0);
     const viewRef = useRef<Animated.View>(null);
 
@@ -58,7 +59,7 @@ const GridPad = forwardRef<GridPadHandle, GridPadProps>(
     const animatedStyle = useAnimatedStyle(() => ({
       backgroundColor:
         backgroundColor.value === 1
-          ? '#6200ee'
+          ? color
           : isInScale
           ? '#2a2a2a'
           : '#1a1a1a',
@@ -87,6 +88,7 @@ export interface GridHandle {
 }
 
 export interface GridProps {
+  color: string;
   gridNotes: number[];
   rows: number;
   cols: number;
@@ -100,6 +102,7 @@ export interface GridProps {
 const Grid = forwardRef<GridHandle, GridProps>(
   (
     {
+      color,
       gridNotes,
       rows,
       cols,
@@ -294,6 +297,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
                     key={`${gridSize}-${index}`}
                     note={note}
                     index={index}
+                    color={color}
                     onLayout={measureKey}
                     isInScale={isInScale}
                   />

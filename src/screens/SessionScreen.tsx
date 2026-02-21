@@ -136,7 +136,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                             },
                           ]}
                           onPress={() =>
-                            navigation.navigate('synth', { channelId: ch.id })
+                            navigation.navigate('synth', { channelId: ch.id, color: ch.color })
                           }
                         >
                           <MidiVisualizer
@@ -153,7 +153,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                         key={`${ch.id}-${rowIndex}`}
                         style={styles.clipCell}
                         onPress={() =>
-                          navigation.navigate('synth', { channelId: ch.id })
+                          navigation.navigate('synth', { channelId: ch.id, color: ch.color })
                         }
                       >
                         <View
