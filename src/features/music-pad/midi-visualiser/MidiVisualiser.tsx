@@ -27,12 +27,6 @@ interface Props {
   loopDuration?: number;
 }
 
-const activePaint = Skia.Paint();
-activePaint.setColor(Skia.Color('#3b82f6'));
-
-const inactivePaint = Skia.Paint();
-inactivePaint.setColor(Skia.Color('#60a5fa'));
-
 /**
  * Compute unique pitches sorted descending and build a pitch → y-index map.
  * Uses plain objects instead of Map/Set for worklet compatibility.
@@ -79,6 +73,18 @@ export function MidiVisualizer({
 
   const recorder = useMemo(() => {
     return Skia.PictureRecorder();
+  }, []);
+
+  const activePaint = useMemo(() => {
+    const _activePaint = Skia.Paint();
+    _activePaint.setColor(Skia.Color('#3b82f6'));
+    return _activePaint;
+  }, []);
+
+  const inactivePaint = useMemo(() => {
+    const _inactivePaint = Skia.Paint();
+    _inactivePaint.setColor(Skia.Color('#60a5fa'));
+    return _inactivePaint;
   }, []);
 
   // Pre-compute sequence pairs synchronously when sequence changes.

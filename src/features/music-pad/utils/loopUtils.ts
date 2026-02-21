@@ -121,35 +121,29 @@ function snapBPM(bpm: number): number {
   return Math.round(bpm * 10) / 10; // round to 1 decimal
 }
 
+// Musically common loop lengths in ascending order (matches Ableton Note)
+const CANDIDATE_BAR_COUNTS = [1, 2, 3, 4, 6, 8, 12, 16, 24, 32];
+
 /**
- * Choose the best loop length in bars — round UP to contain all content.
+ * Choose the best loop length in bars — smallest musical candidate that
+ * contains all content (with a 2% overshoot tolerance for floating-point).
  *
- * Strategy: pick the smallest power-of-two that fits, but if
- * we're very close to a smaller one (within ~1 beat of overflow),
- * still use the larger one rather than trimming.
+ * Candidates: 1, 2, 3, 4, 6, 8, 12, 16, 24, 32 bars.
  *
  * Examples:
- *   rawBars = 2.25 (9 beats)  → 4 bars   (next pot that contains it)
- *   rawBars = 4.1             → 8 bars   (can't fit in 4)
- *   rawBars = 1.8             → 2 bars
- *   rawBars = 0.6             → 1 bar    (minimum)
- *   rawBars = 3.9             → 4 bars
- *   rawBars = 4.0             → 4 bars   (exact fit)
- *   rawBars = 8.3             → 16 bars
- *   rawBars = 2.0             → 2 bars   (exact fit)
+ *   rawBars = 0.6  → 1 bar
+ *   rawBars = 1.8  → 2 bars
+ *   rawBars = 2.25 → 3 bars
+ *   rawBars = 3.9  → 4 bars
+ *   rawBars = 5.8  → 6 bars
+ *   rawBars = 6.1  → 6 bars  (within 2% of 6)
+ *   rawBars = 7.0  → 8 bars
  */
 function bestBarCount(rawBars: number): number {
-  if (rawBars <= 1) return 1;
-
-  // Smallest power-of-two that is >= rawBars
-  const pot = Math.pow(2, Math.ceil(Math.log2(rawBars)));
-
-  // If raw bars fits exactly in the previous pot (within 2% tolerance),
-  // use that instead. E.g. rawBars = 2.0 → 2, not 4.
-  const prevPot = pot / 2;
-  if (rawBars <= prevPot * 1.02) return prevPot;
-
-  return pot;
+  for (const bars of CANDIDATE_BAR_COUNTS) {
+    if (rawBars <= bars * 1.02) return bars;
+  }
+  return CANDIDATE_BAR_COUNTS[CANDIDATE_BAR_COUNTS.length - 1];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -111,12 +111,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
         setFilterResonance(preset.filterResonance);
       }
       // Sync FX state
-      setReverbEnabled(
-        preset.effects?.some(e => e.type === 'reverb') ?? false,
-      );
-      setDelayEnabled(
-        preset.effects?.some(e => e.type === 'delay') ?? false,
-      );
+      setReverbEnabled(preset.effects?.some(e => e.type === 'reverb') ?? false);
+      setDelayEnabled(preset.effects?.some(e => e.type === 'delay') ?? false);
       if (preset.effects) {
         for (const effect of preset.effects) {
           if (effect.type === 'reverb') {
@@ -538,8 +534,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ navigation, route }) => {
                   <TouchableOpacity
                     style={[
                       styles.presetChip,
-                      activePresetName === item.name &&
-                        styles.presetChipActive,
+                      activePresetName === item.name && styles.presetChipActive,
                     ]}
                     onPress={() => handlePresetSelect(item)}
                   >
