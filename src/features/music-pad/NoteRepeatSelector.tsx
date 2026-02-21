@@ -6,10 +6,14 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
-import {
-  NoteRepeatMode,
-  NOTE_REPEAT_MODES,
-} from './hooks/useNoteRepeat';
+import { NoteRepeatMode, NOTE_REPEAT_MODES } from './hooks/useNoteRepeat';
+
+import Animated, {
+  FadeInDown,
+  FadeInLeft,
+  FadeInRight,
+  SlideInLeft,
+} from 'react-native-reanimated';
 
 interface NoteRepeatSelectorProps {
   color: string;
@@ -29,7 +33,11 @@ export default function NoteRepeatSelector({
   if (!visible) return null;
 
   return (
-    <View style={styles.overlay} pointerEvents="box-none">
+    <Animated.View
+      style={styles.overlay}
+      pointerEvents="box-none"
+      entering={SlideInLeft.duration(100)}
+    >
       {/* Backdrop — tap to close */}
       <Pressable style={styles.backdrop} onPress={onClose} />
 
@@ -41,7 +49,10 @@ export default function NoteRepeatSelector({
           return (
             <TouchableOpacity
               key={m}
-              style={[styles.modeButton, isActive && { backgroundColor: color }]}
+              style={[
+                styles.modeButton,
+                isActive && { backgroundColor: color },
+              ]}
               onPress={() => {
                 onSelect(m);
                 onClose();
@@ -56,7 +67,7 @@ export default function NoteRepeatSelector({
           );
         })}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
