@@ -8,12 +8,7 @@ import {
 } from 'react-native';
 import { NoteRepeatMode, NOTE_REPEAT_MODES } from './hooks/useNoteRepeat';
 
-import Animated, {
-  FadeInDown,
-  FadeInLeft,
-  FadeInRight,
-  SlideInLeft,
-} from 'react-native-reanimated';
+import Animated, { SlideInLeft } from 'react-native-reanimated';
 
 interface NoteRepeatSelectorProps {
   color: string;
