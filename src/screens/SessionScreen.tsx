@@ -136,13 +136,17 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                             },
                           ]}
                           onPress={() =>
-                            navigation.navigate('synth', { channelId: ch.id, color: ch.color })
+                            navigation.navigate('synth', {
+                              channelId: ch.id,
+                              color: ch.color,
+                            })
                           }
                         >
                           <MidiVisualizer
                             width={CELL_WIDTH - 2}
                             height={CELL_HEIGHT - 2}
                             sequence={seq}
+                            color={ch.color}
                           />
                         </TouchableOpacity>
                       );
@@ -153,7 +157,10 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                         key={`${ch.id}-${rowIndex}`}
                         style={styles.clipCell}
                         onPress={() =>
-                          navigation.navigate('synth', { channelId: ch.id, color: ch.color })
+                          navigation.navigate('synth', {
+                            channelId: ch.id,
+                            color: ch.color,
+                          })
                         }
                       >
                         <View
