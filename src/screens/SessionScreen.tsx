@@ -88,6 +88,9 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
       </View>
       <Knob
         value={0.5}
+        minimumValue={0}
+        maximumValue={500}
+        step={100}
         onValueChange={val => {
           console.log(val);
         }}
