@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Dimensions } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import GlobalSequencer, {
   ChannelDelegate,
@@ -29,7 +29,9 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   // ── Shared values for the visualizer (driven from RAF, no re-renders) ──
   const playheadX = useSharedValue(0);
   const currentMusicalMs = useSharedValue(0);
-  const windowWidth = Dimensions.get('window').width;
+  const { width: windowWidth } = useWindowDimensions();
+  const windowWidthRef = useRef(windowWidth);
+  windowWidthRef.current = windowWidth;
 
   // ── Visual notes (SharedValue — drives MidiVisualizer reactively) ─────
   const visualNotes = useSharedValue<VisualNote[]>([]);
@@ -64,8 +66,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
     onTick(loopTimeMs: number, loopDuration: number) {
       currentMusicalMs.value = loopTimeMs;
-      if (loopDuration > 0) {
-        playheadX.value = (loopTimeMs / loopDuration) * windowWidth;
+      const width = windowWidthRef.current;
+      if (loopDuration > 0 && width > 0) {
+        playheadX.value = (loopTimeMs / loopDuration) * width;
+      } else {
+        playheadX.value = 0;
       }
     },
 
@@ -138,6 +143,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       overrideBPM?: number,
     ) => {
       const events = sequencer.stopRecording(channel);
+      setIsRecording(false);
       if (events.length === 0) return;
 
       const existing = sequencer.getSequence(channel);
@@ -149,17 +155,16 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       // overrideBPM (from repeat mode) takes priority over detection when
       // recording the first sequence — avoids BPM detection inaccuracy.
       const globalBPM = sequencer.getGlobalBPM();
-      const masterDuration = sequencer.getMasterDuration();
+      const currentMasterDuration = sequencer.getMasterDuration();
       const loop = createLoopFn(
         events,
         name,
         overrideBPM ?? globalBPM ?? undefined,
-        masterDuration > 0 ? masterDuration : undefined,
+        currentMasterDuration > 0 ? currentMasterDuration : undefined,
       );
       if (!loop) return;
 
       sequencer.setSequence(channel, loop);
-      setIsRecording(false);
 
       // Build visual notes from the new sequence
       rebuildVisualNotes(loop);

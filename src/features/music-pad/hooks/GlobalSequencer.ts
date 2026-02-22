@@ -118,6 +118,16 @@ class GlobalSequencer {
     const state = this.channels.get(channel);
     if (!state) return;
 
+    // Sequence replacement/removal must silence any currently playing notes
+    // for this channel, otherwise notes can hang while transport continues.
+    if (state.activeNotes.size > 0) {
+      state.activeNotes.forEach(n => {
+        NativeAudioModule.noteOff(channel, n);
+        state.delegate.onNoteOff(n);
+      });
+      state.activeNotes.clear();
+    }
+
     if (sequence) {
       // Ensure sorted for cursor-based playback.
       // noteOff MUST come before noteOn at the same timestamp — otherwise

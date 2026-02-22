@@ -148,6 +148,16 @@ export function useNoteRepeat({
       collectStartRef.current = 0;
       const bpm = getBpmRef.current();
       const intervalMs = getIntervalMs(modeRef.current, bpm);
+      if (intervalMs <= 0) {
+        soundingNotesRef.current.forEach(note => {
+          onNoteOffRef.current(note);
+        });
+        soundingNotesRef.current.clear();
+        heldNotesRef.current.clear();
+        pendingNotesRef.current.clear();
+        rafIdRef.current = null;
+        return;
+      }
       intervalMsRef.current = intervalMs;
 
       // Align to global transport grid (fires immediately if not playing)
@@ -159,6 +169,17 @@ export function useNoteRepeat({
     }
 
     // ── Normal repeat phase ────────────────────────────────────────────
+    if (intervalMsRef.current <= 0) {
+      soundingNotesRef.current.forEach(note => {
+        onNoteOffRef.current(note);
+      });
+      soundingNotesRef.current.clear();
+      heldNotesRef.current.clear();
+      pendingNotesRef.current.clear();
+      rafIdRef.current = null;
+      return;
+    }
+
     if (now >= nextTriggerRef.current) {
       // 1. NoteOff all sounding notes (completes their full duration)
       soundingNotesRef.current.forEach(note => {
@@ -167,8 +188,9 @@ export function useNoteRepeat({
       soundingNotesRef.current.clear();
 
       // Advance past any missed boundaries (e.g. if a frame took too long)
+      const intervalMs = intervalMsRef.current;
       while (nextTriggerRef.current <= now) {
-        nextTriggerRef.current += intervalMsRef.current;
+        nextTriggerRef.current += intervalMs;
       }
 
       // 2. If no fingers are held and nothing pending, we just sent the final
