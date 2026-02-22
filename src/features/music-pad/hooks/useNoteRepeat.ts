@@ -92,6 +92,9 @@ export function useNoteRepeat({
 }: UseNoteRepeatOptions) {
   // Currently held notes (finger down): note → velocity
   const heldNotesRef = useRef<Map<number, number>>(new Map());
+  // Notes pressed during the repeat phase but already released — fire once on
+  // the next grid tick then discard (no further repeats).
+  const pendingNotesRef = useRef<Map<number, number>>(new Map());
   // Notes currently sounding (received noteOn, awaiting noteOff)
   const soundingNotesRef = useRef<Set<number>>(new Set());
   // RAF handle (non-null while the clock is running)
@@ -168,18 +171,30 @@ export function useNoteRepeat({
         nextTriggerRef.current += intervalMsRef.current;
       }
 
-      // 2. If no fingers are held, we just sent the final noteOffs — done
-      if (heldNotesRef.current.size === 0) {
+      // 2. If no fingers are held and nothing pending, we just sent the final
+      //    noteOffs — done.
+      if (
+        heldNotesRef.current.size === 0 &&
+        pendingNotesRef.current.size === 0
+      ) {
         rafIdRef.current = null;
         return;
       }
 
-      // 3. Re-trigger all held notes together on this grid tick
+      // 3. Re-trigger held notes + fire any pending oneshoots on this grid tick
       const dur = intervalMsRef.current;
       heldNotesRef.current.forEach((velocity, note) => {
         onNoteOnRef.current(note, velocity, dur);
         soundingNotesRef.current.add(note);
       });
+      pendingNotesRef.current.forEach((velocity, note) => {
+        // Only fire if not already triggered above (avoid double noteOn)
+        if (!heldNotesRef.current.has(note)) {
+          onNoteOnRef.current(note, velocity, dur);
+          soundingNotesRef.current.add(note);
+        }
+      });
+      pendingNotesRef.current.clear();
     }
 
     // Schedule next check
@@ -195,6 +210,7 @@ export function useNoteRepeat({
     });
     soundingNotesRef.current.clear();
     heldNotesRef.current.clear();
+    pendingNotesRef.current.clear();
     collectStartRef.current = 0;
     stopClock();
   }, [mode, stopClock]);
@@ -205,6 +221,8 @@ export function useNoteRepeat({
       stopClock();
       // eslint-disable-next-line react-hooks/exhaustive-deps
       heldNotesRef.current.clear();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      pendingNotesRef.current.clear();
       // eslint-disable-next-line react-hooks/exhaustive-deps
       soundingNotesRef.current.clear();
       collectStartRef.current = 0;
@@ -231,9 +249,9 @@ export function useNoteRepeat({
       } else if (collectStartRef.current > 0) {
         // Still in collection window — just add to heldNotes (already done above)
       } else {
-        // Clock already running (repeat phase) — just add to heldNotes
-        // (already done above). The next grid tick will fire it together
-        // with all other held notes, keeping everything aligned.
+        // Clock already running (repeat phase) — queue as pending so it fires
+        // on the next grid tick even if released before then.
+        pendingNotesRef.current.set(note, velocity);
       }
     },
     [tick],
@@ -245,8 +263,11 @@ export function useNoteRepeat({
       return;
     }
 
-    // Remove from held — note sustains until the next grid tick.
     heldNotesRef.current.delete(note);
+    // If this note was queued as a pending oneshot (pressed but not yet fired),
+    // leave it in pendingNotes so it still fires once on the next grid tick.
+    // If it was already triggered in a previous tick, just removing from
+    // heldNotes is enough — it will get a noteOff at the next tick naturally.
   }, []);
 
   /** Returns the BPM the repeat clock is currently using (or null if off/idle). */
@@ -266,6 +287,7 @@ export function useNoteRepeat({
     });
     soundingNotesRef.current.clear();
     heldNotesRef.current.clear();
+    pendingNotesRef.current.clear();
     collectStartRef.current = 0;
     stopClock();
   }, [stopClock]);
