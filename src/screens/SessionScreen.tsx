@@ -86,7 +86,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
       <View style={styles.header}>
         <Text style={styles.title}>Session</Text>
       </View>
-      <Knob
+      {/* <Knob
         value={0.5}
         minimumValue={0}
         maximumValue={500}
@@ -94,7 +94,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
         onValueChange={val => {
           console.log(val);
         }}
-      />
+      /> */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
