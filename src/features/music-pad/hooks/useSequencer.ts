@@ -220,19 +220,31 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       let startTime = sequencer.getCurrentMusicalMs(channel);
 
       if (duration != null) {
-        // Repeat mode: snap to the previous endTime for the SAME pitch so
-        // notes are perfectly back-to-back without RAF-jitter micro-gaps.
-        // Only snap if the previous note ended recently (within 1.5× the
-        // repeat interval) — otherwise the pitch was released and re-pressed
-        // later, and snapping would teleport the note backwards in time.
-        const tolerance = duration * 0.5;
+        // Repeat mode: snap to previous endTime for the SAME pitch so notes
+        // chain perfectly back-to-back without micro-overlap.
+        let previousEnd: number | undefined;
         for (let i = arr.length - 1; i >= 0; i--) {
           if (arr[i].note === note && arr[i].endTime != null) {
-            if (Math.abs(startTime - arr[i].endTime!) < tolerance) {
-              startTime = arr[i].endTime!;
-            }
+            previousEnd = arr[i].endTime!;
             break;
           }
+        }
+
+        if (previousEnd != null) {
+          const delta = startTime - previousEnd;
+          const tolerance = duration * 0.5;
+          const startsBeforePreviousEnd =
+            delta < 0 && Math.abs(delta) < duration;
+          if (
+            Math.abs(delta) < tolerance ||
+            startsBeforePreviousEnd
+          ) {
+            startTime = previousEnd;
+          }
+        } else if (duration > 0) {
+          // First hit has no previous end to chain from: snap to NEAREST grid
+          // (not floor) to avoid pushing consecutive hits into the same bucket.
+          startTime = Math.round(startTime / duration) * duration;
         }
       }
 
