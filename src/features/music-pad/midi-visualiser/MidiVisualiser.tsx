@@ -32,20 +32,11 @@ interface Props {
  * Compute unique pitches sorted descending and build a pitch → y-index map.
  * Uses plain objects instead of Map/Set for worklet compatibility.
  */
-function buildPitchIndex(pitchSource: number[]): {
+function sortAndIndexPitches(pitches: number[]): {
   pitches: number[];
   index: Record<number, number>;
 } {
   'worklet';
-  const seen: Record<number, boolean> = {};
-  const pitches: number[] = [];
-  for (let i = 0; i < pitchSource.length; i++) {
-    const p = pitchSource[i];
-    if (!seen[p]) {
-      seen[p] = true;
-      pitches.push(p);
-    }
-  }
   pitches.sort((a, b) => b - a);
   const index: Record<number, number> = {};
   for (let i = 0; i < pitches.length; i++) {
@@ -107,9 +98,30 @@ export function MidiVisualizer({
   const pitchLayout = useDerivedValue(() => {
     'worklet';
     const sp = sequencePairs.value;
+    const seen: Record<number, boolean> = {};
+    const pitches: number[] = [];
+
+    if (sp.length > 0) {
+      for (let i = 0; i < sp.length; i++) {
+        const note = sp[i].note;
+        if (!seen[note]) {
+          seen[note] = true;
+          pitches.push(note);
+        }
+      }
+      return sortAndIndexPitches(pitches);
+    }
+
     const all = resolvedNotes.value;
-    const source = sp.length > 0 ? sp.map(p => p.note) : all.map(n => n.note);
-    return buildPitchIndex(source);
+    for (let i = 0; i < all.length; i++) {
+      const note = all[i].note;
+      if (!seen[note]) {
+        seen[note] = true;
+        pitches.push(note);
+      }
+    }
+
+    return sortAndIndexPitches(pitches);
   }, [sequencePairs, resolvedNotes]);
 
   // Compute rects reactively from SharedValue inputs — no RAF loop needed.
@@ -117,7 +129,6 @@ export function MidiVisualizer({
     'worklet';
     const sp = sequencePairs.value;
     const all = resolvedNotes.value;
-    const nowMs = currentMusicalMs ? currentMusicalMs.value : 0;
     const pl = pitchLayout.value;
     const sliceH = height / Math.max(1, pl.pitches.length);
 
@@ -134,38 +145,54 @@ export function MidiVisualizer({
         }
       }
 
-      return sp.map(p => {
+      const rects = new Array(sp.length);
+      for (let i = 0; i < sp.length; i++) {
+        const p = sp[i];
         const x = (p.start / dur) * width;
         const w = ((p.end - p.start) / dur) * width;
         const yIdx = pl.index[p.note] ?? 0;
-        return {
+        rects[i] = {
           x,
           w,
           y: yIdx * sliceH,
           h: sliceH,
           active: !!activeMap[p.note],
         };
-      });
+      }
+      return rects;
     }
 
     // No notes at all → empty
     if (all.length === 0) return [];
 
+    let hasOpenNotes = false;
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].endTime == null) {
+        hasOpenNotes = true;
+        break;
+      }
+    }
+    // Only subscribe to musical time while open notes need growth.
+    const nowMs =
+      hasOpenNotes && currentMusicalMs ? currentMusicalMs.value : 0;
+
     // ── Overdub mode (loopDuration provided) ─────────────────────────────
     if (loopDuration && loopDuration > 0) {
       const total = loopDuration;
-
-      return all.map(n => {
+      const rects = new Array(all.length);
+      for (let i = 0; i < all.length; i++) {
+        const n = all[i];
         const noteEnd = n.endTime ?? nowMs;
         const yIdx = pl.index[n.note] ?? 0;
-        return {
+        rects[i] = {
           x: (n.startTime / total) * width,
           w: (Math.max(0, noteEnd - n.startTime) / total) * width,
           y: yIdx * sliceH,
           h: sliceH,
           active: n.endTime == null,
         };
-      });
+      }
+      return rects;
     }
 
     // ── Live recording mode (auto-scaling timeline) ──────────────────────
@@ -178,22 +205,27 @@ export function MidiVisualizer({
     }
     const total = Math.max(1, maxEnd - minStart);
 
-    return all.map(n => {
+    const rects = new Array(all.length);
+    for (let i = 0; i < all.length; i++) {
+      const n = all[i];
       const noteEnd = n.endTime ?? nowMs;
       const yIdx = pl.index[n.note] ?? 0;
-      return {
+      rects[i] = {
         x: ((n.startTime - minStart) / total) * width,
         w: ((noteEnd - n.startTime) / total) * width,
         y: yIdx * sliceH,
         h: sliceH,
         active: n.endTime == null,
       };
-    });
+    }
+    return rects;
   }, [
+    width,
+    height,
+    currentMusicalMs,
     sequencePairs,
     sequenceDuration,
     resolvedNotes,
-    currentMusicalMs,
     pitchLayout,
     loopDuration,
   ]);
@@ -205,7 +237,7 @@ export function MidiVisualizer({
     const rects = rectsData.value;
     for (let i = 0; i < rects.length; i++) {
       const r = rects[i];
-      if (r.x + r.w > 0 && r.x < width) {
+      if (r.w > 0 && r.x + r.w > 0 && r.x < width) {
         canvas.drawRect(
           Skia.XYWHRect(r.x, r.y, r.w, r.h),
           r.active ? activePaint : inactivePaint,
@@ -214,7 +246,7 @@ export function MidiVisualizer({
     }
 
     return recorder.finishRecordingAsPicture();
-  }, [rectsData]);
+  }, [rectsData, recorder, width, height, activePaint, inactivePaint]);
 
   return (
     <View style={{ width, height }}>
