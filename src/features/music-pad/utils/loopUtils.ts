@@ -364,27 +364,51 @@ export function createLoopSequence(
 
   const firstOnIdx = events.findIndex(e => e.type === 'noteOn');
   if (firstOnIdx === -1) return null;
-
-  // ── Overdub mode: events are already loop-aligned (offset by loop position)
-  if (referenceBPM && minDurationMs && minDurationMs > 0) {
-    // Don't trim/normalize to first note — timestamps are relative to the
-    // master timeline. Fit all notes into the fixed master duration so we
-    // don't accidentally expand to 8 bars when recording started mid-loop.
-    const trimmed = events.slice(firstOnIdx);
-    return createLoopWithFixedDuration(trimmed, name, {
-      bpm: referenceBPM,
-      confidence: 1,
-      intervalMs: 60000 / referenceBPM,
-    }, minDurationMs);
-  }
-
-  // ── Fresh recording: trim to first noteOn and normalize to 0 ─────────────
-  const trimmed = events.slice(firstOnIdx);
-  const t0 = trimmed[0].timestamp;
-  const normalized: NoteEvent[] = trimmed.map(e => ({
+  const timelineAligned = events.slice(firstOnIdx);
+  const t0 = timelineAligned[0].timestamp;
+  const normalized: NoteEvent[] = timelineAligned.map(e => ({
     ...e,
     timestamp: e.timestamp - t0,
   }));
+
+  // ── Overdub mode: events are already loop-aligned (offset by loop position)
+  if (referenceBPM && minDurationMs && minDurationMs > 0) {
+    const bpmInfo = {
+      bpm: referenceBPM,
+      confidence: 1,
+      intervalMs: 60000 / referenceBPM,
+    };
+    const beatMs = bpmInfo.intervalMs;
+    const spanMs =
+      normalized.length > 0
+        ? Math.max(...normalized.map(e => e.timestamp))
+        : 0;
+
+    // First-take while transport runs can start mid-loop. If the captured
+    // span is roughly one master cycle, lock to fixed duration (prevents
+    // accidental 6->8 bar inflation from offset). If the performer records
+    // clearly longer content, allow sequence extension.
+    if (spanMs <= minDurationMs + beatMs * 0.5) {
+      return createLoopWithFixedDuration(
+        timelineAligned,
+        name,
+        bpmInfo,
+        minDurationMs,
+      );
+    }
+
+    const barMs = beatMs * 4;
+    const rawBars = (spanMs + beatMs * 0.5) / barMs;
+    const minBars = minDurationMs / barMs;
+    const durationBars = bestBarCount(Math.max(rawBars, minBars));
+    const extendedDuration = durationBars * barMs;
+    return createLoopWithFixedDuration(
+      timelineAligned,
+      name,
+      bpmInfo,
+      extendedDuration,
+    );
+  }
 
   // ── Use reference BPM if provided (global BPM from existing sequence) ──
   if (referenceBPM) {
