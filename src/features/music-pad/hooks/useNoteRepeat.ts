@@ -285,6 +285,13 @@ export function useNoteRepeat({
       return;
     }
 
+    // If released during chord collection, preserve a one-shot trigger so
+    // very short taps still sound on the first grid tick.
+    const heldVelocity = heldNotesRef.current.get(note);
+    if (collectStartRef.current > 0 && heldVelocity != null) {
+      pendingNotesRef.current.set(note, heldVelocity);
+    }
+
     heldNotesRef.current.delete(note);
     // If this note was queued as a pending oneshot (pressed but not yet fired),
     // leave it in pendingNotes so it still fires once on the next grid tick.

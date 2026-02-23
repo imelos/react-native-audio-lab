@@ -4,7 +4,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import NativeAudioModule from '../../specs/NativeAudioModule';
 import { MidiVisualizer } from './midi-visualiser/MidiVisualiser';
@@ -39,7 +39,7 @@ export default function Player({
 }: PlayerProps) {
   const insets = useSafeAreaInsets();
   const gridRef = useRef<GridHandle>(null);
-  const windowWidth = Dimensions.get('window').width;
+  const { width: windowWidth } = useWindowDimensions();
 
   // ── Note repeat state ──────────────────────────────────────────────────
   const [noteRepeatMode, setNoteRepeatMode] = useState<NoteRepeatMode>('off');

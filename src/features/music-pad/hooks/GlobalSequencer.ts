@@ -28,7 +28,8 @@ interface ChannelState {
   // Recording
   isRecording: boolean;
   recordingStartTime: number;
-  recordingLoopOffset: number; // where in the master loop recording started
+  recordingLoopOffset: number; // where in the active recording timeline we started
+  recordingTimelineDuration: number; // seq.duration for overdub, else masterDuration
   recordedEvents: NoteEvent[];
 }
 
@@ -91,6 +92,7 @@ class GlobalSequencer {
       isRecording: false,
       recordingStartTime: 0,
       recordingLoopOffset: 0,
+      recordingTimelineDuration: 0,
       recordedEvents: [],
     });
   }
@@ -140,8 +142,31 @@ class GlobalSequencer {
       );
     }
     state.sequence = sequence;
-    state.eventIndex = 0;
-    state.lastLoopTime = -1;
+
+    // While transport is running, replacing a sequence must NOT replay
+    // events that are already in the past for the current loop position.
+    if (
+      sequence &&
+      this._transportState === 'playing' &&
+      sequence.duration > 0
+    ) {
+      const elapsed = performance.now() - this.globalStartTime;
+      const loopTime = elapsed % sequence.duration;
+      state.lastLoopTime = loopTime;
+
+      let idx = 0;
+      while (
+        idx < sequence.events.length &&
+        sequence.events[idx].timestamp <= loopTime
+      ) {
+        idx++;
+      }
+      state.eventIndex = idx;
+    } else {
+      state.eventIndex = 0;
+      state.lastLoopTime = -1;
+    }
+
     this.recalcMasterDuration();
     this.channelSequenceListeners.forEach(fn => fn(channel, sequence));
   }
@@ -171,12 +196,16 @@ class GlobalSequencer {
     s.recordingStartTime = performance.now();
     s.recordedEvents = [];
 
-    // Capture where in the master loop we are so recorded events
-    // can be placed at the correct loop-relative position
-    if (this._transportState === 'playing' && this.masterDuration > 0) {
+    // Capture where in the active timeline we are so recorded events can
+    // be placed at the correct loop-relative position when recording stops.
+    if (this._transportState === 'playing') {
+      const timelineDuration = s.sequence?.duration ?? this.masterDuration;
       const elapsed = performance.now() - this.globalStartTime;
-      s.recordingLoopOffset = elapsed % this.masterDuration;
+      s.recordingTimelineDuration = timelineDuration > 0 ? timelineDuration : 0;
+      s.recordingLoopOffset =
+        timelineDuration > 0 ? elapsed % timelineDuration : 0;
     } else {
+      s.recordingTimelineDuration = 0;
       s.recordingLoopOffset = 0;
       // Start the RAF loop so delegates receive onTick during recording
       // even when no sequence is playing yet.
@@ -189,13 +218,14 @@ class GlobalSequencer {
     if (!s) return [];
     s.isRecording = false;
     const offset = s.recordingLoopOffset;
-    // Offset events so they're loop-aligned (e.g. if recording started at
-    // 2000ms into a 4000ms loop, a note played immediately gets timestamp 2000ms)
+    // Offset events so they're timeline-aligned (sequence timeline for overdub,
+    // master timeline for first-take while transport is running).
     const evts = s.recordedEvents.map(e => ({
       ...e,
       timestamp: e.timestamp + offset,
     }));
     s.recordedEvents = [];
+    s.recordingTimelineDuration = 0;
 
     // Stop RAF if nothing else needs it
     if (this._transportState !== 'playing' && !this.isAnyChannelRecording()) {
@@ -209,9 +239,10 @@ class GlobalSequencer {
   }
 
   /** Called by the Player when the user touches a pad during recording.
-   *  An optional `timestamp` (ms since recording started) overrides the
-   *  auto-computed wall-clock time — used by note-repeat to record
-   *  grid-aligned events without RAF jitter. */
+   *  Optional `timestamp` semantics:
+   *   - while stopped: ms since recording start
+   *   - while playing: loop-local musical ms
+   *  Used by note-repeat to record grid-aligned events without RAF jitter. */
   pushRecordEvent(
     channel: number,
     type: 'noteOn' | 'noteOff',
@@ -221,7 +252,23 @@ class GlobalSequencer {
   ): void {
     const s = this.channels.get(channel);
     if (!s?.isRecording) return;
-    const ts = timestamp ?? performance.now() - s.recordingStartTime;
+    const rawTs = timestamp ?? performance.now() - s.recordingStartTime;
+    let ts = rawTs;
+
+    // During playback, explicit timestamps are loop-local musical times.
+    // Convert to recording-relative so stopRecording() can re-apply the offset
+    // uniformly for both explicit and wall-clock events.
+    if (
+      timestamp != null &&
+      this._transportState === 'playing' &&
+      s.recordingTimelineDuration > 0
+    ) {
+      ts = rawTs - s.recordingLoopOffset;
+      if (ts < 0) {
+        ts += s.recordingTimelineDuration;
+      }
+    }
+
     s.recordedEvents.push({ type, note, timestamp: ts, velocity });
   }
 

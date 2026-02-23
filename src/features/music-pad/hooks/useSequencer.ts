@@ -384,8 +384,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
       // Pass the snapped startTime to the recording so committed sequences
       // are grid-aligned (no wall-clock RAF jitter).
-      const useExplicitTimestamp =
-        duration != null && sequencer.transportState !== 'playing';
+      const useExplicitTimestamp = duration != null;
       sequencer.pushRecordEvent(
         channel,
         'noteOn',
@@ -429,7 +428,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         'noteOff',
         note,
         0,
-        sequencer.transportState !== 'playing' ? snappedEnd : undefined,
+        snappedEnd,
       );
 
       // Close the visual note (only needed for non-repeat mode where

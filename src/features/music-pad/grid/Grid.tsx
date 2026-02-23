@@ -167,93 +167,80 @@ const Grid = forwardRef<GridHandle, GridProps>(
       [gridNotes],
     );
 
-    const handleTouchStart = useCallback(
-      (event: any) => {
-        const touches = event.nativeEvent.touches;
-
+    const buildTouchNoteMap = useCallback(
+      (touches: any): Map<string, number> => {
+        const next = new Map<string, number>();
         for (let i = 0; i < touches.length; i++) {
           const touch = touches[i];
           const { pageX, pageY, identifier } = touch;
           const note = findNoteAtPosition(pageX, pageY);
-
           if (note !== null) {
-            const touchId = String(identifier);
-
-            if (!touchNotesRef.current.has(touchId)) {
-              setPadActive(note, true);
-              touchNotesRef.current.set(touchId, note);
-              onNoteOn(note, 0.85);
-            }
+            next.set(String(identifier), note);
           }
         }
+        return next;
       },
-      [findNoteAtPosition, setPadActive, onNoteOn],
+      [findNoteAtPosition],
+    );
+
+    const syncTouchState = useCallback(
+      (nextTouchNotes: Map<string, number>) => {
+        const prevTouchNotes = touchNotesRef.current;
+        const prevCounts = new Map<number, number>();
+        const nextCounts = new Map<number, number>();
+
+        prevTouchNotes.forEach(note => {
+          prevCounts.set(note, (prevCounts.get(note) ?? 0) + 1);
+        });
+        nextTouchNotes.forEach(note => {
+          nextCounts.set(note, (nextCounts.get(note) ?? 0) + 1);
+        });
+
+        const notes = new Set<number>([
+          ...prevCounts.keys(),
+          ...nextCounts.keys(),
+        ]);
+
+        notes.forEach(note => {
+          const prev = prevCounts.get(note) ?? 0;
+          const next = nextCounts.get(note) ?? 0;
+
+          if (prev === 0 && next > 0) {
+            setPadActive(note, true);
+            onNoteOn(note, 0.85);
+            return;
+          }
+
+          if (prev > 0 && next === 0) {
+            setPadActive(note, false);
+            onNoteOff(note);
+          }
+        });
+
+        touchNotesRef.current = nextTouchNotes;
+      },
+      [setPadActive, onNoteOn, onNoteOff],
+    );
+
+    const handleTouchStart = useCallback(
+      (event: any) => {
+        syncTouchState(buildTouchNoteMap(event.nativeEvent.touches));
+      },
+      [buildTouchNoteMap, syncTouchState],
     );
 
     const handleTouchMove = useCallback(
       (event: any) => {
-        const touches = event.nativeEvent.touches;
-        const currentTouchedNotes = new Map<string, number>();
-
-        for (let i = 0; i < touches.length; i++) {
-          const touch = touches[i];
-          const { pageX, pageY, identifier } = touch;
-          const note = findNoteAtPosition(pageX, pageY);
-
-          if (note !== null) {
-            const touchId = String(identifier);
-            const previousNote = touchNotesRef.current.get(touchId);
-
-            if (previousNote !== note) {
-              if (previousNote !== undefined) {
-                setPadActive(previousNote, false);
-                onNoteOff(previousNote);
-              }
-              setPadActive(note, true);
-              onNoteOn(note, 0.85);
-            }
-
-            currentTouchedNotes.set(touchId, note);
-          }
-        }
-
-        for (const [touchId, note] of touchNotesRef.current.entries()) {
-          if (!currentTouchedNotes.has(touchId)) {
-            setPadActive(note, false);
-            onNoteOff(note);
-          }
-        }
-
-        touchNotesRef.current = currentTouchedNotes;
+        syncTouchState(buildTouchNoteMap(event.nativeEvent.touches));
       },
-      [findNoteAtPosition, setPadActive, onNoteOn, onNoteOff],
+      [buildTouchNoteMap, syncTouchState],
     );
 
     const handleTouchEnd = useCallback(
       (event: any) => {
-        const touches = event.nativeEvent.touches;
-        const remainingTouches = new Map<string, number>();
-
-        for (let i = 0; i < touches.length; i++) {
-          const touch = touches[i];
-          const { pageX, pageY, identifier } = touch;
-          const note = findNoteAtPosition(pageX, pageY);
-
-          if (note !== null) {
-            remainingTouches.set(String(identifier), note);
-          }
-        }
-
-        for (const [touchId, note] of touchNotesRef.current.entries()) {
-          if (!remainingTouches.has(touchId)) {
-            setPadActive(note, false);
-            onNoteOff(note);
-          }
-        }
-
-        touchNotesRef.current = remainingTouches;
+        syncTouchState(buildTouchNoteMap(event.nativeEvent.touches));
       },
-      [findNoteAtPosition, setPadActive, onNoteOff],
+      [buildTouchNoteMap, syncTouchState],
     );
 
     const setGridPadRef = useCallback(
