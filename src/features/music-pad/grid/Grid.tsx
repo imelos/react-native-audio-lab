@@ -9,6 +9,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
 } from 'react-native-reanimated';
+import { getTouchTransitions } from './touchTransitions';
 
 function midiToNoteName(midiNote: number): string {
   const noteNames = [
@@ -186,35 +187,19 @@ const Grid = forwardRef<GridHandle, GridProps>(
     const syncTouchState = useCallback(
       (nextTouchNotes: Map<string, number>) => {
         const prevTouchNotes = touchNotesRef.current;
-        const prevCounts = new Map<number, number>();
-        const nextCounts = new Map<number, number>();
+        const { noteOns, noteOffs } = getTouchTransitions(
+          prevTouchNotes,
+          nextTouchNotes,
+        );
 
-        prevTouchNotes.forEach(note => {
-          prevCounts.set(note, (prevCounts.get(note) ?? 0) + 1);
+        noteOns.forEach(note => {
+          setPadActive(note, true);
+          onNoteOn(note, 0.85);
         });
-        nextTouchNotes.forEach(note => {
-          nextCounts.set(note, (nextCounts.get(note) ?? 0) + 1);
-        });
 
-        const notes = new Set<number>([
-          ...prevCounts.keys(),
-          ...nextCounts.keys(),
-        ]);
-
-        notes.forEach(note => {
-          const prev = prevCounts.get(note) ?? 0;
-          const next = nextCounts.get(note) ?? 0;
-
-          if (prev === 0 && next > 0) {
-            setPadActive(note, true);
-            onNoteOn(note, 0.85);
-            return;
-          }
-
-          if (prev > 0 && next === 0) {
-            setPadActive(note, false);
-            onNoteOff(note);
-          }
+        noteOffs.forEach(note => {
+          setPadActive(note, false);
+          onNoteOff(note);
         });
 
         touchNotesRef.current = nextTouchNotes;
