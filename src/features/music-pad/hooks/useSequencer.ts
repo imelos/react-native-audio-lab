@@ -8,13 +8,16 @@ import GlobalSequencer, {
 import { VisualNote } from '../midi-visualiser/MidiVisualiser';
 import { GridHandle } from '../grid/Grid';
 import {
-  NotePair,
   pairNotes,
-  pairsToEvents,
   QuantizeGrid,
   LoopSequence,
   NoteEvent,
 } from '../utils/loopUtils';
+import {
+  getLatestPredictedEndTimeForNote,
+  mergeOverdubIntoSequence,
+  snapRepeatStartTime,
+} from '../engine/sequence/SequenceEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hook
@@ -23,113 +26,6 @@ import {
 interface UseSequencerOptions {
   channel: number;
   gridRef: React.RefObject<GridHandle | null>;
-}
-
-function wrapTimeToDuration(timeMs: number, durationMs: number): number {
-  const wrapped = timeMs % durationMs;
-  return wrapped < 0 ? wrapped + durationMs : wrapped;
-}
-
-function deduplicateOverlaps(pairs: NotePair[]): NotePair[] {
-  const byNote = new Map<number, NotePair[]>();
-  for (let i = 0; i < pairs.length; i++) {
-    const p = pairs[i];
-    const arr = byNote.get(p.note) ?? [];
-    arr.push(p);
-    byNote.set(p.note, arr);
-  }
-
-  const out: NotePair[] = [];
-  byNote.forEach(notePairs => {
-    notePairs.sort((a, b) => a.start - b.start);
-    for (let i = 0; i < notePairs.length; i++) {
-      const current = notePairs[i];
-      const last = out.length > 0 ? out[out.length - 1] : undefined;
-      if (last && last.note === current.note && current.start < last.end - 1) {
-        last.end = Math.max(last.end, current.end);
-        last.velocity = Math.max(last.velocity, current.velocity);
-      } else {
-        out.push({ ...current });
-      }
-    }
-  });
-
-  return out.sort((a, b) => a.start - b.start);
-}
-
-function mergeOverdubIntoSequence(
-  base: LoopSequence,
-  overdubEvents: NoteEvent[],
-): LoopSequence {
-  if (overdubEvents.length === 0 || base.duration <= 0) {
-    return base;
-  }
-
-  const durationMs = base.duration;
-  const sortedOverdub = [...overdubEvents].sort(
-    (a, b) => a.timestamp - b.timestamp || (a.type === 'noteOff' ? -1 : 1),
-  );
-  const overdubPairs = pairNotes(sortedOverdub);
-  if (overdubPairs.length === 0) {
-    return base;
-  }
-
-  const wrappedOverdubPairs: NotePair[] = [];
-  for (let i = 0; i < overdubPairs.length; i++) {
-    const p = overdubPairs[i];
-    const rawDuration = Math.max(0, p.end - p.start);
-    if (rawDuration <= 0) continue;
-
-    if (rawDuration >= durationMs) {
-      wrappedOverdubPairs.push({
-        note: p.note,
-        velocity: p.velocity,
-        start: 0,
-        end: durationMs,
-      });
-      continue;
-    }
-
-    const start = wrapTimeToDuration(p.start, durationMs);
-    const end = start + rawDuration;
-
-    if (end <= durationMs) {
-      wrappedOverdubPairs.push({
-        note: p.note,
-        velocity: p.velocity,
-        start,
-        end,
-      });
-      continue;
-    }
-
-    wrappedOverdubPairs.push({
-      note: p.note,
-      velocity: p.velocity,
-      start,
-      end: durationMs,
-    });
-    wrappedOverdubPairs.push({
-      note: p.note,
-      velocity: p.velocity,
-      start: 0,
-      end: end - durationMs,
-    });
-  }
-
-  if (wrappedOverdubPairs.length === 0) {
-    return base;
-  }
-
-  const mergedPairs = deduplicateOverlaps([
-    ...pairNotes(base.events),
-    ...wrappedOverdubPairs,
-  ]);
-
-  return {
-    ...base,
-    events: pairsToEvents(mergedPairs),
-  };
 }
 
 export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
@@ -361,25 +257,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       let startTime = sequencer.getCurrentMusicalMs(channel);
 
       if (duration != null && duration > 0) {
-        // Repeat mode: snap EVERY hit to the repeat grid so sequential
-        // one-shots on different pitches stay the same length and don't overlap.
-        startTime = Math.round(startTime / duration) * duration;
-
-        // Guard against tiny negative drift from floating-point jitter.
-        let previousEnd: number | undefined;
-        for (let i = arr.length - 1; i >= 0; i--) {
-          if (arr[i].endTime != null) {
-            previousEnd = arr[i].endTime!;
-            break;
-          }
-        }
-        if (
-          previousEnd != null &&
-          startTime < previousEnd &&
-          previousEnd - startTime < duration * 0.5
-        ) {
-          startTime = previousEnd;
-        }
+        startTime = snapRepeatStartTime({
+          currentTime: startTime,
+          durationMs: duration,
+          visualNotes: arr,
+        });
       }
 
       // Pass the snapped startTime to the recording so committed sequences
@@ -411,17 +293,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       const endTime = sequencer.getCurrentMusicalMs(channel);
       const arr = visualNotesRef.current;
 
-      // Find the latest note for this pitch to get its predicted endTime
-      // (repeat mode) for grid-aligned recording.
-      let snappedEnd: number | undefined;
-      for (let i = arr.length - 1; i >= 0; i--) {
-        if (arr[i].note === note) {
-          if (arr[i].endTime != null) {
-            snappedEnd = arr[i].endTime!;
-          }
-          break;
-        }
-      }
+      const snappedEnd = getLatestPredictedEndTimeForNote(arr, note);
 
       sequencer.pushRecordEvent(
         channel,
