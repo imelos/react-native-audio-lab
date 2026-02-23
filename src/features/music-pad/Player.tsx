@@ -55,7 +55,6 @@ export default function Player({
     playheadX,
     currentMusicalMs,
     visualNotes,
-    masterDuration,
     // play,
     // stop,
     togglePlayback,
@@ -80,8 +79,14 @@ export default function Player({
       // clock's rapid re-triggers call startRecording() repeatedly, resetting
       // the recording buffer and losing events.
       const seq = sequencerRef.current;
-      if (!seq.isChannelRecording(channel) && !seq.getSequence(channel)) {
-        startRecording();
+      if (!seq.isChannelRecording(channel)) {
+        const hasSequence = !!seq.getSequence(channel);
+        if (!hasSequence) {
+          startRecording();
+        } else if (seq.transportState === 'playing') {
+          // Overdub: only arm recording while transport is running.
+          startRecording();
+        }
       }
 
       NativeAudioModule.noteOn(channel, note, velocity);
@@ -130,20 +135,18 @@ export default function Player({
         notes={visualNotes}
         currentMusicalMs={currentMusicalMs}
         playheadX={playheadX}
-        sequence={sequence ?? undefined}
-        loopDuration={
-          !sequence && masterDuration > 0 ? masterDuration : undefined
-        }
+        sequence={isRecording ? undefined : sequence ?? undefined}
+        loopDuration={isRecording && sequence ? sequence.duration : undefined}
         color={color}
       />
     ),
     [
+      isRecording,
       sequence,
       currentMusicalMs,
       playheadX,
       windowWidth,
       visualNotes,
-      masterDuration,
       color,
     ],
   );

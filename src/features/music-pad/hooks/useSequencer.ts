@@ -8,7 +8,9 @@ import GlobalSequencer, {
 import { VisualNote } from '../midi-visualiser/MidiVisualiser';
 import { GridHandle } from '../grid/Grid';
 import {
+  NotePair,
   pairNotes,
+  pairsToEvents,
   QuantizeGrid,
   LoopSequence,
   NoteEvent,
@@ -21,6 +23,113 @@ import {
 interface UseSequencerOptions {
   channel: number;
   gridRef: React.RefObject<GridHandle | null>;
+}
+
+function wrapTimeToDuration(timeMs: number, durationMs: number): number {
+  const wrapped = timeMs % durationMs;
+  return wrapped < 0 ? wrapped + durationMs : wrapped;
+}
+
+function deduplicateOverlaps(pairs: NotePair[]): NotePair[] {
+  const byNote = new Map<number, NotePair[]>();
+  for (let i = 0; i < pairs.length; i++) {
+    const p = pairs[i];
+    const arr = byNote.get(p.note) ?? [];
+    arr.push(p);
+    byNote.set(p.note, arr);
+  }
+
+  const out: NotePair[] = [];
+  byNote.forEach(notePairs => {
+    notePairs.sort((a, b) => a.start - b.start);
+    for (let i = 0; i < notePairs.length; i++) {
+      const current = notePairs[i];
+      const last = out.length > 0 ? out[out.length - 1] : undefined;
+      if (last && last.note === current.note && current.start < last.end - 1) {
+        last.end = Math.max(last.end, current.end);
+        last.velocity = Math.max(last.velocity, current.velocity);
+      } else {
+        out.push({ ...current });
+      }
+    }
+  });
+
+  return out.sort((a, b) => a.start - b.start);
+}
+
+function mergeOverdubIntoSequence(
+  base: LoopSequence,
+  overdubEvents: NoteEvent[],
+): LoopSequence {
+  if (overdubEvents.length === 0 || base.duration <= 0) {
+    return base;
+  }
+
+  const durationMs = base.duration;
+  const sortedOverdub = [...overdubEvents].sort(
+    (a, b) => a.timestamp - b.timestamp || (a.type === 'noteOff' ? -1 : 1),
+  );
+  const overdubPairs = pairNotes(sortedOverdub);
+  if (overdubPairs.length === 0) {
+    return base;
+  }
+
+  const wrappedOverdubPairs: NotePair[] = [];
+  for (let i = 0; i < overdubPairs.length; i++) {
+    const p = overdubPairs[i];
+    const rawDuration = Math.max(0, p.end - p.start);
+    if (rawDuration <= 0) continue;
+
+    if (rawDuration >= durationMs) {
+      wrappedOverdubPairs.push({
+        note: p.note,
+        velocity: p.velocity,
+        start: 0,
+        end: durationMs,
+      });
+      continue;
+    }
+
+    const start = wrapTimeToDuration(p.start, durationMs);
+    const end = start + rawDuration;
+
+    if (end <= durationMs) {
+      wrappedOverdubPairs.push({
+        note: p.note,
+        velocity: p.velocity,
+        start,
+        end,
+      });
+      continue;
+    }
+
+    wrappedOverdubPairs.push({
+      note: p.note,
+      velocity: p.velocity,
+      start,
+      end: durationMs,
+    });
+    wrappedOverdubPairs.push({
+      note: p.note,
+      velocity: p.velocity,
+      start: 0,
+      end: end - durationMs,
+    });
+  }
+
+  if (wrappedOverdubPairs.length === 0) {
+    return base;
+  }
+
+  const mergedPairs = deduplicateOverlaps([
+    ...pairNotes(base.events),
+    ...wrappedOverdubPairs,
+  ]);
+
+  return {
+    ...base,
+    events: pairsToEvents(mergedPairs),
+  };
 }
 
 export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
@@ -147,20 +256,24 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       if (events.length === 0) return;
 
       const existing = sequencer.getSequence(channel);
-      const name = existing
-        ? `${existing.name} (take ${Date.now()})`
-        : `Ch ${channel} Loop`;
+      if (existing) {
+        const merged = mergeOverdubIntoSequence(existing, events);
+        sequencer.setSequence(channel, merged);
+        rebuildVisualNotes(merged);
+        return;
+      }
 
-      // Use global BPM and master duration so all channels stay in sync.
-      // overrideBPM (from repeat mode) takes priority over detection when
-      // recording the first sequence — avoids BPM detection inaccuracy.
+      const name = `Ch ${channel} Loop`;
+
+      // For first take on an empty channel:
+      // keep global BPM (if present), but do not force current master duration.
+      // This allows new channels to create longer clips when desired.
       const globalBPM = sequencer.getGlobalBPM();
-      const currentMasterDuration = sequencer.getMasterDuration();
       const loop = createLoopFn(
         events,
         name,
         overrideBPM ?? globalBPM ?? undefined,
-        currentMasterDuration > 0 ? currentMasterDuration : undefined,
+        undefined,
       );
       if (!loop) return;
 
@@ -255,12 +368,14 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
       // Pass the snapped startTime to the recording so committed sequences
       // are grid-aligned (no wall-clock RAF jitter).
+      const useExplicitTimestamp =
+        duration != null && sequencer.transportState !== 'playing';
       sequencer.pushRecordEvent(
         channel,
         'noteOn',
         note,
         velocity,
-        duration != null ? startTime : undefined,
+        useExplicitTimestamp ? startTime : undefined,
       );
 
       const vn: VisualNote = {
@@ -298,7 +413,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         'noteOff',
         note,
         0,
-        snappedEnd,
+        sequencer.transportState !== 'playing' ? snappedEnd : undefined,
       );
 
       // Close the visual note (only needed for non-repeat mode where
