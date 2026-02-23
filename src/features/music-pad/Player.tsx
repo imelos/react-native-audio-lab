@@ -17,6 +17,7 @@ import {
   NoteRepeatMode,
   getIntervalMs,
 } from './hooks/useNoteRepeat';
+import { shouldDeferRecordingArmOnTouch } from './engine/sequencer/recordingArm';
 import NoteRepeatSelector from './NoteRepeatSelector';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -81,24 +82,26 @@ export default function Player({
     if (seq.isChannelRecording(channel)) return;
 
     const hasSequence = !!seq.getSequence(channel);
-    if (
-      source === 'touch' &&
-      noteRepeatMode !== 'off' &&
-      !hasSequence &&
-      seq.transportState === 'playing'
-    ) {
+    if (source === 'touch' && noteRepeatMode !== 'off') {
       const duration = seq.getMasterDuration();
-      if (duration > 0) {
-        const loopPos = seq.getCurrentMusicalMs(channel) % duration;
-        const remaining = duration - loopPos;
-        const bpm = seq.getGlobalBPM() ?? 120;
-        const intervalMs = getIntervalMs(noteRepeatMode, bpm);
-        const guardMs = Math.min(intervalMs * 0.5, MAX_RECORD_ARM_GUARD_MS);
+      const loopPos = seq.getCurrentMusicalMs(channel);
+      const bpm = seq.getGlobalBPM() ?? 120;
+      const intervalMs = getIntervalMs(noteRepeatMode, bpm);
+      if (
+        shouldDeferRecordingArmOnTouch({
+          source,
+          repeatEnabled: true,
+          hasSequence,
+          isPlaying: seq.transportState === 'playing',
+          loopDurationMs: duration,
+          loopPositionMs: loopPos,
+          intervalMs,
+          maxGuardMs: MAX_RECORD_ARM_GUARD_MS,
+        })
+      ) {
         // Near loop end, defer recording-arm to the first repeat trigger.
         // This prevents creating a tail pickup that feels like loop extension.
-        if (remaining <= guardMs) {
-          return;
-        }
+        return;
       }
     }
 
