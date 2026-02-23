@@ -48,6 +48,11 @@ export interface PhaseInfo {
   confidence: number;
 }
 
+function wrapTimeToDuration(timeMs: number, durationMs: number): number {
+  const wrapped = timeMs % durationMs;
+  return wrapped < 0 ? wrapped + durationMs : wrapped;
+}
+
 export function pairNotes(events: NoteEvent[]): NotePair[] {
   const active = new Map<number, NoteEvent>();
   const pairs: NotePair[] = [];
@@ -362,9 +367,11 @@ export function createLoopSequence(
 
   // ── Overdub mode: events are already loop-aligned (offset by loop position)
   if (referenceBPM && minDurationMs && minDurationMs > 0) {
-    // Don't trim/normalize — timestamps are relative to the master loop
+    // Don't trim/normalize to first note — timestamps are relative to the
+    // master timeline. Fit all notes into the fixed master duration so we
+    // don't accidentally expand to 8 bars when recording started mid-loop.
     const trimmed = events.slice(firstOnIdx);
-    return createLoopWithBPM(trimmed, name, {
+    return createLoopWithFixedDuration(trimmed, name, {
       bpm: referenceBPM,
       confidence: 1,
       intervalMs: 60000 / referenceBPM,
@@ -497,6 +504,83 @@ function createLoopWithBPM(
     bpm: bpmInfo.bpm,
     confidence: bpmInfo.confidence,
     downbeatOffset,
+    timeSignature: [4, 4],
+    beatIntervalMs: bpmInfo.intervalMs,
+  };
+}
+
+function createLoopWithFixedDuration(
+  events: NoteEvent[],
+  name: string,
+  bpmInfo: BPMInfo,
+  durationMs: number,
+): LoopSequence {
+  const beatMs = bpmInfo.intervalMs;
+  const barMs = beatMs * 4;
+  const minBars = durationMs / barMs;
+  const durationBars = bestBarCount(minBars);
+  const loopDuration = durationBars * barMs;
+
+  const sorted = [...events].sort(
+    (a, b) =>
+      a.timestamp - b.timestamp || (a.type === 'noteOff' ? -1 : 1),
+  );
+  const pairs = pairNotes(sorted);
+  const wrappedPairs: NotePair[] = [];
+
+  for (let i = 0; i < pairs.length; i++) {
+    const p = pairs[i];
+    const rawDuration = Math.max(0, p.end - p.start);
+    if (rawDuration <= 0) continue;
+
+    if (rawDuration >= loopDuration) {
+      wrappedPairs.push({
+        note: p.note,
+        velocity: p.velocity,
+        start: 0,
+        end: loopDuration,
+      });
+      continue;
+    }
+
+    const start = wrapTimeToDuration(p.start, loopDuration);
+    const end = start + rawDuration;
+
+    if (end <= loopDuration) {
+      wrappedPairs.push({
+        note: p.note,
+        velocity: p.velocity,
+        start,
+        end,
+      });
+      continue;
+    }
+
+    wrappedPairs.push({
+      note: p.note,
+      velocity: p.velocity,
+      start,
+      end: loopDuration,
+    });
+    wrappedPairs.push({
+      note: p.note,
+      velocity: p.velocity,
+      start: 0,
+      end: end - loopDuration,
+    });
+  }
+
+  const finalEvents = pairsToEvents(deduplicateOverlaps(wrappedPairs));
+  const phaseInfo = detectPhase(finalEvents, bpmInfo);
+
+  return {
+    events: finalEvents,
+    duration: loopDuration,
+    durationBars,
+    name,
+    bpm: bpmInfo.bpm,
+    confidence: bpmInfo.confidence,
+    downbeatOffset: phaseInfo.downbeatOffset,
     timeSignature: [4, 4],
     beatIntervalMs: bpmInfo.intervalMs,
   };

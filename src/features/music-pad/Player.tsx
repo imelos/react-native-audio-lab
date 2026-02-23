@@ -12,7 +12,11 @@ import Grid, { GridHandle } from './grid/Grid';
 import { createLoopSequence, quantizeEvents } from './utils/loopUtils.ts';
 import { useSequencer } from './hooks/useSequencer.ts';
 import GlobalSequencer from './hooks/GlobalSequencer';
-import { useNoteRepeat, NoteRepeatMode } from './hooks/useNoteRepeat';
+import {
+  useNoteRepeat,
+  NoteRepeatMode,
+  getIntervalMs,
+} from './hooks/useNoteRepeat';
 import NoteRepeatSelector from './NoteRepeatSelector';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -37,6 +41,7 @@ export default function Player({
   useScale,
   scaleNotes,
 }: PlayerProps) {
+  const MAX_RECORD_ARM_GUARD_MS = 200;
   const insets = useSafeAreaInsets();
   const gridRef = useRef<GridHandle>(null);
   const { width: windowWidth } = useWindowDimensions();
@@ -71,32 +76,50 @@ export default function Player({
   // ── Grid note handlers ───────────────────────────────────────────────────
 
   const sequencerRef = useRef(GlobalSequencer.getInstance());
+  const ensureRecordingArmed = useCallback((source: 'touch' | 'trigger') => {
+    const seq = sequencerRef.current;
+    if (seq.isChannelRecording(channel)) return;
+
+    const hasSequence = !!seq.getSequence(channel);
+    if (
+      source === 'touch' &&
+      noteRepeatMode !== 'off' &&
+      !hasSequence &&
+      seq.transportState === 'playing'
+    ) {
+      const duration = seq.getMasterDuration();
+      if (duration > 0) {
+        const loopPos = seq.getCurrentMusicalMs(channel) % duration;
+        const remaining = duration - loopPos;
+        const bpm = seq.getGlobalBPM() ?? 120;
+        const intervalMs = getIntervalMs(noteRepeatMode, bpm);
+        const guardMs = Math.min(intervalMs * 0.5, MAX_RECORD_ARM_GUARD_MS);
+        // Near loop end, defer recording-arm to the first repeat trigger.
+        // This prevents creating a tail pickup that feels like loop extension.
+        if (remaining <= guardMs) {
+          return;
+        }
+      }
+    }
+
+    if (!hasSequence) {
+      startRecording();
+    } else if (seq.transportState === 'playing') {
+      // Overdub: only arm recording while transport is running.
+      startRecording();
+    }
+  }, [channel, noteRepeatMode, startRecording]);
 
   const rawNoteOn = useCallback(
     (note: number, velocity: number, duration?: number) => {
-      // Auto-start recording on first touch if nothing exists yet.
-      // Use the sequencer's imperative state (always current) instead of
-      // React state which may be stale in closures — otherwise the repeat
-      // clock's rapid re-triggers call startRecording() repeatedly, resetting
-      // the recording buffer and losing events.
-      const seq = sequencerRef.current;
-      if (!seq.isChannelRecording(channel)) {
-        const hasSequence = !!seq.getSequence(channel);
-        if (!hasSequence) {
-          startRecording();
-        } else if (seq.transportState === 'playing') {
-          // Overdub: only arm recording while transport is running.
-          startRecording();
-        }
-      }
-
+      ensureRecordingArmed('trigger');
       NativeAudioModule.noteOn(channel, note, velocity);
       pushNoteOn(note, velocity, duration);
 
       // Live visual feedback (not from sequencer, since we're recording live)
       gridRef.current?.setPadActive(note, true);
     },
-    [channel, startRecording, pushNoteOn],
+    [channel, ensureRecordingArmed, pushNoteOn],
   );
 
   const rawNoteOff = useCallback(
@@ -116,6 +139,16 @@ export default function Player({
       onNoteOn: rawNoteOn,
       onNoteOff: rawNoteOff,
     });
+
+  const handlePadNoteOn = useCallback(
+    (note: number, velocity: number) => {
+      // Arm recording on physical touch so the first repeat hit isn't
+      // quantized before the recording offset.
+      ensureRecordingArmed('touch');
+      handleNoteOn(note, velocity);
+    },
+    [ensureRecordingArmed, handleNoteOn],
+  );
 
   const handleAdd = useCallback(() => {
     // Flush pending noteOffs before committing — prevents a cut last note
@@ -185,7 +218,7 @@ export default function Player({
           gridSize={gridSize}
           useScale={useScale}
           scaleNotes={scaleNotes}
-          onNoteOn={handleNoteOn}
+          onNoteOn={handlePadNoteOn}
           onNoteOff={handleNoteOff}
         />
         <View style={[styles.sequenceInfo, { backgroundColor: color }]}>

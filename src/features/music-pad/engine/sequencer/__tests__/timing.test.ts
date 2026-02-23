@@ -68,6 +68,16 @@ describe('sequencer timing helpers', () => {
 
     expect(
       normalizeRecordedTimestamp({
+        rawTimestamp: 252,
+        hasExplicitTimestamp: true,
+        isPlaying: true,
+        recordingLoopOffset: 260,
+        recordingTimelineDuration: 1000,
+      }),
+    ).toBe(-8);
+
+    expect(
+      normalizeRecordedTimestamp({
         rawTimestamp: 310,
         hasExplicitTimestamp: true,
         isPlaying: true,

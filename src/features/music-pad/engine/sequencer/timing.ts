@@ -1,5 +1,7 @@
 import type { NoteEvent } from '../../utils/loopUtils';
 
+const EXPLICIT_TIMESTAMP_JITTER_TOLERANCE_MS = 150;
+
 export function computeLoopTime(
   now: number,
   globalStartTime: number,
@@ -71,6 +73,15 @@ export function normalizeRecordedTimestamp(params: {
   }
 
   let ts = rawTimestamp - recordingLoopOffset;
+  // Repeat-mode events are grid-snapped and can land a few ms "before"
+  // the recording offset if recording is armed on the same frame.
+  // Treat tiny negatives as jitter, not a real loop wrap.
+  if (
+    ts < 0 &&
+    Math.abs(ts) <= EXPLICIT_TIMESTAMP_JITTER_TOLERANCE_MS
+  ) {
+    return ts;
+  }
   if (ts < 0) {
     ts += recordingTimelineDuration;
   }

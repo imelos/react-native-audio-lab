@@ -221,12 +221,28 @@ class GlobalSequencer {
     if (!s) return [];
     s.isRecording = false;
     const offset = s.recordingLoopOffset;
+    const timelineDuration = s.recordingTimelineDuration;
     // Offset events so they're timeline-aligned (sequence timeline for overdub,
     // master timeline for first-take while transport is running).
-    const evts = s.recordedEvents.map(e => ({
-      ...e,
-      timestamp: e.timestamp + offset,
-    }));
+    let lastTimestamp = -Infinity;
+    const evts = s.recordedEvents.map(e => {
+      let timestamp = e.timestamp + offset;
+
+      // Keep timestamps monotonic in recording order. This preserves pairs
+      // that cross loop boundaries (e.g. first note starts before the
+      // recording offset and ends after it) so they are not dropped later.
+      if (timelineDuration > 0) {
+        while (timestamp < lastTimestamp - 1) {
+          timestamp += timelineDuration;
+        }
+      }
+      lastTimestamp = timestamp;
+
+      return {
+        ...e,
+        timestamp,
+      };
+    });
     s.recordedEvents = [];
     s.recordingTimelineDuration = 0;
 

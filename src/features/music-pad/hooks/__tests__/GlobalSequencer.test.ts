@@ -187,4 +187,33 @@ describe('GlobalSequencer regressions', () => {
     expect(events).toHaveLength(1);
     expect(events[0].timestamp).toBe(1050);
   });
+
+  it('does not wrap the first snapped repeat note to loop end', () => {
+    const sequencer = GlobalSequencer.getInstance();
+    const delegate: ChannelDelegate = {
+      onNoteOn: jest.fn(),
+      onNoteOff: jest.fn(),
+      onTick: jest.fn(),
+      onLoopWrap: jest.fn(),
+    };
+
+    sequencer.registerChannel(1, delegate);
+    sequencer.setSequence(1, makeSequence([], 12000));
+
+    setNow(0);
+    sequencer.play();
+
+    // Recording starts a few ms after the intended 2000ms grid point.
+    setNow(2008);
+    sequencer.startRecording(1);
+    // First repeat hit is snapped back to the real grid boundary.
+    sequencer.pushRecordEvent(1, 'noteOn', 60, 0.9, 2000);
+    sequencer.pushRecordEvent(1, 'noteOff', 60, 0, 2250);
+    const events = sequencer.stopRecording(1);
+
+    expect(events).toEqual([
+      { type: 'noteOn', note: 60, timestamp: 2000, velocity: 0.9 },
+      { type: 'noteOff', note: 60, timestamp: 2250, velocity: 0 },
+    ]);
+  });
 });
