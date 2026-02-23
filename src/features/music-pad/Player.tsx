@@ -291,6 +291,12 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontFamily: 'monospace',
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
+    lineHeight: 20,
+    textAlign: 'center',
+    textAlignVertical: 'center'
   },
   footer: {
     bottom: 0,
