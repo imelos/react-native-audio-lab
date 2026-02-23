@@ -162,6 +162,10 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const [masterDuration, setMasterDuration] = useState(
     sequencer.getMasterDuration(),
   );
+  const isRecordingRef = useRef(isRecording);
+  isRecordingRef.current = isRecording;
+  const sequenceRef = useRef<LoopSequence | null>(sequence);
+  sequenceRef.current = sequence;
 
   // ── Build the delegate (stable ref, mutated only internally) ───────────
   const delegateRef = useRef<ChannelDelegate>({
@@ -177,7 +181,17 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       currentMusicalMs.value = loopTimeMs;
       const width = windowWidthRef.current;
       if (loopDuration > 0 && width > 0) {
-        playheadX.value = (loopTimeMs / loopDuration) * width;
+        const isFirstTakeWithMasterClock =
+          isRecordingRef.current && sequenceRef.current == null;
+        if (isFirstTakeWithMasterClock) {
+          const total = Math.max(loopDuration, loopTimeMs);
+          const linearX = total > 0 ? (loopTimeMs / total) * width : 0;
+          playheadX.value = Math.max(0, Math.min(width, linearX));
+        } else {
+          const loopPos =
+            ((loopTimeMs % loopDuration) + loopDuration) % loopDuration;
+          playheadX.value = (loopPos / loopDuration) * width;
+        }
       } else {
         playheadX.value = 0;
       }
@@ -269,14 +283,20 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       const name = `Ch ${channel} Loop`;
 
       // For first take on an empty channel:
-      // keep global BPM (if present), but do not force current master duration.
-      // This allows new channels to create longer clips when desired.
+      // keep global BPM (if present). While transport is running against an
+      // existing session, enforce masterDuration as a minimum so new channels
+      // do not create shorter loops than the current arrangement.
       const globalBPM = sequencer.getGlobalBPM();
+      const currentMasterDuration = sequencer.getMasterDuration();
+      const minDurationMs =
+        sequencer.transportState === 'playing' && currentMasterDuration > 0
+          ? currentMasterDuration
+          : undefined;
       const loop = createLoopFn(
         events,
         name,
         overrideBPM ?? globalBPM ?? undefined,
-        undefined,
+        minDurationMs,
       );
       if (!loop) return;
 

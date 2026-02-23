@@ -55,6 +55,7 @@ export default function Player({
     playheadX,
     currentMusicalMs,
     visualNotes,
+    masterDuration,
     // play,
     // stop,
     togglePlayback,
@@ -137,16 +138,23 @@ export default function Player({
         playheadX={playheadX}
         sequence={sequence ?? undefined}
         showLiveOverlay={isRecording && !!sequence}
+        loopDuration={
+          isRecording && !sequence && isPlaying && masterDuration > 0
+            ? masterDuration
+            : undefined
+        }
         color={color}
       />
     ),
     [
       isRecording,
+      isPlaying,
       sequence,
       currentMusicalMs,
       playheadX,
       windowWidth,
       visualNotes,
+      masterDuration,
       color,
     ],
   );

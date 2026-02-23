@@ -341,9 +341,19 @@ class GlobalSequencer {
           return;
         }
 
-        // ── Channels without a sequence still get tick updates so the
-        // playhead tracks the global position while recording ──────
+        // ── Channels without a sequence ────────────────────────────
         if (!seq) {
+          // First-take recording on a new channel should use linear
+          // recording time, not master loop time, so preview can extend
+          // beyond existing channels before commit.
+          if (s.isRecording) {
+            const recElapsed = now - s.recordingStartTime;
+            const musicalTime = recElapsed + s.recordingLoopOffset;
+            s.delegate.onTick(musicalTime, this.masterDuration);
+            return;
+          }
+
+          // Non-recording channels still follow global loop position.
           if (this.masterDuration > 0) {
             const loopTime = elapsed % this.masterDuration;
             s.delegate.onTick(loopTime, this.masterDuration);
@@ -421,6 +431,11 @@ class GlobalSequencer {
   getCurrentMusicalMs(channel: number): number {
     const s = this.channels.get(channel);
     if (!s) return 0;
+    if (s.isRecording && !s.sequence) {
+      return (
+        performance.now() - s.recordingStartTime + s.recordingLoopOffset
+      );
+    }
     if (this._transportState === 'playing') {
       const seq = s.sequence;
       const elapsed = performance.now() - this.globalStartTime;

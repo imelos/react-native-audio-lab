@@ -272,19 +272,33 @@ export function MidiVisualizer({
 
     // ── Overdub mode (loopDuration provided) ─────────────────────────────
     if (loopDuration && loopDuration > 0) {
-      const total = loopDuration;
-      const rects = new Array(all.length);
+      let total = loopDuration;
+      for (let i = 0; i < all.length; i++) {
+        const end = all[i].endTime ?? nowMs;
+        if (end > total) total = end;
+      }
+      const rects: Array<{
+        x: number;
+        w: number;
+        y: number;
+        h: number;
+        active: boolean;
+        overlay?: boolean;
+      }> = [];
       for (let i = 0; i < all.length; i++) {
         const n = all[i];
         const noteEnd = n.endTime ?? nowMs;
+        const rawDuration = Math.max(0, noteEnd - n.startTime);
+        if (rawDuration <= 0) continue;
         const yIdx = pl.index[n.note] ?? 0;
-        rects[i] = {
+        const y = yIdx * sliceH;
+        rects.push({
           x: (n.startTime / total) * width,
-          w: (Math.max(0, noteEnd - n.startTime) / total) * width,
-          y: yIdx * sliceH,
+          w: (rawDuration / total) * width,
+          y,
           h: sliceH,
           active: n.endTime == null,
-        };
+        });
       }
       return rects;
     }
