@@ -227,8 +227,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
   const startRecording = useCallback(() => {
     sequencer.startRecording(channel);
+    // visualNotes now represent only the current recording pass (live overlay).
+    visualNotesRef.current = [];
+    visualNotes.value = [];
     setIsRecording(true);
-  }, [channel, sequencer]);
+  }, [channel, sequencer, visualNotes]);
 
   const clearRecording = useCallback(() => {
     sequencer.stopRecording(channel); // discard events

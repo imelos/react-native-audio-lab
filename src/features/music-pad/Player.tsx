@@ -135,8 +135,8 @@ export default function Player({
         notes={visualNotes}
         currentMusicalMs={currentMusicalMs}
         playheadX={playheadX}
-        sequence={isRecording ? undefined : sequence ?? undefined}
-        loopDuration={isRecording && sequence ? sequence.duration : undefined}
+        sequence={sequence ?? undefined}
+        showLiveOverlay={isRecording && !!sequence}
         color={color}
       />
     ),

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Canvas, Picture, Skia } from '@shopify/react-native-skia';
+import { Canvas, PaintStyle, Picture, Skia } from '@shopify/react-native-skia';
 import Animated, {
   SharedValue,
   useAnimatedStyle,
@@ -23,6 +23,8 @@ interface Props {
   playheadX?: SharedValue<number>;
   currentMusicalMs?: SharedValue<number>;
   sequence?: LoopSequence;
+  /** Draw live notes as stroke overlay while sequence remains visible */
+  showLiveOverlay?: boolean;
   /** Master loop duration — used to position live notes against the loop when overdubbing */
   loopDuration?: number;
   color: string;
@@ -52,6 +54,7 @@ export function MidiVisualizer({
   playheadX,
   currentMusicalMs,
   sequence,
+  showLiveOverlay = false,
   loopDuration,
   color = '#6200ee',
 }: Props) {
@@ -80,6 +83,14 @@ export function MidiVisualizer({
     return _inactivePaint;
   }, [color]);
 
+  const overlayStrokePaint = useMemo(() => {
+    const _overlayStrokePaint = Skia.Paint();
+    _overlayStrokePaint.setColor(Skia.Color(color));
+    _overlayStrokePaint.setStyle(PaintStyle.Stroke);
+    _overlayStrokePaint.setStrokeWidth(1.5);
+    return _overlayStrokePaint;
+  }, [color]);
+
   // Pre-compute sequence pairs synchronously when sequence changes.
   const pairs = useMemo(
     () => (sequence ? pairNotes(sequence.events) : []),
@@ -100,6 +111,7 @@ export function MidiVisualizer({
     const sp = sequencePairs.value;
     const seen: Record<number, boolean> = {};
     const pitches: number[] = [];
+    const all = resolvedNotes.value;
 
     if (sp.length > 0) {
       for (let i = 0; i < sp.length; i++) {
@@ -109,10 +121,18 @@ export function MidiVisualizer({
           pitches.push(note);
         }
       }
+      if (showLiveOverlay) {
+        for (let i = 0; i < all.length; i++) {
+          const note = all[i].note;
+          if (!seen[note]) {
+            seen[note] = true;
+            pitches.push(note);
+          }
+        }
+      }
       return sortAndIndexPitches(pitches);
     }
 
-    const all = resolvedNotes.value;
     for (let i = 0; i < all.length; i++) {
       const note = all[i].note;
       if (!seen[note]) {
@@ -122,7 +142,7 @@ export function MidiVisualizer({
     }
 
     return sortAndIndexPitches(pitches);
-  }, [sequencePairs, resolvedNotes]);
+  }, [sequencePairs, resolvedNotes, showLiveOverlay]);
 
   // Compute rects reactively from SharedValue inputs — no RAF loop needed.
   const rectsData = useDerivedValue(() => {
@@ -145,7 +165,14 @@ export function MidiVisualizer({
         }
       }
 
-      const rects = new Array(sp.length);
+      const rects: Array<{
+        x: number;
+        w: number;
+        y: number;
+        h: number;
+        active: boolean;
+        overlay?: boolean;
+      }> = new Array(sp.length);
       for (let i = 0; i < sp.length; i++) {
         const p = sp[i];
         const x = (p.start / dur) * width;
@@ -159,6 +186,73 @@ export function MidiVisualizer({
           active: !!activeMap[p.note],
         };
       }
+
+      if (showLiveOverlay && all.length > 0) {
+        let hasOpenNotes = false;
+        for (let i = 0; i < all.length; i++) {
+          if (all[i].endTime == null) {
+            hasOpenNotes = true;
+            break;
+          }
+        }
+        const nowMs =
+          hasOpenNotes && currentMusicalMs ? currentMusicalMs.value : 0;
+
+        for (let i = 0; i < all.length; i++) {
+          const n = all[i];
+          const noteEnd = n.endTime ?? nowMs;
+          const rawDuration = Math.max(0, noteEnd - n.startTime);
+          if (rawDuration <= 0) continue;
+
+          const wrappedStart = ((n.startTime % dur) + dur) % dur;
+          const yIdx = pl.index[n.note] ?? 0;
+          const y = yIdx * sliceH;
+
+          if (rawDuration >= dur) {
+            rects.push({
+              x: 0,
+              w: width,
+              y,
+              h: sliceH,
+              active: n.endTime == null,
+              overlay: true,
+            });
+            continue;
+          }
+
+          const end = wrappedStart + rawDuration;
+          if (end <= dur) {
+            rects.push({
+              x: (wrappedStart / dur) * width,
+              w: (rawDuration / dur) * width,
+              y,
+              h: sliceH,
+              active: n.endTime == null,
+              overlay: true,
+            });
+            continue;
+          }
+
+          const firstDuration = dur - wrappedStart;
+          rects.push({
+            x: (wrappedStart / dur) * width,
+            w: (firstDuration / dur) * width,
+            y,
+            h: sliceH,
+            active: n.endTime == null,
+            overlay: true,
+          });
+          rects.push({
+            x: 0,
+            w: ((end - dur) / dur) * width,
+            y,
+            h: sliceH,
+            active: n.endTime == null,
+            overlay: true,
+          });
+        }
+      }
+
       return rects;
     }
 
@@ -227,6 +321,7 @@ export function MidiVisualizer({
     sequenceDuration,
     resolvedNotes,
     pitchLayout,
+    showLiveOverlay,
     loopDuration,
   ]);
 
@@ -240,13 +335,21 @@ export function MidiVisualizer({
       if (r.w > 0 && r.x + r.w > 0 && r.x < width) {
         canvas.drawRect(
           Skia.XYWHRect(r.x, r.y, r.w, r.h),
-          r.active ? activePaint : inactivePaint,
+          r.overlay ? overlayStrokePaint : r.active ? activePaint : inactivePaint,
         );
       }
     }
 
     return recorder.finishRecordingAsPicture();
-  }, [rectsData, recorder, width, height, activePaint, inactivePaint]);
+  }, [
+    rectsData,
+    recorder,
+    width,
+    height,
+    activePaint,
+    inactivePaint,
+    overlayStrokePaint,
+  ]);
 
   return (
     <View style={{ width, height }}>
