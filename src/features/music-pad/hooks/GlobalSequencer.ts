@@ -1,6 +1,12 @@
 import performance from 'react-native-performance';
 import NativeAudioModule from '../../../specs/NativeAudioModule';
 import type { LoopSequence, NoteEvent } from '../utils/loopUtils';
+import {
+  computeLoopTime,
+  findNextEventIndex,
+  getRecordingTimelineContext,
+  normalizeRecordedTimestamp,
+} from '../engine/sequencer/timing';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -150,18 +156,13 @@ class GlobalSequencer {
       this._transportState === 'playing' &&
       sequence.duration > 0
     ) {
-      const elapsed = performance.now() - this.globalStartTime;
-      const loopTime = elapsed % sequence.duration;
+      const loopTime = computeLoopTime(
+        performance.now(),
+        this.globalStartTime,
+        sequence.duration,
+      );
       state.lastLoopTime = loopTime;
-
-      let idx = 0;
-      while (
-        idx < sequence.events.length &&
-        sequence.events[idx].timestamp <= loopTime
-      ) {
-        idx++;
-      }
-      state.eventIndex = idx;
+      state.eventIndex = findNextEventIndex(sequence.events, loopTime);
     } else {
       state.eventIndex = 0;
       state.lastLoopTime = -1;
@@ -198,15 +199,17 @@ class GlobalSequencer {
 
     // Capture where in the active timeline we are so recorded events can
     // be placed at the correct loop-relative position when recording stops.
-    if (this._transportState === 'playing') {
-      const timelineDuration = s.sequence?.duration ?? this.masterDuration;
-      const elapsed = performance.now() - this.globalStartTime;
-      s.recordingTimelineDuration = timelineDuration > 0 ? timelineDuration : 0;
-      s.recordingLoopOffset =
-        timelineDuration > 0 ? elapsed % timelineDuration : 0;
-    } else {
-      s.recordingTimelineDuration = 0;
-      s.recordingLoopOffset = 0;
+    const now = performance.now();
+    const timeline = getRecordingTimelineContext({
+      isPlaying: this._transportState === 'playing',
+      now,
+      globalStartTime: this.globalStartTime,
+      sequenceDuration: s.sequence?.duration ?? 0,
+      masterDuration: this.masterDuration,
+    });
+    s.recordingTimelineDuration = timeline.duration;
+    s.recordingLoopOffset = timeline.offset;
+    if (timeline.duration === 0) {
       // Start the RAF loop so delegates receive onTick during recording
       // even when no sequence is playing yet.
       this.ensureRAF();
@@ -253,22 +256,13 @@ class GlobalSequencer {
     const s = this.channels.get(channel);
     if (!s?.isRecording) return;
     const rawTs = timestamp ?? performance.now() - s.recordingStartTime;
-    let ts = rawTs;
-
-    // During playback, explicit timestamps are loop-local musical times.
-    // Convert to recording-relative so stopRecording() can re-apply the offset
-    // uniformly for both explicit and wall-clock events.
-    if (
-      timestamp != null &&
-      this._transportState === 'playing' &&
-      s.recordingTimelineDuration > 0
-    ) {
-      ts = rawTs - s.recordingLoopOffset;
-      if (ts < 0) {
-        ts += s.recordingTimelineDuration;
-      }
-    }
-
+    const ts = normalizeRecordedTimestamp({
+      rawTimestamp: rawTs,
+      hasExplicitTimestamp: timestamp != null,
+      isPlaying: this._transportState === 'playing',
+      recordingLoopOffset: s.recordingLoopOffset,
+      recordingTimelineDuration: s.recordingTimelineDuration,
+    });
     s.recordedEvents.push({ type, note, timestamp: ts, velocity });
   }
 
