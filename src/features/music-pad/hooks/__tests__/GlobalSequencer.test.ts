@@ -216,4 +216,81 @@ describe('GlobalSequencer regressions', () => {
       { type: 'noteOff', note: 60, timestamp: 2250, velocity: 0 },
     ]);
   });
+
+  it('relaunches a channel clip on the next quantized boundary', () => {
+    const sequencer = GlobalSequencer.getInstance();
+    const delegate: ChannelDelegate = {
+      onNoteOn: jest.fn(),
+      onNoteOff: jest.fn(),
+      onTick: jest.fn(),
+      onLoopWrap: jest.fn(),
+    };
+
+    const sequence = makeSequence(
+      [
+        { type: 'noteOn', note: 60, timestamp: 100, velocity: 0.9 },
+        { type: 'noteOff', note: 60, timestamp: 180, velocity: 0 },
+      ],
+      4000,
+    );
+
+    sequencer.registerChannel(1, delegate);
+    sequencer.setSequence(1, sequence);
+    setNow(0);
+    sequencer.play();
+
+    setNow(120);
+    runNextFrame(); // first pass note at 100ms
+    native.noteOn.mockClear();
+
+    setNow(700);
+    sequencer.launchChannelClip(1); // should schedule at 2000ms
+
+    setNow(1900);
+    runNextFrame();
+    expect(native.noteOn).not.toHaveBeenCalled();
+
+    setNow(2100);
+    runNextFrame(); // relaunch happened at 2000, so note fires again at 2100
+    expect(native.noteOn).toHaveBeenCalledWith(1, 60, 0.9);
+  });
+
+  it('stops a channel clip on the next quantized boundary', () => {
+    const sequencer = GlobalSequencer.getInstance();
+    const delegate: ChannelDelegate = {
+      onNoteOn: jest.fn(),
+      onNoteOff: jest.fn(),
+      onTick: jest.fn(),
+      onLoopWrap: jest.fn(),
+    };
+
+    const sequence = makeSequence(
+      [
+        { type: 'noteOn', note: 60, timestamp: 100, velocity: 0.9 },
+        { type: 'noteOff', note: 60, timestamp: 3000, velocity: 0 },
+      ],
+      4000,
+    );
+
+    sequencer.registerChannel(1, delegate);
+    sequencer.setSequence(1, sequence);
+    setNow(0);
+    sequencer.play();
+
+    setNow(120);
+    runNextFrame(); // noteOn active
+    native.noteOff.mockClear();
+
+    setNow(700);
+    sequencer.stopChannelClips(1); // should schedule stop at 2000ms
+
+    setNow(1500);
+    runNextFrame();
+    expect(native.noteOff).not.toHaveBeenCalled();
+
+    setNow(2100);
+    runNextFrame(); // queued stop should silence at boundary
+    expect(native.noteOff).toHaveBeenCalledWith(1, 60);
+    expect(sequencer.getChannelPlaybackSnapshot(1).isLaunched).toBe(false);
+  });
 });
