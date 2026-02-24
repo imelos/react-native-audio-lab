@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   StyleSheet,
@@ -80,6 +86,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
     Map<number, ChannelPlaybackSnapshot>
   >(new Map());
   const sequencer = useMemo(() => GlobalSequencer.getInstance(), []);
+  const longPressTriggeredChannelsRef = useRef<Set<number>>(new Set());
 
   const navigateToChannelSynth = useCallback(
     (channel: Channel) => {
@@ -98,11 +105,43 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
     [sequencer],
   );
 
+  const handleClipPress = useCallback(
+    (channelId: number) => {
+      if (longPressTriggeredChannelsRef.current.has(channelId)) {
+        longPressTriggeredChannelsRef.current.delete(channelId);
+        return;
+      }
+      launchClip(channelId);
+    },
+    [launchClip],
+  );
+
+  const handleClipLongPress = useCallback(
+    (channel: Channel) => {
+      longPressTriggeredChannelsRef.current.add(channel.id);
+      navigateToChannelSynth(channel);
+    },
+    [navigateToChannelSynth],
+  );
+
   const stopChannel = useCallback(
     (channelId: number) => {
       sequencer.stopChannelClips(channelId);
     },
     [sequencer],
+  );
+
+  const startNewClipRecording = useCallback(
+    (channel: Channel) => {
+      if (sequencer.getSequence(channel.id)) {
+        sequencer.setSequence(channel.id, null);
+        if (!sequencer.hasAnySequence()) {
+          sequencer.stop();
+        }
+      }
+      navigateToChannelSynth(channel);
+    },
+    [navigateToChannelSynth, sequencer],
   );
 
   // Subscribe to sequence changes from GlobalSequencer.
@@ -234,7 +273,9 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                             borderColor: ch.color,
                           },
                         ]}
-                        onPress={() => launchClip(ch.id)}
+                        onPress={() => handleClipPress(ch.id)}
+                        onLongPress={() => handleClipLongPress(ch)}
+                        delayLongPress={1000}
                       >
                         <MidiVisualizer
                           width={CELL_WIDTH - 2}
@@ -272,7 +313,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                     <TouchableOpacity
                       key={`${ch.id}-${rowIndex}`}
                       style={styles.clipCell}
-                      onPress={() => navigateToChannelSynth(ch)}
+                      onPress={() => startNewClipRecording(ch)}
                     >
                       <View
                         style={[
