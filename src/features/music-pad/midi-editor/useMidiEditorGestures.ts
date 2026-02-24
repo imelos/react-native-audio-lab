@@ -104,13 +104,17 @@ export function useMidiEditorGestures({
       const hit = hitTestNote(e.x, e.y, rects);
 
       if (hit) {
-        // Toggle selection
+        // Delete tapped note
+        setPairs(prev => {
+          const next = prev.filter((_, i) => i !== hit.index);
+          commitEdits(next);
+          return next;
+        });
         setSelectedIndices(prev => {
-          const next = new Set(prev);
-          if (next.has(hit.index)) {
-            next.delete(hit.index);
-          } else {
-            next.add(hit.index);
+          const next = new Set<number>();
+          for (const idx of prev) {
+            if (idx < hit.index) next.add(idx);
+            else if (idx > hit.index) next.add(idx - 1);
           }
           return next;
         });
@@ -135,25 +139,6 @@ export function useMidiEditorGestures({
           return next;
         });
         // Clear selection
-        setSelectedIndices(() => new Set());
-      }
-    });
-
-  // ── Long press gesture (delete selected) ──────────────────────────────────
-
-  const longPressGesture = Gesture.LongPress()
-    .runOnJS(true)
-    .minDuration(400)
-    .onEnd((e) => {
-      const { rects } = getRects();
-      const hit = hitTestNote(e.x, e.y, rects);
-      if (hit && selectedIndices.has(hit.index)) {
-        // Delete all selected notes
-        setPairs(prev => {
-          const next = prev.filter((_, i) => !selectedIndices.has(i));
-          commitEdits(next);
-          return next;
-        });
         setSelectedIndices(() => new Set());
       }
     });
@@ -310,9 +295,6 @@ export function useMidiEditorGestures({
 
   return Gesture.Simultaneous(
     pinchGesture,
-    Gesture.Race(
-      panGesture,
-      Gesture.Exclusive(longPressGesture, tapGesture),
-    ),
+    Gesture.Race(panGesture, tapGesture),
   );
 }

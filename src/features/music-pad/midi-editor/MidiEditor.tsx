@@ -10,8 +10,7 @@ import { GestureDetector } from 'react-native-gesture-handler';
 import type { SharedValue } from 'react-native-reanimated';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import type { LoopSequence, NotePair } from '../utils/loopUtils';
-import { pairNotes, pairsToEvents } from '../utils/loopUtils';
-import GlobalSequencer from '../hooks/GlobalSequencer';
+import { pairNotes } from '../utils/loopUtils';
 import {
   computePitchRows,
   computeGridLines,
@@ -69,18 +68,6 @@ export default function MidiEditor({
   const onViewChange = useCallback(() => {
     setViewTick(n => n + 1);
   }, []);
-
-  // ── Delete selected ────────────────────────────────────────────────────
-  const handleDelete = useCallback(() => {
-    setPairs(prev => {
-      const next = prev.filter((_, i) => !selectedIndices.has(i));
-      const newEvents = pairsToEvents(next);
-      const updatedSequence: LoopSequence = { ...sequence, events: newEvents };
-      GlobalSequencer.getInstance().setSequence(channel, updatedSequence);
-      return next;
-    });
-    setSelectedIndices(new Set());
-  }, [selectedIndices, sequence, channel]);
 
   // ── Gestures ────────────────────────────────────────────────────────────
   const gesture = useMidiEditorGestures({
@@ -261,11 +248,6 @@ export default function MidiEditor({
           ))}
         </View>
         <View style={styles.toolbarRight}>
-          {selectedIndices.size > 0 && (
-            <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
-              <Text style={styles.deleteBtnText}>DELETE</Text>
-            </TouchableOpacity>
-          )}
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
             <Text style={styles.closeBtnText}>X</Text>
           </TouchableOpacity>
@@ -339,17 +321,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
-  },
-  deleteBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 4,
-    backgroundColor: '#d32f2f',
-  },
-  deleteBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
   },
   closeBtn: {
     width: 28,
