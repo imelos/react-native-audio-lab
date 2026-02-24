@@ -37,7 +37,7 @@ interface UseMidiEditorGesturesParams {
 }
 
 type DragMode =
-  | { type: 'move'; index: number; startNote: number; startTime: number; origPair: NotePair }
+  | { type: 'move'; index: number; startNote: number; startTime: number; origPair: NotePair; startY: number }
   | { type: 'resize'; index: number; origEnd: number }
   | { type: 'scroll'; startScrollX: number; startScrollY: number };
 
@@ -73,6 +73,9 @@ export function useMidiEditorGestures({
     return { rects, pitchRows };
   }, [pairs, sequence.duration, viewW, viewH, scrollX, scrollY, zoomX]);
 
+  // Commit edits AFTER state update — must not be called inside a setState updater
+  // because GlobalSequencer.setSequence() synchronously fires listeners that
+  // trigger setState in other components (SessionScreen).
   const commitEdits = useCallback((updatedPairs: NotePair[]) => {
     const newEvents = pairsToEvents(updatedPairs);
     const updatedSequence: LoopSequence = { ...sequence, events: newEvents };
@@ -105,19 +108,17 @@ export function useMidiEditorGestures({
 
       if (hit) {
         // Delete tapped note
-        setPairs(prev => {
-          const next = prev.filter((_, i) => i !== hit.index);
-          commitEdits(next);
-          return next;
-        });
+        const next = pairs.filter((_, i) => i !== hit.index);
+        setPairs(() => next);
         setSelectedIndices(prev => {
-          const next = new Set<number>();
+          const updated = new Set<number>();
           for (const idx of prev) {
-            if (idx < hit.index) next.add(idx);
-            else if (idx > hit.index) next.add(idx - 1);
+            if (idx < hit.index) updated.add(idx);
+            else if (idx > hit.index) updated.add(idx - 1);
           }
-          return next;
+          return updated;
         });
+        commitEdits(next);
       } else {
         // Add note at tapped position
         const time = xToTime(e.x, scrollX.current, zoomX.current, viewW, sequence.duration);
@@ -133,13 +134,10 @@ export function useMidiEditorGestures({
           end: Math.min(snappedTime + stepMs, sequence.duration),
         };
 
-        setPairs(prev => {
-          const next = [...prev, newPair];
-          commitEdits(next);
-          return next;
-        });
-        // Clear selection
+        const next = [...pairs, newPair];
+        setPairs(() => next);
         setSelectedIndices(() => new Set());
+        commitEdits(next);
       }
     });
 
@@ -161,12 +159,14 @@ export function useMidiEditorGestures({
           };
         } else {
           const p = pairs[hit.index];
+          const hitRect = rects[hit.index];
           dragModeRef.current = {
             type: 'move',
             index: hit.index,
             startNote: p.note,
             startTime: p.start,
             origPair: { ...p },
+            startY: hitRect.y + hitRect.height / 2,
           };
           // Select the dragged note
           setSelectedIndices(prev => {
@@ -204,12 +204,10 @@ export function useMidiEditorGestures({
         let newStart = mode.startTime + timeDelta;
         newStart = Math.max(0, Math.min(newStart, sequence.duration - duration));
 
-        // Pitch delta
-        const pitchRow = hitTestPitchRow(
-          getRects().rects[mode.index]?.y + getRects().rects[mode.index]?.height / 2 + e.translationY,
-          pitchRows,
-        );
-        const newNote = pitchRow ?? mode.startNote;
+        // Pitch delta — use the original Y position captured at drag start,
+        // NOT the current rect position (which moves each frame → feedback loop)
+        const targetY = mode.startY + e.translationY;
+        const newNote = hitTestPitchRow(targetY, pitchRows) ?? mode.startNote;
 
         setPairs(prev => {
           const next = [...prev];
@@ -245,7 +243,8 @@ export function useMidiEditorGestures({
         return;
       }
 
-      // Snap on release
+      // Snap on release and commit
+      let snappedPairs: NotePair[] | null = null;
       setPairs(prev => {
         const next = [...prev];
         if (mode.type === 'move') {
@@ -261,9 +260,14 @@ export function useMidiEditorGestures({
           const clampedEnd = Math.max(p.start + minDur, Math.min(snapped, sequence.duration));
           next[mode.index] = { ...p, end: clampedEnd };
         }
-        commitEdits(next);
+        snappedPairs = next;
         return next;
       });
+      // Commit after setState, not inside updater
+      if (snappedPairs) {
+        // Use queueMicrotask to ensure setState has flushed before firing listeners
+        setTimeout(() => commitEdits(snappedPairs!), 0);
+      }
       dragModeRef.current = null;
     });
 
