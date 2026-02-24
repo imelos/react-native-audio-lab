@@ -58,6 +58,9 @@ const createDefaultChannels = (): Channel[] => [
   { id: 3, name: 'Synth 3', color: CHANNEL_COLORS[2] },
 ];
 
+const slotKey = (channelId: number, slotIndex: number): string =>
+  `${channelId}:${slotIndex}`;
+
 const toProgressPercent = (value: number): number =>
   Math.round(Math.max(0, Math.min(1, value)) * 100);
 
@@ -79,14 +82,42 @@ const hasPlaybackSnapshotChanged = (
 const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   const [channels, setChannels] = useState<Channel[]>(createDefaultChannels);
   const [nextChannelId, setNextChannelId] = useState(4);
-  const [sequences, setSequences] = useState<Map<number, LoopSequence>>(
+  const [slotSequences, setSlotSequences] = useState<Map<string, LoopSequence>>(
     new Map(),
   );
+  const slotSequencesRef = useRef<Map<string, LoopSequence>>(new Map());
+  const [activeSlotByChannel, setActiveSlotByChannel] = useState<
+    Map<number, number>
+  >(new Map());
+  const activeSlotByChannelRef = useRef<Map<number, number>>(new Map());
   const [playbackByChannel, setPlaybackByChannel] = useState<
     Map<number, ChannelPlaybackSnapshot>
   >(new Map());
   const sequencer = useMemo(() => GlobalSequencer.getInstance(), []);
   const longPressTriggeredChannelsRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    slotSequencesRef.current = slotSequences;
+  }, [slotSequences]);
+
+  const setActiveSlot = useCallback((channelId: number, slotIndex: number) => {
+    const nextRef = new Map(activeSlotByChannelRef.current);
+    nextRef.set(channelId, slotIndex);
+    activeSlotByChannelRef.current = nextRef;
+
+    setActiveSlotByChannel(prev => {
+      const current = prev.get(channelId);
+      if (current === slotIndex) return prev;
+      const next = new Map(prev);
+      next.set(channelId, slotIndex);
+      return next;
+    });
+  }, []);
+
+  const getActiveSlot = useCallback(
+    (channelId: number): number => activeSlotByChannel.get(channelId) ?? 0,
+    [activeSlotByChannel],
+  );
 
   const navigateToChannelSynth = useCallback(
     (channel: Channel) => {
@@ -98,7 +129,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
     [navigation],
   );
 
-  const launchClip = useCallback(
+  const launchActiveClip = useCallback(
     (channelId: number) => {
       sequencer.launchChannelClip(channelId);
     },
@@ -106,22 +137,38 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   );
 
   const handleClipPress = useCallback(
-    (channelId: number) => {
-      if (longPressTriggeredChannelsRef.current.has(channelId)) {
-        longPressTriggeredChannelsRef.current.delete(channelId);
+    (channel: Channel, slotIndex: number) => {
+      if (longPressTriggeredChannelsRef.current.has(channel.id)) {
+        longPressTriggeredChannelsRef.current.delete(channel.id);
         return;
       }
-      launchClip(channelId);
+      const targetSequence = slotSequencesRef.current.get(
+        slotKey(channel.id, slotIndex),
+      );
+      if (!targetSequence) return;
+
+      setActiveSlot(channel.id, slotIndex);
+      if (sequencer.getSequence(channel.id) !== targetSequence) {
+        sequencer.setSequence(channel.id, targetSequence);
+      }
+      launchActiveClip(channel.id);
     },
-    [launchClip],
+    [launchActiveClip, sequencer, setActiveSlot],
   );
 
   const handleClipLongPress = useCallback(
-    (channel: Channel) => {
+    (channel: Channel, slotIndex: number) => {
       longPressTriggeredChannelsRef.current.add(channel.id);
+      setActiveSlot(channel.id, slotIndex);
+      const targetSequence = slotSequencesRef.current.get(
+        slotKey(channel.id, slotIndex),
+      );
+      if (targetSequence && sequencer.getSequence(channel.id) !== targetSequence) {
+        sequencer.setSequence(channel.id, targetSequence);
+      }
       navigateToChannelSynth(channel);
     },
-    [navigateToChannelSynth],
+    [navigateToChannelSynth, sequencer, setActiveSlot],
   );
 
   const stopChannel = useCallback(
@@ -132,35 +179,49 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   );
 
   const startNewClipRecording = useCallback(
-    (channel: Channel) => {
-      if (sequencer.getSequence(channel.id)) {
+    (channel: Channel, slotIndex: number) => {
+      setActiveSlot(channel.id, slotIndex);
+      if (sequencer.getSequence(channel.id) != null) {
         sequencer.setSequence(channel.id, null);
-        if (!sequencer.hasAnySequence()) {
-          sequencer.stop();
-        }
+      }
+      if (!sequencer.hasAnySequence()) {
+        sequencer.stop();
       }
       navigateToChannelSynth(channel);
     },
-    [navigateToChannelSynth, sequencer],
+    [navigateToChannelSynth, sequencer, setActiveSlot],
   );
 
   // Subscribe to sequence changes from GlobalSequencer.
   useEffect(() => {
     // Seed initial state.
-    const initial = new Map<number, LoopSequence>();
+    const initialSlots = new Map<string, LoopSequence>();
+    const initialActive = new Map<number, number>();
     sequencer.getActiveChannels().forEach(ch => {
       const seq = sequencer.getSequence(ch);
-      if (seq) initial.set(ch, seq);
+      if (seq) {
+        initialSlots.set(slotKey(ch, 0), seq);
+      }
+      initialActive.set(ch, 0);
     });
-    if (initial.size > 0) setSequences(initial);
+    if (initialSlots.size > 0) {
+      slotSequencesRef.current = initialSlots;
+      setSlotSequences(initialSlots);
+    }
+    if (initialActive.size > 0) {
+      activeSlotByChannelRef.current = initialActive;
+      setActiveSlotByChannel(initialActive);
+    }
 
     return sequencer.onChannelSequence((ch, seq) => {
-      setSequences(prev => {
+      const targetSlot = activeSlotByChannelRef.current.get(ch) ?? 0;
+      setSlotSequences(prev => {
         const next = new Map(prev);
+        const key = slotKey(ch, targetSlot);
         if (seq) {
-          next.set(ch, seq);
+          next.set(key, seq);
         } else {
-          next.delete(ch);
+          next.delete(key);
         }
         return next;
       });
@@ -195,6 +256,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
   const addChannel = () => {
     const id = nextChannelId;
     setNextChannelId(id + 1);
+    setActiveSlot(id, 0);
     setChannels(prev => [
       ...prev,
       {
@@ -244,14 +306,16 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
             {Array.from({ length: ROW_COUNT }).map((_, rowIndex) => (
               <View key={rowIndex} style={styles.clipRow}>
                 {channels.map(ch => {
-                  const seq = sequences.get(ch.id);
+                  const slotSequence = slotSequences.get(
+                    slotKey(ch.id, rowIndex),
+                  );
                   const playback =
                     playbackByChannel.get(ch.id) ?? EMPTY_PLAYBACK_SNAPSHOT;
                   const isChannelPlaying = playback.isPlayingNow;
                   const showStopButton = isChannelPlaying;
+                  const isActiveSlot = getActiveSlot(ch.id) === rowIndex;
 
-                  // Row 0: existing clip (launch/restart), otherwise add/stop controls.
-                  if (rowIndex === 0 && seq) {
+                  if (slotSequence) {
                     const playheadLeft = Math.max(
                       0,
                       Math.min(
@@ -266,24 +330,26 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                         style={[
                           styles.clipCell,
                           styles.clipFilled,
-                          isChannelPlaying && styles.clipPlaying,
+                          isChannelPlaying &&
+                            isActiveSlot &&
+                            styles.clipPlaying,
                           playback.isQueuedToLaunch && styles.clipQueued,
                           {
                             backgroundColor: ch.color + '33',
                             borderColor: ch.color,
                           },
                         ]}
-                        onPress={() => handleClipPress(ch.id)}
-                        onLongPress={() => handleClipLongPress(ch)}
+                        onPress={() => handleClipPress(ch, rowIndex)}
+                        onLongPress={() => handleClipLongPress(ch, rowIndex)}
                         delayLongPress={1000}
                       >
                         <MidiVisualizer
                           width={CELL_WIDTH - 2}
                           height={CELL_HEIGHT - 2}
-                          sequence={seq}
+                          sequence={slotSequence}
                           color={ch.color}
                         />
-                        {isChannelPlaying && (
+                        {isChannelPlaying && isActiveSlot && (
                           <View
                             pointerEvents="none"
                             style={[styles.playhead, { left: playheadLeft }]}
@@ -313,7 +379,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                     <TouchableOpacity
                       key={`${ch.id}-${rowIndex}`}
                       style={styles.clipCell}
-                      onPress={() => startNewClipRecording(ch)}
+                      onPress={() => startNewClipRecording(ch, rowIndex)}
                     >
                       <View
                         style={[
