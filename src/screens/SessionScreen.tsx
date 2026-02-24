@@ -129,13 +129,6 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
     [navigation],
   );
 
-  const launchActiveClip = useCallback(
-    (channelId: number) => {
-      sequencer.launchChannelClip(channelId);
-    },
-    [sequencer],
-  );
-
   const handleClipPress = useCallback(
     (channel: Channel, slotIndex: number) => {
       if (longPressTriggeredChannelsRef.current.has(channel.id)) {
@@ -148,12 +141,9 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
       if (!targetSequence) return;
 
       setActiveSlot(channel.id, slotIndex);
-      if (sequencer.getSequence(channel.id) !== targetSequence) {
-        sequencer.setSequence(channel.id, targetSequence);
-      }
-      launchActiveClip(channel.id);
+      sequencer.launchChannelSequence(channel.id, targetSequence);
     },
-    [launchActiveClip, sequencer, setActiveSlot],
+    [sequencer, setActiveSlot],
   );
 
   const handleClipLongPress = useCallback(

@@ -293,4 +293,50 @@ describe('GlobalSequencer regressions', () => {
     expect(native.noteOff).toHaveBeenCalledWith(1, 60);
     expect(sequencer.getChannelPlaybackSnapshot(1).isLaunched).toBe(false);
   });
+
+  it('does not play a newly selected clip before its quantized launch boundary', () => {
+    const sequencer = GlobalSequencer.getInstance();
+    const delegate: ChannelDelegate = {
+      onNoteOn: jest.fn(),
+      onNoteOff: jest.fn(),
+      onTick: jest.fn(),
+      onLoopWrap: jest.fn(),
+    };
+
+    const current = makeSequence(
+      [
+        { type: 'noteOn', note: 60, timestamp: 100, velocity: 0.9 },
+        { type: 'noteOff', note: 60, timestamp: 180, velocity: 0 },
+      ],
+      4000,
+    );
+
+    const next = makeSequence(
+      [
+        { type: 'noteOn', note: 61, timestamp: 900, velocity: 0.8 },
+        { type: 'noteOff', note: 61, timestamp: 980, velocity: 0 },
+      ],
+      4000,
+    );
+
+    sequencer.registerChannel(1, delegate);
+    sequencer.setSequence(1, current);
+    setNow(0);
+    sequencer.play();
+
+    setNow(120);
+    runNextFrame();
+    native.noteOn.mockClear();
+
+    setNow(700);
+    sequencer.launchChannelSequence(1, next); // launch at 2000ms
+
+    setNow(950);
+    runNextFrame(); // next clip event at 900 should NOT fire yet
+    expect(native.noteOn).not.toHaveBeenCalledWith(1, 61, 0.8);
+
+    setNow(2950);
+    runNextFrame(); // launched at 2000, so 900ms event fires now
+    expect(native.noteOn).toHaveBeenCalledWith(1, 61, 0.8);
+  });
 });

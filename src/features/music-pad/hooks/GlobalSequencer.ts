@@ -35,6 +35,7 @@ interface ChannelState {
   clipLaunched: boolean;
   playbackStartTime: number;
   queuedLaunchTime: number | null;
+  queuedLaunchSequence: LoopSequence | null;
   queuedStopTime: number | null;
   // Recording
   isRecording: boolean;
@@ -116,6 +117,7 @@ class GlobalSequencer {
       clipLaunched: false,
       playbackStartTime: 0,
       queuedLaunchTime: null,
+      queuedLaunchSequence: null,
       queuedStopTime: null,
       isRecording: false,
       recordingStartTime: 0,
@@ -154,18 +156,11 @@ class GlobalSequencer {
     this.silenceChannel(channel, state);
 
     if (sequence) {
-      // Ensure sorted for cursor-based playback.
-      // noteOff MUST come before noteOn at the same timestamp — otherwise
-      // pairNotes creates zero-length ghost notes when a note ends and
-      // restarts at the same grid boundary (repeat mode chords).
-      sequence.events = [...sequence.events].sort(
-        (a, b) =>
-          a.timestamp - b.timestamp ||
-          (a.type === 'noteOff' ? -1 : 1),
-      );
+      this.sortSequenceEvents(sequence);
     }
 
     state.sequence = sequence;
+    state.queuedLaunchSequence = null;
 
     if (!sequence) {
       state.clipLaunched = false;
@@ -234,11 +229,23 @@ class GlobalSequencer {
   launchChannelClip(channel: number): void {
     const state = this.channels.get(channel);
     if (!state?.sequence) return;
+    this.launchChannelSequence(channel, state.sequence);
+  }
+
+  launchChannelSequence(channel: number, sequence: LoopSequence): void {
+    const state = this.channels.get(channel);
+    if (!state) return;
+
+    this.sortSequenceEvents(sequence);
 
     if (this._transportState !== 'playing') {
+      if (state.sequence !== sequence) {
+        this.setSequence(channel, sequence);
+      }
       state.clipLaunched = true;
       state.playbackStartTime = performance.now();
       state.queuedLaunchTime = null;
+      state.queuedLaunchSequence = null;
       state.queuedStopTime = null;
       state.eventIndex = 0;
       state.lastLoopTime = -1;
@@ -257,6 +264,7 @@ class GlobalSequencer {
         ? triggerAt
         : null;
     state.queuedLaunchTime = triggerAt;
+    state.queuedLaunchSequence = sequence;
   }
 
   stopChannelClips(channel: number): void {
@@ -265,6 +273,7 @@ class GlobalSequencer {
 
     // Stop should always cancel any pending launch.
     state.queuedLaunchTime = null;
+    state.queuedLaunchSequence = null;
 
     if (!state.sequence || this._transportState !== 'playing') {
       this.forceStopChannel(channel, state);
@@ -428,6 +437,7 @@ class GlobalSequencer {
       s.eventIndex = 0;
       s.lastLoopTime = -1;
       s.queuedLaunchTime = null;
+      s.queuedLaunchSequence = null;
       s.queuedStopTime = null;
       if (s.sequence && s.clipLaunched) {
         s.playbackStartTime = startTime;
@@ -448,6 +458,7 @@ class GlobalSequencer {
       s.eventIndex = 0;
       s.lastLoopTime = -1;
       s.queuedLaunchTime = null;
+      s.queuedLaunchSequence = null;
       s.queuedStopTime = null;
     });
 
@@ -522,7 +533,7 @@ class GlobalSequencer {
       const elapsed = now - this.globalStartTime;
 
       this.channels.forEach((s, ch) => {
-        const seq = s.sequence;
+        let seq = s.sequence;
 
         // ── Recording-only mode (no sequences playing yet) ────────
         if (!isPlaying) {
@@ -539,8 +550,17 @@ class GlobalSequencer {
           this.forceStopChannel(ch, s);
         }
         if (s.queuedLaunchTime != null && now >= s.queuedLaunchTime) {
+          if (
+            s.queuedLaunchSequence &&
+            s.sequence !== s.queuedLaunchSequence
+          ) {
+            // Swap clip contents exactly on the launch boundary so the newly
+            // selected clip never leaks audio before the quantized restart.
+            this.setSequence(ch, s.queuedLaunchSequence);
+          }
           this.forceLaunchChannel(ch, s, s.queuedLaunchTime);
         }
+        seq = s.sequence;
 
         // ── Channels without a sequence ────────────────────────────
         if (!seq) {
@@ -710,6 +730,17 @@ class GlobalSequencer {
     return DEFAULT_LAUNCH_QUANTIZATION_MS;
   }
 
+  private sortSequenceEvents(sequence: LoopSequence): void {
+    // noteOff MUST come before noteOn at the same timestamp — otherwise
+    // pairNotes creates zero-length ghost notes when a note ends and
+    // restarts at the same grid boundary (repeat mode chords).
+    sequence.events = [...sequence.events].sort(
+      (a, b) =>
+        a.timestamp - b.timestamp ||
+        (a.type === 'noteOff' ? -1 : 1),
+    );
+  }
+
   private silenceChannel(channel: number, state: ChannelState): void {
     if (state.activeNotes.size === 0) return;
     state.activeNotes.forEach(n => {
@@ -737,6 +768,7 @@ class GlobalSequencer {
     state.clipLaunched = true;
     state.playbackStartTime = launchTime;
     state.queuedLaunchTime = null;
+    state.queuedLaunchSequence = null;
     state.queuedStopTime = null;
     state.eventIndex = 0;
     state.lastLoopTime = -1;
