@@ -19,26 +19,9 @@ void BaseOscillatorVoice::startNote(int midiNoteNumber,
                                     int /*currentPitchWheelPosition*/)
 {
     freqHz = juce::MidiMessage::getMidiNoteInHertz(midiNoteNumber);
-    double sr = getSampleRate();
-    double twoPi = juce::MathConstants<double>::twoPi;
 
-    // Osc1
-    double freq1 = freqHz * std::pow(2.0, voiceParams.detuneCents1 / 1200.0);
-    phaseDelta1 = freq1 * twoPi / sr;
-
-    // Osc2
-    if (voiceParams.osc2Level > 0.0f)
-    {
-        double freq2 = freqHz * std::pow(2.0, (voiceParams.osc2Semi * 100.0 + voiceParams.detuneCents2) / 1200.0);
-        phaseDelta2 = freq2 * twoPi / sr;
-    }
-
-    // Sub (one octave below osc1)
-    if (voiceParams.subLevel > 0.0f)
-    {
-        phaseDeltaSub = (freq1 * 0.5) * twoPi / sr;
-    }
-
+    // Phase deltas are computed in renderNextBlock so param changes
+    // (e.g. osc2Semi while a note is held) take effect immediately.
     phase1 = 0.0;
     phase2 = 0.0;
     phaseSub = 0.0;
@@ -72,6 +55,24 @@ void BaseOscillatorVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer
         adsr.setSampleRate(getSampleRate());
 
     juce::ScopedNoDenormals noDenormals;
+
+    // Recompute phase deltas each block so parameter changes (osc2Semi,
+    // detune, etc.) take effect immediately without retriggering the note.
+    {
+        double sr = getSampleRate();
+        double twoPiOverSr = juce::MathConstants<double>::twoPi / sr;
+        double freq1 = freqHz * std::pow(2.0, voiceParams.detuneCents1 / 1200.0);
+        phaseDelta1 = freq1 * twoPiOverSr;
+        if (voiceParams.osc2Level > 0.0f)
+        {
+            double freq2 = freqHz * std::pow(2.0, (voiceParams.osc2Semi * 100.0 + voiceParams.detuneCents2) / 1200.0);
+            phaseDelta2 = freq2 * twoPiOverSr;
+        }
+        if (voiceParams.subLevel > 0.0f)
+        {
+            phaseDeltaSub = (freq1 * 0.5) * twoPiOverSr;
+        }
+    }
 
     auto* left  = outputBuffer.getWritePointer(0, startSample);
     auto* right = outputBuffer.getNumChannels() > 1 ?

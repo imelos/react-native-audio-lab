@@ -58,7 +58,7 @@ export const OscillatorsTab: React.FC<Props> = ({
           onComplete: channel.onOsc2LevelComplete,
         },
         {
-          label: 'Semi',
+          label: 'Osc2 Semi',
           value: channel.osc2Semi,
           min: -24,
           max: 24,
