@@ -364,7 +364,7 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                         onPress={() => stopChannel(ch.id)}
                       >
                         <Text style={[styles.stopText, { color: ch.color }]}>
-                          U+23F9
+                          ■
                         </Text>
                       </TouchableOpacity>
                     );
@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
   },
   stopText: {
     color: '#ff6b6b',
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '600',
   },
   addClipInner: {
