@@ -1,8 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-worklets';
+import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
 const DEFAULT_SIZE = 70;
 const STROKE = 8;
@@ -39,44 +39,55 @@ const Knob: React.FC<KnobProps> = ({
   const circ = 2 * Math.PI * radius;
   const arcLength = circ * ARC_RATIO;
 
+  // React state drives the SVG arc and value label (JS thread only)
   const [innerValue, setInnerValue] = useState(value || 0);
-  const dragging = useRef(false);
 
-  const progress = (innerValue - minimumValue) / (maximumValue - minimumValue);
-  const startValue = useRef(value);
+  // SharedValues are safe to read/write from both worklet (UI) and JS thread
+  const sharedCurrent = useSharedValue(value || 0);
+  const sharedStart = useSharedValue(value || 0);
+
   const RANGE = maximumValue - minimumValue;
   const DRAG_PIXELS = 150;
 
+  // Sync when an external value change arrives (e.g. preset load).
+  // Parent only calls setState in onComplete (not during drag), so this
+  // won't fight with an in-progress gesture.
   useEffect(() => {
-    if (!dragging.current) setInnerValue(value);
-  }, [value]);
+    sharedCurrent.value = value;
+    setInnerValue(value);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const panCallback = (val: number) => {
-    onValueChange(val);
-    setInnerValue(val);
+  const progress = (innerValue - minimumValue) / (maximumValue - minimumValue);
+
+  // These run on the JS thread (via runOnJS)
+  const notifyChange = (v: number) => {
+    setInnerValue(v);
+    onValueChange(v);
   };
 
-  const completeCallback = (val: number) => {
-    dragging.current = false;
-    onComplete?.(val);
+  const notifyComplete = (v: number) => {
+    onComplete?.(v);
   };
 
   const pan = Gesture.Pan()
+    .minDistance(6)
     .onBegin(() => {
-      startValue.current = innerValue;
-      dragging.current = true;
+      sharedStart.value = sharedCurrent.value;
     })
     .onUpdate(e => {
+      'worklet';
       const deltaRatio = -e.translationY / DRAG_PIXELS;
-      let next = startValue.current + deltaRatio * RANGE;
-
+      let next = sharedStart.value + deltaRatio * RANGE;
       next = Math.min(maximumValue, Math.max(minimumValue, next));
       next = applyStep(next, step, minimumValue);
-
-      runOnJS(panCallback)(next);
+      sharedCurrent.value = next;
+      runOnJS(notifyChange)(next);
     })
-    .onEnd(() => {
-      runOnJS(completeCallback)(innerValue);
+    .onFinalize((_, success) => {
+      'worklet';
+      if (success) {
+        runOnJS(notifyComplete)(sharedCurrent.value);
+      }
     });
 
   const displayValue = formatValue

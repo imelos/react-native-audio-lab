@@ -228,6 +228,12 @@ const Grid = forwardRef<GridHandle, GridProps>(
       [buildTouchNoteMap, syncTouchState],
     );
 
+    // When RNGH activates a gesture elsewhere it cancels native touches — clear
+    // all active notes so nothing gets stuck.
+    const handleTouchCancel = useCallback(() => {
+      syncTouchState(new Map());
+    }, [syncTouchState]);
+
     const setGridPadRef = useCallback(
       (index: number, handle: GridPadHandle | null) => {
         if (handle) {
@@ -251,6 +257,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchCancel}
         >
           {gridRows.reverse().map((rowPads, rowIndex) => (
             <View
