@@ -18,6 +18,8 @@ interface KnobPanelProps {
   color?: string;
   knobSize?: number;
   maxPerRow?: number;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
 const KnobPanel: React.FC<KnobPanelProps> = ({
@@ -25,6 +27,8 @@ const KnobPanel: React.FC<KnobPanelProps> = ({
   color = '#9fb3ff',
   knobSize = 70,
   maxPerRow = 4,
+  onDragStart,
+  onDragEnd,
 }) => {
   const rows: KnobConfig[][] = [];
   for (let i = 0; i < knobs.length; i += maxPerRow) {
@@ -46,6 +50,8 @@ const KnobPanel: React.FC<KnobPanelProps> = ({
               formatValue={knob.formatValue}
               onValueChange={knob.onChange}
               onComplete={knob.onComplete}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
               size={knobSize}
               tintColor={color}
             />

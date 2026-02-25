@@ -548,6 +548,11 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
 
   const headerHeight = useHeaderHeight();
 
+  // ── Scroll lock while a knob is being dragged ─────────────────────────
+  const [scrollEnabled, setScrollEnabled] = useState(true);
+  const disableScroll = useCallback(() => setScrollEnabled(false), []);
+  const enableScroll = useCallback(() => setScrollEnabled(true), []);
+
   // ── Tab content ───────────────────────────────────────────────────────
   const renderTabContent = () => {
     switch (activeTab) {
@@ -557,6 +562,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             style={styles.tabContent}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
+            scrollEnabled={scrollEnabled}
           >
             <View style={styles.controlRow}>
               <Text style={styles.label}>
@@ -676,10 +682,13 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             style={styles.tabContent}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
+            scrollEnabled={scrollEnabled}
           >
             {/* Osc 1 + Osc 2 waveforms */}
             <KnobPanel
               color={color}
+              onDragStart={disableScroll}
+              onDragEnd={enableScroll}
               knobs={[
                 {
                   label: 'Osc 1',
@@ -738,6 +747,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             {/* Detune + Sub + Noise */}
             <KnobPanel
               color={color}
+              onDragStart={disableScroll}
+              onDragEnd={enableScroll}
               knobs={[
                 {
                   label: 'Detune',
@@ -778,6 +789,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             style={styles.tabContent}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
+            scrollEnabled={scrollEnabled}
           >
             {/* Per-voice filter */}
             <View style={styles.effectSection}>
@@ -796,6 +808,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               {voiceFilterEnabled && (
                 <KnobPanel
                   color={color}
+                  onDragStart={disableScroll}
+                  onDragEnd={enableScroll}
                   knobs={[
                     {
                       label: 'Cutoff',
@@ -837,6 +851,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             style={styles.tabContent}
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
+            scrollEnabled={scrollEnabled}
           >
             {/* Chain Filter */}
             <View style={styles.effectSection}>
@@ -860,6 +875,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                   </View>
                   <KnobPanel
                     color={color}
+                    onDragStart={disableScroll}
+                    onDragEnd={enableScroll}
                     knobs={[
                       {
                         label: 'Cutoff',
@@ -898,6 +915,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               {reverbEnabled && (
                 <KnobPanel
                   color={color}
+                  onDragStart={disableScroll}
+                  onDragEnd={enableScroll}
                   knobs={[
                     {
                       label: 'Room Size',
@@ -935,6 +954,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               {delayEnabled && (
                 <KnobPanel
                   color={color}
+                  onDragStart={disableScroll}
+                  onDragEnd={enableScroll}
                   knobs={[
                     {
                       label: 'Time',
@@ -981,6 +1002,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               {chorusEnabled && (
                 <KnobPanel
                   color={color}
+                  onDragStart={disableScroll}
+                  onDragEnd={enableScroll}
                   knobs={[
                     {
                       label: 'Rate',
@@ -1027,6 +1050,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               {distortionEnabled && (
                 <KnobPanel
                   color={color}
+                  onDragStart={disableScroll}
+                  onDragEnd={enableScroll}
                   knobs={[
                     {
                       label: 'Drive',
@@ -1073,6 +1098,8 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               {compressorEnabled && (
                 <KnobPanel
                   color={color}
+                  onDragStart={disableScroll}
+                  onDragEnd={enableScroll}
                   knobs={[
                     {
                       label: 'Threshold',

@@ -1,20 +1,20 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, PanResponder } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS, useSharedValue } from 'react-native-reanimated';
 
 const DEFAULT_SIZE = 70;
 const STROKE = 8;
-
 const START_ANGLE = -225;
-const ARC_RATIO = 0.75; // 270 degrees
+const ARC_RATIO = 0.75;
+const DRAG_PIXELS = 150;
 
 interface KnobProps {
   label: string;
   value: number;
   onValueChange: (v: number) => void;
   onComplete?: (v: number) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
   minimumValue?: number;
   maximumValue?: number;
   step?: number;
@@ -27,6 +27,8 @@ const Knob: React.FC<KnobProps> = ({
   value,
   onValueChange,
   onComplete,
+  onDragStart,
+  onDragEnd,
   label = '',
   minimumValue = 0,
   maximumValue = 100,
@@ -39,111 +41,126 @@ const Knob: React.FC<KnobProps> = ({
   const circ = 2 * Math.PI * radius;
   const arcLength = circ * ARC_RATIO;
 
-  // React state drives the SVG arc and value label (JS thread only)
   const [innerValue, setInnerValue] = useState(value || 0);
 
-  // SharedValues are safe to read/write from both worklet (UI) and JS thread
-  const sharedCurrent = useSharedValue(value || 0);
-  const sharedStart = useSharedValue(value || 0);
+  // Mutable refs safe to read in PanResponder callbacks (no closure staleness)
+  const currentRef = useRef(value || 0);
+  const startRef = useRef(value || 0);
+  const onValueChangeRef = useRef(onValueChange);
+  const onCompleteRef = useRef(onComplete);
+
+  // Keep callback refs current every render
+  onValueChangeRef.current = onValueChange;
+  onCompleteRef.current = onComplete;
+  const onDragStartRef = useRef(onDragStart);
+  const onDragEndRef = useRef(onDragEnd);
+  onDragStartRef.current = onDragStart;
+  onDragEndRef.current = onDragEnd;
+
+  // Sync from external value (e.g. preset load) — only outside a drag
+  const dragging = useRef(false);
+  useEffect(() => {
+    if (!dragging.current) {
+      currentRef.current = value;
+      setInnerValue(value);
+    }
+  }, [value]);
 
   const RANGE = maximumValue - minimumValue;
-  const DRAG_PIXELS = 150;
 
-  // Sync when an external value change arrives (e.g. preset load).
-  // Parent only calls setState in onComplete (not during drag), so this
-  // won't fight with an in-progress gesture.
-  useEffect(() => {
-    sharedCurrent.value = value;
-    setInnerValue(value);
-  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  // PanResponder lives in the same UIView touch layer as the grid's
+  // onTouchStart/End — no UIGestureRecognizer interference.
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        // Claim on touch start so the parent ScrollView can't steal the drag
+        onStartShouldSetPanResponder: () => true,
+        onStartShouldSetPanResponderCapture: () => false,
+        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponderCapture: () => false,
+        // Refuse termination so ScrollView can't reclaim mid-drag
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: () => {
+          dragging.current = true;
+          startRef.current = currentRef.current;
+          onDragStartRef.current?.();
+        },
+        onPanResponderMove: (_, g) => {
+          const deltaRatio = -g.dy / DRAG_PIXELS;
+          let next = startRef.current + deltaRatio * RANGE;
+          next = Math.min(maximumValue, Math.max(minimumValue, next));
+          if (step > 0) {
+            next =
+              Math.round((next - minimumValue) / step) * step + minimumValue;
+          }
+          currentRef.current = next;
+          setInnerValue(next);
+          onValueChangeRef.current(next);
+        },
+        onPanResponderRelease: () => {
+          dragging.current = false;
+          onCompleteRef.current?.(currentRef.current);
+          onDragEndRef.current?.();
+        },
+        onPanResponderTerminate: () => {
+          dragging.current = false;
+          onDragEndRef.current?.();
+        },
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [minimumValue, maximumValue, step, RANGE],
+  );
 
   const progress = (innerValue - minimumValue) / (maximumValue - minimumValue);
-
-  // These run on the JS thread (via runOnJS)
-  const notifyChange = (v: number) => {
-    setInnerValue(v);
-    onValueChange(v);
-  };
-
-  const notifyComplete = (v: number) => {
-    onComplete?.(v);
-  };
-
-  const pan = Gesture.Pan()
-    .minDistance(6)
-    .onBegin(() => {
-      sharedStart.value = sharedCurrent.value;
-    })
-    .onUpdate(e => {
-      'worklet';
-      const deltaRatio = -e.translationY / DRAG_PIXELS;
-      let next = sharedStart.value + deltaRatio * RANGE;
-      next = Math.min(maximumValue, Math.max(minimumValue, next));
-      next = applyStep(next, step, minimumValue);
-      sharedCurrent.value = next;
-      runOnJS(notifyChange)(next);
-    })
-    .onFinalize((_, success) => {
-      'worklet';
-      if (success) {
-        runOnJS(notifyComplete)(sharedCurrent.value);
-      }
-    });
-
   const displayValue = formatValue
     ? formatValue(innerValue)
     : innerValue.toFixed(step >= 1 ? 0 : 1);
 
   return (
     <View style={styles.container}>
-      <GestureDetector gesture={pan}>
-        <View style={[styles.knob, { width: size, height: size }]}>
-          <Svg width={size} height={size}>
-            <Circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              stroke="#2a2a2a"
-              strokeWidth={STROKE}
-              fill="none"
-              strokeLinecap="round"
-              strokeDasharray={`${circ * 0.75} ${circ}`}
-              rotation={START_ANGLE}
-              origin={`${size / 2}, ${size / 2}`}
-            />
-            <Circle
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              stroke={tintColor}
-              strokeWidth={STROKE}
-              fill="none"
-              strokeLinecap="round"
-              strokeDasharray={`${arcLength} ${circ}`}
-              strokeDashoffset={arcLength * (1 - progress)}
-              rotation={START_ANGLE}
-              origin={`${size / 2}, ${size / 2}`}
-            />
-          </Svg>
-          <Text
-            style={[styles.valueText, { fontSize: size * 0.15 }]}
-            numberOfLines={1}
-          >
-            {displayValue}
-          </Text>
-        </View>
-      </GestureDetector>
+      <View
+        style={[styles.knob, { width: size, height: size }]}
+        {...panResponder.panHandlers}
+      >
+        <Svg width={size} height={size}>
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke="#2a2a2a"
+            strokeWidth={STROKE}
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray={`${circ * 0.75} ${circ}`}
+            rotation={START_ANGLE}
+            origin={`${size / 2}, ${size / 2}`}
+          />
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={tintColor}
+            strokeWidth={STROKE}
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray={`${arcLength} ${circ}`}
+            strokeDashoffset={arcLength * (1 - progress)}
+            rotation={START_ANGLE}
+            origin={`${size / 2}, ${size / 2}`}
+          />
+        </Svg>
+        <Text
+          style={[styles.valueText, { fontSize: size * 0.15 }]}
+          numberOfLines={1}
+        >
+          {displayValue}
+        </Text>
+      </View>
       <Text style={styles.label} numberOfLines={1}>
         {label}
       </Text>
     </View>
   );
-};
-
-const applyStep = (value: number, step?: number, min = 0) => {
-  'worklet';
-  if (!step || step <= 0) return value;
-  return Math.round((value - min) / step) * step + min;
 };
 
 export default Knob;
