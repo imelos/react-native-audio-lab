@@ -58,9 +58,9 @@ bool AudioEngine::createOscillatorInstrument(int channel, const Config& config)
 {
     if (channel < 1 || channel > 16)
         return false;
-    
+
     juce::ScopedLock lock(instrumentLock);
-    
+
     auto instrument = std::make_unique<Instrument>(config);
     
     // Prepare if we're already playing
