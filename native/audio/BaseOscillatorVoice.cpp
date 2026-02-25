@@ -46,13 +46,20 @@ void BaseOscillatorVoice::startNote(int midiNoteNumber,
     phaseSub = 0.0;
     noteVelocity = velocity;
 
-    // Reset unison phases
-    for (int i = 0; i < 8; ++i)
-        unisonPhases[i] = 0.0;
+    // Reset unison phases — spread evenly to avoid constructive-interference
+    // spike on note onset (all-zero phases add coherently).
+    {
+        const int n = juce::jlimit(1, 8, voiceParams.unisonCount);
+        const double step = juce::MathConstants<double>::twoPi / n;
+        for (int i = 0; i < 8; ++i)
+            unisonPhases[i] = (i < n) ? i * step : 0.0;
+    }
 
-    // Reset filter state
-    svfIc1eq = 0.0f;
-    svfIc2eq = 0.0f;
+    // Reset filter state (both channels)
+    svfIc1eq  = 0.0f;
+    svfIc2eq  = 0.0f;
+    svfIc1eqR = 0.0f;
+    svfIc2eqR = 0.0f;
 
     // Reset LFO phase
     lfoPhase = 0.0;
@@ -67,6 +74,40 @@ void BaseOscillatorVoice::stopNote(float /*velocity*/, bool allowTailOff)
     if (!allowTailOff || !adsr.isActive())
     {
         clearCurrentNote();
+    }
+}
+
+void BaseOscillatorVoice::setUnisonCount(int count)
+{
+    int oldCount = voiceParams.unisonCount;
+    int newCount = juce::jlimit(1, 8, count);
+    voiceParams.unisonCount = newCount;
+
+    if (oldCount == 1 && newCount > 1)
+    {
+        // phase1 has been running while in single-voice mode.
+        // Seed unison phases from phase1 and spread them evenly to avoid
+        // both the discontinuity click and the constructive-interference spike.
+        const double step = juce::MathConstants<double>::twoPi / newCount;
+        for (int i = 0; i < newCount; ++i)
+        {
+            double p = phase1 + i * step;
+            if (p >= juce::MathConstants<double>::twoPi)
+                p -= juce::MathConstants<double>::twoPi;
+            unisonPhases[i] = p;
+        }
+    }
+    else if (oldCount > 1 && newCount > oldCount)
+    {
+        // Adding more voices mid-note: seed new ones spread from voice 0.
+        const double step = juce::MathConstants<double>::twoPi / newCount;
+        for (int i = oldCount; i < newCount; ++i)
+        {
+            double p = unisonPhases[0] + i * step;
+            if (p >= juce::MathConstants<double>::twoPi)
+                p -= juce::MathConstants<double>::twoPi;
+            unisonPhases[i] = p;
+        }
     }
 }
 
@@ -231,27 +272,14 @@ void BaseOscillatorVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer
             sampleRight = mono;
         }
 
-        // Per-voice filter (apply to both channels equally)
+        // Per-voice filter
         if (hasFilter)
         {
-            // Filter uses left channel for state (mono filter applied identically)
-            sampleLeft = applyFilter(sampleLeft, env, lfoFilterMod);
-            // For right channel in unison mode, we approximate by using same filter output ratio
-            if (hasUnison && std::abs(sampleLeft) > 0.0001f)
-            {
-                // Simple approach: filter left, scale right by same ratio
-                // This avoids needing a second filter state
-                float unfilteredLeft = (hasUnison ? oscLeft : osc) + osc2Sample + subSample + noiseSample;
-                if (std::abs(unfilteredLeft) > 0.0001f)
-                {
-                    float filterRatio = sampleLeft / unfilteredLeft;
-                    sampleRight *= filterRatio;
-                }
-            }
+            sampleLeft  = applyFilter(sampleLeft,  env, svfIc1eq,  svfIc2eq,  lfoFilterMod);
+            if (hasUnison)
+                sampleRight = applyFilter(sampleRight, env, svfIc1eqR, svfIc2eqR, lfoFilterMod);
             else
-            {
-                sampleRight = sampleLeft; // mono path
-            }
+                sampleRight = sampleLeft; // mono path: single filter state, same output
         }
 
         float gain = noteVelocity * 0.4f * env * lfoVolMod;
@@ -334,7 +362,9 @@ float BaseOscillatorVoice::getOscValue(Waveform wf, double phase, float pulseWid
     }
 }
 
-float BaseOscillatorVoice::applyFilter(float input, float envValue, float lfoFilterMod)
+float BaseOscillatorVoice::applyFilter(float input, float envValue,
+                                       float& ic1eq, float& ic2eq,
+                                       float lfoFilterMod)
 {
     // Topology-preserving transform (TPT) State Variable Filter
     // Based on Vadim Zavalishin / Andy Cytomic design — unconditionally stable
@@ -365,12 +395,12 @@ float BaseOscillatorVoice::applyFilter(float input, float envValue, float lfoFil
     float a3 = g * a2;
 
     // Tick the SVF
-    float v3 = input - svfIc2eq;
-    float v1 = a1 * svfIc1eq + a2 * v3;
-    float v2 = svfIc2eq + a2 * svfIc1eq + a3 * v3;
+    float v3 = input - ic2eq;
+    float v1 = a1 * ic1eq + a2 * v3;
+    float v2 = ic2eq + a2 * ic1eq + a3 * v3;
 
-    svfIc1eq = 2.0f * v1 - svfIc1eq;
-    svfIc2eq = 2.0f * v2 - svfIc2eq;
+    ic1eq = 2.0f * v1 - ic1eq;
+    ic2eq = 2.0f * v2 - ic2eq;
 
     // v2 = lowpass output
     return v2;

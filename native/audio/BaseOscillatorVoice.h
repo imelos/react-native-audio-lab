@@ -89,7 +89,7 @@ public:
 
     // New feature setters
     void setPulseWidth(float pw) { voiceParams.pulseWidth = juce::jlimit(0.01f, 0.99f, pw); }
-    void setUnisonCount(int count) { voiceParams.unisonCount = juce::jlimit(1, 8, count); }
+    void setUnisonCount(int count);
     void setUnisonSpread(float spread) { voiceParams.unisonSpread = juce::jlimit(0.0f, 100.0f, spread); }
     void setGlideTime(float seconds) { voiceParams.glideTime = juce::jlimit(0.0f, 5.0f, seconds); }
     void setLfoRate(float rate) { voiceParams.lfoRate = juce::jlimit(0.1f, 20.0f, rate); }
@@ -121,8 +121,10 @@ private:
     juce::Random noiseRng;
 
     // Per-voice filter state (SVF — state variable filter)
-    float svfIc1eq = 0.0f;    // integrator 1 state
-    float svfIc2eq = 0.0f;    // integrator 2 state
+    float svfIc1eq  = 0.0f;   // integrator 1 state (left channel)
+    float svfIc2eq  = 0.0f;   // integrator 2 state (left channel)
+    float svfIc1eqR = 0.0f;   // integrator 1 state (right channel, used in unison mode)
+    float svfIc2eqR = 0.0f;   // integrator 2 state (right channel, used in unison mode)
 
     // Glide state
     double targetFreqHz = 440.0;
@@ -136,5 +138,5 @@ private:
     double unisonPhases[8] = {};
 
     static float getOscValue(Waveform wf, double phase, float pulseWidth = 0.5f);
-    float applyFilter(float input, float envValue, float lfoFilterMod = 0.0f);
+    float applyFilter(float input, float envValue, float& ic1eq, float& ic2eq, float lfoFilterMod = 0.0f);
 };
