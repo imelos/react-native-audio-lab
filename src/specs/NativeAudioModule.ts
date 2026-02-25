@@ -108,6 +108,18 @@ export interface Spec extends TurboModule {
   setVoiceFilterEnvAmount(channel: number, amount: number): void;
 
   // ────────────────────────────────────────────────
+  // Advanced Synthesis Parameters
+  // ────────────────────────────────────────────────
+  setPulseWidth(channel: number, width: number): void;
+  setUnisonCount(channel: number, count: number): void;
+  setUnisonSpread(channel: number, spread: number): void;
+  setGlideTime(channel: number, seconds: number): void;
+  setLfoRate(channel: number, rate: number): void;
+  setLfoDepth(channel: number, depth: number): void;
+  setLfoDestination(channel: number, destination: number): void;
+  setLfoWaveform(channel: number, waveform: string): void;
+
+  // ────────────────────────────────────────────────
   // Effects Management (Oscillator only)
   // ────────────────────────────────────────────────
   addEffect(channel: number, type: string): number;  // Returns effect ID
@@ -137,7 +149,15 @@ export interface Spec extends TurboModule {
     decay: number,
     sustain: number,
     release: number,
-    volume: number
+    volume: number,
+    pulseWidth: number,
+    unisonCount: number,
+    unisonSpread: number,
+    glideTime: number,
+    lfoRate: number,
+    lfoDepth: number,
+    lfoDestination: number,
+    lfoWaveform: string
   ): void;
 
   // ────────────────────────────────────────────────

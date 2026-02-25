@@ -1,4 +1,4 @@
-export const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
+export const WAVEFORMS = ['sine', 'saw', 'square', 'triangle', 'pulse'] as const;
 export type Waveform = (typeof WAVEFORMS)[number];
 
 export const FILTER_TYPES = ['LowPass', 'HighPass', 'BandPass'] as const;

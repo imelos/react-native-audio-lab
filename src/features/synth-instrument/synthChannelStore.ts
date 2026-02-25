@@ -38,6 +38,14 @@ export interface ChannelSynthParams {
   compRatio: number;
   compAttack: number;
   compRelease: number;
+  pulseWidth: number;
+  unisonCount: number;
+  unisonSpread: number;
+  glideTime: number;
+  lfoRate: number;
+  lfoDepth: number;
+  lfoDestination: number;
+  lfoWaveform: Waveform;
   activePresetName: string | null;
   selectedCategory: PresetCategory;
 }
@@ -92,6 +100,14 @@ export const DEFAULT_PARAMS: ChannelSynthParams = {
   compRatio: 4,
   compAttack: 10,
   compRelease: 100,
+  pulseWidth: 0.5,
+  unisonCount: 1,
+  unisonSpread: 20,
+  glideTime: 0,
+  lfoRate: 1,
+  lfoDepth: 0,
+  lfoDestination: 0,
+  lfoWaveform: 'sine',
   activePresetName: null,
   selectedCategory: 'Keys',
 };

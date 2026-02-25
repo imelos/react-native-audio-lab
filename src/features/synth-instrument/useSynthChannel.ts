@@ -6,7 +6,6 @@ import { WAVEFORMS, FILTER_TYPES, type Waveform, type FilterType } from './types
 import {
   useSynthChannelStore,
   type ChannelSynthParams,
-  type ChannelEffectIds,
 } from './synthChannelStore';
 
 export interface SynthChannelHandle {
@@ -60,6 +59,16 @@ export interface SynthChannelHandle {
   compRatio: number;
   compAttack: number;
   compRelease: number;
+
+  // ── Advanced synthesis state ─────────────────────────────────────────
+  pulseWidth: number;
+  unisonCount: number;
+  unisonSpread: number;
+  glideTime: number;
+  lfoRate: number;
+  lfoDepth: number;
+  lfoDestination: number;
+  lfoWaveform: Waveform;
 
   // ── Preset state ──────────────────────────────────────────────────────
   activePresetName: string | null;
@@ -142,6 +151,22 @@ export interface SynthChannelHandle {
   onCompAttackComplete: (v: number) => void;
   onCompReleaseChange: (v: number) => void;
   onCompReleaseComplete: (v: number) => void;
+
+  // ── Advanced synthesis callbacks ──────────────────────────────────────
+  onPulseWidthChange: (v: number) => void;
+  onPulseWidthComplete: (v: number) => void;
+  onUnisonCountChange: (v: number) => void;
+  onUnisonCountComplete: (v: number) => void;
+  onUnisonSpreadChange: (v: number) => void;
+  onUnisonSpreadComplete: (v: number) => void;
+  onGlideTimeChange: (v: number) => void;
+  onGlideTimeComplete: (v: number) => void;
+  onLfoRateChange: (v: number) => void;
+  onLfoRateComplete: (v: number) => void;
+  onLfoDepthChange: (v: number) => void;
+  onLfoDepthComplete: (v: number) => void;
+  onLfoDestinationChange: (v: number) => void;
+  onLfoWaveformChange: (v: number) => void;
 }
 
 export function useSynthChannel(channelId: number): SynthChannelHandle {
@@ -191,6 +216,15 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
   const [compRatio, setCompRatio] = useState(initial.compRatio);
   const [compAttack, setCompAttack] = useState(initial.compAttack);
   const [compRelease, setCompRelease] = useState(initial.compRelease);
+
+  const [pulseWidth, setPulseWidth] = useState(initial.pulseWidth);
+  const [unisonCount, setUnisonCount] = useState(initial.unisonCount);
+  const [unisonSpread, setUnisonSpread] = useState(initial.unisonSpread);
+  const [glideTime, setGlideTime] = useState(initial.glideTime);
+  const [lfoRate, setLfoRate] = useState(initial.lfoRate);
+  const [lfoDepth, setLfoDepth] = useState(initial.lfoDepth);
+  const [lfoDestination, setLfoDestination] = useState(initial.lfoDestination);
+  const [lfoWaveform, setLfoWaveform] = useState<Waveform>(initial.lfoWaveform);
 
   const [activePresetName, setActivePresetName] = useState<string | null>(initial.activePresetName);
   const [selectedCategory, setSelectedCategoryState] = useState(initial.selectedCategory);
@@ -381,6 +415,16 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
         NativeAudioModule.setEffectParameter(channelId, id, 'release', newCompRelease);
       });
 
+      // Compute new advanced synthesis values
+      const newPulseWidth = preset.pulseWidth ?? 0.5;
+      const newUnisonCount = preset.unisonCount ?? 1;
+      const newUnisonSpread = preset.unisonSpread ?? 20;
+      const newGlideTime = preset.glideTime ?? 0;
+      const newLfoRate = preset.lfoRate ?? 1;
+      const newLfoDepth = preset.lfoDepth ?? 0;
+      const newLfoDestination = preset.lfoDestination ?? 0;
+      const newLfoWaveform = preset.lfoWaveform ?? 'sine';
+
       // Update React state
       setActivePresetName(preset.name);
       setWaveform(preset.waveform1);
@@ -414,6 +458,14 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       setCompRatio(newCompRatio);
       setCompAttack(newCompAttack);
       setCompRelease(newCompRelease);
+      setPulseWidth(newPulseWidth);
+      setUnisonCount(newUnisonCount);
+      setUnisonSpread(newUnisonSpread);
+      setGlideTime(newGlideTime);
+      setLfoRate(newLfoRate);
+      setLfoDepth(newLfoDepth);
+      setLfoDestination(newLfoDestination);
+      setLfoWaveform(newLfoWaveform);
 
       // Persist all to store in one batch
       useSynthChannelStore.getState().patchParams(channelId, {
@@ -449,6 +501,14 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
         compRatio: newCompRatio,
         compAttack: newCompAttack,
         compRelease: newCompRelease,
+        pulseWidth: newPulseWidth,
+        unisonCount: newUnisonCount,
+        unisonSpread: newUnisonSpread,
+        glideTime: newGlideTime,
+        lfoRate: newLfoRate,
+        lfoDepth: newLfoDepth,
+        lfoDestination: newLfoDestination,
+        lfoWaveform: newLfoWaveform,
       });
     },
     [channelId],
@@ -885,6 +945,83 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     [patch],
   );
 
+  // ── Advanced synthesis callbacks ──────────────────────────────────────
+  const onPulseWidthChange = useCallback(
+    (v: number) => NativeAudioModule.setPulseWidth(channelId, v),
+    [channelId],
+  );
+  const onPulseWidthComplete = useCallback(
+    (v: number) => { setPulseWidth(v); patch({ pulseWidth: v }); },
+    [patch],
+  );
+
+  const onUnisonCountChange = useCallback(
+    (v: number) => NativeAudioModule.setUnisonCount(channelId, Math.round(v)),
+    [channelId],
+  );
+  const onUnisonCountComplete = useCallback(
+    (v: number) => { const r = Math.round(v); setUnisonCount(r); patch({ unisonCount: r }); },
+    [patch],
+  );
+
+  const onUnisonSpreadChange = useCallback(
+    (v: number) => NativeAudioModule.setUnisonSpread(channelId, v),
+    [channelId],
+  );
+  const onUnisonSpreadComplete = useCallback(
+    (v: number) => { setUnisonSpread(v); patch({ unisonSpread: v }); },
+    [patch],
+  );
+
+  const onGlideTimeChange = useCallback(
+    (v: number) => NativeAudioModule.setGlideTime(channelId, v),
+    [channelId],
+  );
+  const onGlideTimeComplete = useCallback(
+    (v: number) => { setGlideTime(v); patch({ glideTime: v }); },
+    [patch],
+  );
+
+  const onLfoRateChange = useCallback(
+    (v: number) => NativeAudioModule.setLfoRate(channelId, v),
+    [channelId],
+  );
+  const onLfoRateComplete = useCallback(
+    (v: number) => { setLfoRate(v); patch({ lfoRate: v }); },
+    [patch],
+  );
+
+  const onLfoDepthChange = useCallback(
+    (v: number) => NativeAudioModule.setLfoDepth(channelId, v),
+    [channelId],
+  );
+  const onLfoDepthComplete = useCallback(
+    (v: number) => { setLfoDepth(v); patch({ lfoDepth: v }); },
+    [patch],
+  );
+
+  const onLfoDestinationChange = useCallback(
+    (v: number) => {
+      const d = Math.round(v);
+      setLfoDestination(d);
+      NativeAudioModule.setLfoDestination(channelId, d);
+      patch({ lfoDestination: d });
+    },
+    [channelId, patch],
+  );
+
+  const onLfoWaveformChange = useCallback(
+    (v: number) => {
+      const wf = WAVEFORMS[Math.round(v)];
+      if (wf) {
+        setLfoWaveform(wf);
+        NativeAudioModule.setLfoWaveform(channelId, wf);
+        patch({ lfoWaveform: wf });
+      }
+    },
+    [channelId, patch],
+  );
+
   return {
     waveform,
     osc2Waveform,
@@ -921,6 +1058,14 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     compRatio,
     compAttack,
     compRelease,
+    pulseWidth,
+    unisonCount,
+    unisonSpread,
+    glideTime,
+    lfoRate,
+    lfoDepth,
+    lfoDestination,
+    lfoWaveform,
     activePresetName,
     selectedCategory,
     setSelectedCategory,
@@ -985,5 +1130,19 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     onCompAttackComplete,
     onCompReleaseChange,
     onCompReleaseComplete,
+    onPulseWidthChange,
+    onPulseWidthComplete,
+    onUnisonCountChange,
+    onUnisonCountComplete,
+    onUnisonSpreadChange,
+    onUnisonSpreadComplete,
+    onGlideTimeChange,
+    onGlideTimeComplete,
+    onLfoRateChange,
+    onLfoRateComplete,
+    onLfoDepthChange,
+    onLfoDepthComplete,
+    onLfoDestinationChange,
+    onLfoWaveformChange,
   };
 }

@@ -3,7 +3,8 @@ import { SynthPreset } from '../data/synthPresets';
 
 /**
  * Apply a preset's voice-level parameters to a channel:
- * oscillators, sub/noise, per-voice filter envelope, ADSR, and volume.
+ * oscillators, sub/noise, per-voice filter envelope, ADSR, volume,
+ * and advanced synthesis params (pulse width, unison, glide, LFO).
  *
  * Post-processing effects (chain filter, reverb, delay) are managed
  * separately via permanent effect IDs stored in SynthScreen — this
@@ -29,5 +30,13 @@ export function applyPreset(channel: number, preset: SynthPreset): void {
     preset.sustain,
     preset.release,
     preset.volume,
+    preset.pulseWidth ?? 0.5,
+    preset.unisonCount ?? 1,
+    preset.unisonSpread ?? 20,
+    preset.glideTime ?? 0,
+    preset.lfoRate ?? 1,
+    preset.lfoDepth ?? 0,
+    preset.lfoDestination ?? 0,
+    preset.lfoWaveform ?? 'sine',
   );
 }

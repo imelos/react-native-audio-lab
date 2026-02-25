@@ -340,6 +340,54 @@ void Instrument::setVoiceFilterEnvAmount(float amt)
     INSTRUMENT_FORWARD_TO_VOICES(setVoiceFilterEnvAmount, amt)
 }
 
+void Instrument::setPulseWidth(float pw)
+{
+    config.voiceParams.pulseWidth = pw;
+    INSTRUMENT_FORWARD_TO_VOICES(setPulseWidth, pw)
+}
+
+void Instrument::setUnisonCount(int count)
+{
+    config.voiceParams.unisonCount = count;
+    INSTRUMENT_FORWARD_TO_VOICES(setUnisonCount, count)
+}
+
+void Instrument::setUnisonSpread(float spread)
+{
+    config.voiceParams.unisonSpread = spread;
+    INSTRUMENT_FORWARD_TO_VOICES(setUnisonSpread, spread)
+}
+
+void Instrument::setGlideTime(float seconds)
+{
+    config.voiceParams.glideTime = seconds;
+    INSTRUMENT_FORWARD_TO_VOICES(setGlideTime, seconds)
+}
+
+void Instrument::setLfoRate(float rate)
+{
+    config.voiceParams.lfoRate = rate;
+    INSTRUMENT_FORWARD_TO_VOICES(setLfoRate, rate)
+}
+
+void Instrument::setLfoDepth(float depth)
+{
+    config.voiceParams.lfoDepth = depth;
+    INSTRUMENT_FORWARD_TO_VOICES(setLfoDepth, depth)
+}
+
+void Instrument::setLfoDestination(int dest)
+{
+    config.voiceParams.lfoDestination = dest;
+    INSTRUMENT_FORWARD_TO_VOICES(setLfoDestination, dest)
+}
+
+void Instrument::setLfoWaveform(BaseOscillatorVoice::Waveform wf)
+{
+    config.voiceParams.lfoWaveform = wf;
+    INSTRUMENT_FORWARD_TO_VOICES(setLfoWaveform, wf)
+}
+
 #undef INSTRUMENT_FORWARD_TO_VOICES
 
 // ──────────────────────────────────────────

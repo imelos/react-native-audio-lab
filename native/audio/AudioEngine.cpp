@@ -425,6 +425,54 @@ void AudioEngine::setVoiceFilterEnvAmount(int channel, float amt)
         instrument->setVoiceFilterEnvAmount(amt);
 }
 
+void AudioEngine::setPulseWidth(int channel, float pw)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setPulseWidth(pw);
+}
+
+void AudioEngine::setUnisonCount(int channel, int count)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setUnisonCount(count);
+}
+
+void AudioEngine::setUnisonSpread(int channel, float spread)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setUnisonSpread(spread);
+}
+
+void AudioEngine::setGlideTime(int channel, float seconds)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setGlideTime(seconds);
+}
+
+void AudioEngine::setLfoRate(int channel, float rate)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoRate(rate);
+}
+
+void AudioEngine::setLfoDepth(int channel, float depth)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoDepth(depth);
+}
+
+void AudioEngine::setLfoDestination(int channel, int dest)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoDestination(dest);
+}
+
+void AudioEngine::setLfoWaveform(int channel, BaseOscillatorVoice::Waveform wf)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoWaveform(wf);
+}
+
 // ──────────────────────────────────────────
 // Common parameter control
 // ──────────────────────────────────────────

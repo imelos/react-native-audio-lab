@@ -64,6 +64,16 @@ public:
     void setVoiceFilterResonance(float res);
     void setVoiceFilterEnvAmount(float amt);
 
+    // New synthesis features
+    void setPulseWidth(float pw);
+    void setUnisonCount(int count);
+    void setUnisonSpread(float spread);
+    void setGlideTime(float seconds);
+    void setLfoRate(float rate);
+    void setLfoDepth(float depth);
+    void setLfoDestination(int dest);
+    void setLfoWaveform(BaseOscillatorVoice::Waveform wf);
+
     // ──────────────────────────────────────────
     // Effects chain management
     // ──────────────────────────────────────────

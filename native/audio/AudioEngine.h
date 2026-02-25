@@ -118,6 +118,16 @@ public:
     void setVoiceFilterResonance(int channel, float res);
     void setVoiceFilterEnvAmount(int channel, float amt);
 
+    // New synthesis features
+    void setPulseWidth(int channel, float pw);
+    void setUnisonCount(int channel, int count);
+    void setUnisonSpread(int channel, float spread);
+    void setGlideTime(int channel, float seconds);
+    void setLfoRate(int channel, float rate);
+    void setLfoDepth(int channel, float depth);
+    void setLfoDestination(int channel, int dest);
+    void setLfoWaveform(int channel, BaseOscillatorVoice::Waveform wf);
+
     // ──────────────────────────────────────────
     // Common parameter control (works for both instrument types)
     // ──────────────────────────────────────────

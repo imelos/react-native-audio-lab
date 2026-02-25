@@ -11,6 +11,7 @@ static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
     if ([lower isEqualToString:@"saw"]) return BaseOscillatorVoice::Waveform::Saw;
     if ([lower isEqualToString:@"square"]) return BaseOscillatorVoice::Waveform::Square;
     if ([lower isEqualToString:@"triangle"]) return BaseOscillatorVoice::Waveform::Triangle;
+    if ([lower isEqualToString:@"pulse"]) return BaseOscillatorVoice::Waveform::Pulse;
     return BaseOscillatorVoice::Waveform::Sine;
 }
 
@@ -371,6 +372,66 @@ static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
 }
 
 // ────────────────────────────────────────────────
+// Advanced Synthesis Parameters
+// ────────────────────────────────────────────────
+
+- (void)setPulseWidth:(double)channel
+                width:(double)width {
+    if (_audioEngine) {
+        _audioEngine->setPulseWidth(static_cast<int>(channel), static_cast<float>(width));
+    }
+}
+
+- (void)setUnisonCount:(double)channel
+                 count:(double)count {
+    if (_audioEngine) {
+        _audioEngine->setUnisonCount(static_cast<int>(channel), static_cast<int>(count));
+    }
+}
+
+- (void)setUnisonSpread:(double)channel
+                 spread:(double)spread {
+    if (_audioEngine) {
+        _audioEngine->setUnisonSpread(static_cast<int>(channel), static_cast<float>(spread));
+    }
+}
+
+- (void)setGlideTime:(double)channel
+              seconds:(double)seconds {
+    if (_audioEngine) {
+        _audioEngine->setGlideTime(static_cast<int>(channel), static_cast<float>(seconds));
+    }
+}
+
+- (void)setLfoRate:(double)channel
+              rate:(double)rate {
+    if (_audioEngine) {
+        _audioEngine->setLfoRate(static_cast<int>(channel), static_cast<float>(rate));
+    }
+}
+
+- (void)setLfoDepth:(double)channel
+              depth:(double)depth {
+    if (_audioEngine) {
+        _audioEngine->setLfoDepth(static_cast<int>(channel), static_cast<float>(depth));
+    }
+}
+
+- (void)setLfoDestination:(double)channel
+              destination:(double)destination {
+    if (_audioEngine) {
+        _audioEngine->setLfoDestination(static_cast<int>(channel), static_cast<int>(destination));
+    }
+}
+
+- (void)setLfoWaveform:(double)channel
+              waveform:(NSString *)waveform {
+    if (_audioEngine) {
+        _audioEngine->setLfoWaveform(static_cast<int>(channel), waveformFromString(waveform));
+    }
+}
+
+// ────────────────────────────────────────────────
 // Effects Management
 // ────────────────────────────────────────────────
 
@@ -459,7 +520,15 @@ static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
                decay:(double)decay
              sustain:(double)sustain
              release:(double)release
-              volume:(double)volume {
+              volume:(double)volume
+          pulseWidth:(double)pulseWidth
+         unisonCount:(double)unisonCount
+        unisonSpread:(double)unisonSpread
+           glideTime:(double)glideTime
+             lfoRate:(double)lfoRate
+            lfoDepth:(double)lfoDepth
+      lfoDestination:(double)lfoDestination
+         lfoWaveform:(NSString *)lfoWaveform {
     if (!_audioEngine) return;
 
     int ch = static_cast<int>(channel);
@@ -477,6 +546,14 @@ static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
     params.filterCutoff = static_cast<float>(filterCutoff);
     params.filterResonance = static_cast<float>(filterResonance);
     params.filterEnvAmount = static_cast<float>(filterEnvAmount);
+    params.pulseWidth = static_cast<float>(pulseWidth);
+    params.unisonCount = static_cast<int>(unisonCount);
+    params.unisonSpread = static_cast<float>(unisonSpread);
+    params.glideTime = static_cast<float>(glideTime);
+    params.lfoRate = static_cast<float>(lfoRate);
+    params.lfoDepth = static_cast<float>(lfoDepth);
+    params.lfoDestination = static_cast<int>(lfoDestination);
+    params.lfoWaveform = waveformFromString(lfoWaveform);
 
     _audioEngine->setVoiceParams(ch, params);
     _audioEngine->setADSR(ch,
