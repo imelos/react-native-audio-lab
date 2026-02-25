@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import NativeAudioModule from '../../specs/NativeAudioModule';
-import {
-  type PresetCategory,
-  type SynthPreset,
-} from '../../data/synthPresets';
+import { type SynthPreset } from '../../data/synthPresets';
 import { applyPreset } from '../../utils/applyPreset';
 import { WAVEFORMS, FILTER_TYPES, type Waveform, type FilterType } from './types';
+import {
+  useSynthChannelStore,
+  type ChannelSynthParams,
+  type ChannelEffectIds,
+} from './synthChannelStore';
 
 export interface SynthChannelHandle {
   // ── Osc state ────────────────────────────────────────────────────────
@@ -61,8 +63,8 @@ export interface SynthChannelHandle {
 
   // ── Preset state ──────────────────────────────────────────────────────
   activePresetName: string | null;
-  selectedCategory: PresetCategory;
-  setSelectedCategory: (cat: PresetCategory) => void;
+  selectedCategory: ChannelSynthParams['selectedCategory'];
+  setSelectedCategory: (cat: ChannelSynthParams['selectedCategory']) => void;
   handlePresetSelect: (preset: SynthPreset) => void;
 
   // ── Osc callbacks ─────────────────────────────────────────────────────
@@ -143,62 +145,72 @@ export interface SynthChannelHandle {
 }
 
 export function useSynthChannel(channelId: number): SynthChannelHandle {
-  // ── Osc state ────────────────────────────────────────────────────────
-  const [waveform, setWaveform] = useState<Waveform>('sine');
-  const [osc2Waveform, setOsc2Waveform] = useState<Waveform>('sine');
-  const [osc2Level, setOsc2Level] = useState(0);
-  const [osc2Semi, setOsc2Semi] = useState(0);
-  const [osc2Detune, setOsc2Detune] = useState(0);
-  const [subLevel, setSubLevel] = useState(0);
-  const [noiseLevel, setNoiseLevel] = useState(0);
+  // Read persisted state once on mount (synchronous store access, no subscription)
+  const { params: initial } = useSynthChannelStore.getState().getOrInit(channelId);
 
-  // ── Voice filter state ────────────────────────────────────────────────
-  const [voiceFilterEnabled, setVoiceFilterEnabled] = useState(false);
-  const [voiceFilterCutoff, setVoiceFilterCutoff] = useState(8000);
-  const [voiceFilterResonance, setVoiceFilterResonance] = useState(0);
-  const [voiceFilterEnvAmount, setVoiceFilterEnvAmount] = useState(0);
+  // ── State — initialized from store so values survive navigation ───────
+  const [waveform, setWaveform] = useState<Waveform>(initial.waveform);
+  const [osc2Waveform, setOsc2Waveform] = useState<Waveform>(initial.osc2Waveform);
+  const [osc2Level, setOsc2Level] = useState(initial.osc2Level);
+  const [osc2Semi, setOsc2Semi] = useState(initial.osc2Semi);
+  const [osc2Detune, setOsc2Detune] = useState(initial.osc2Detune);
+  const [subLevel, setSubLevel] = useState(initial.subLevel);
+  const [noiseLevel, setNoiseLevel] = useState(initial.noiseLevel);
 
-  // ── Chain filter state ────────────────────────────────────────────────
-  const [chainFilterEnabled, setChainFilterEnabled] = useState(false);
-  const [chainFilterType, setChainFilterType] = useState<FilterType>('LowPass');
-  const [chainFilterCutoff, setChainFilterCutoff] = useState(1000);
-  const [chainFilterResonance, setChainFilterResonance] = useState(0.7);
+  const [voiceFilterEnabled, setVoiceFilterEnabled] = useState(initial.voiceFilterEnabled);
+  const [voiceFilterCutoff, setVoiceFilterCutoff] = useState(initial.voiceFilterCutoff);
+  const [voiceFilterResonance, setVoiceFilterResonance] = useState(initial.voiceFilterResonance);
+  const [voiceFilterEnvAmount, setVoiceFilterEnvAmount] = useState(initial.voiceFilterEnvAmount);
 
-  // ── Reverb state ──────────────────────────────────────────────────────
-  const [reverbEnabled, setReverbEnabled] = useState(false);
-  const [reverbRoomSize, setReverbRoomSize] = useState(0.5);
-  const [reverbWetLevel, setReverbWetLevel] = useState(0.33);
+  const [chainFilterEnabled, setChainFilterEnabled] = useState(initial.chainFilterEnabled);
+  const [chainFilterType, setChainFilterType] = useState<FilterType>(initial.chainFilterType);
+  const [chainFilterCutoff, setChainFilterCutoff] = useState(initial.chainFilterCutoff);
+  const [chainFilterResonance, setChainFilterResonance] = useState(initial.chainFilterResonance);
 
-  // ── Delay state ───────────────────────────────────────────────────────
-  const [delayEnabled, setDelayEnabled] = useState(false);
-  const [delayTime, setDelayTime] = useState(500);
-  const [delayFeedback, setDelayFeedback] = useState(0.4);
-  const [delayWetLevel, setDelayWetLevel] = useState(0.5);
+  const [reverbEnabled, setReverbEnabled] = useState(initial.reverbEnabled);
+  const [reverbRoomSize, setReverbRoomSize] = useState(initial.reverbRoomSize);
+  const [reverbWetLevel, setReverbWetLevel] = useState(initial.reverbWetLevel);
 
-  // ── Chorus state ──────────────────────────────────────────────────────
-  const [chorusEnabled, setChorusEnabled] = useState(false);
-  const [chorusRate, setChorusRate] = useState(1.0);
-  const [chorusDepth, setChorusDepth] = useState(0.25);
-  const [chorusMix, setChorusMix] = useState(0.5);
+  const [delayEnabled, setDelayEnabled] = useState(initial.delayEnabled);
+  const [delayTime, setDelayTime] = useState(initial.delayTime);
+  const [delayFeedback, setDelayFeedback] = useState(initial.delayFeedback);
+  const [delayWetLevel, setDelayWetLevel] = useState(initial.delayWetLevel);
 
-  // ── Distortion state ──────────────────────────────────────────────────
-  const [distortionEnabled, setDistortionEnabled] = useState(false);
-  const [distortionDrive, setDistortionDrive] = useState(1.0);
-  const [distortionMix, setDistortionMix] = useState(0.5);
-  const [distortionTone, setDistortionTone] = useState(0.5);
+  const [chorusEnabled, setChorusEnabled] = useState(initial.chorusEnabled);
+  const [chorusRate, setChorusRate] = useState(initial.chorusRate);
+  const [chorusDepth, setChorusDepth] = useState(initial.chorusDepth);
+  const [chorusMix, setChorusMix] = useState(initial.chorusMix);
 
-  // ── Compressor state ──────────────────────────────────────────────────
-  const [compressorEnabled, setCompressorEnabled] = useState(false);
-  const [compThreshold, setCompThreshold] = useState(-20);
-  const [compRatio, setCompRatio] = useState(4);
-  const [compAttack, setCompAttack] = useState(10);
-  const [compRelease, setCompRelease] = useState(100);
+  const [distortionEnabled, setDistortionEnabled] = useState(initial.distortionEnabled);
+  const [distortionDrive, setDistortionDrive] = useState(initial.distortionDrive);
+  const [distortionMix, setDistortionMix] = useState(initial.distortionMix);
+  const [distortionTone, setDistortionTone] = useState(initial.distortionTone);
 
-  // ── Preset state ──────────────────────────────────────────────────────
-  const [activePresetName, setActivePresetName] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<PresetCategory>('Keys');
+  const [compressorEnabled, setCompressorEnabled] = useState(initial.compressorEnabled);
+  const [compThreshold, setCompThreshold] = useState(initial.compThreshold);
+  const [compRatio, setCompRatio] = useState(initial.compRatio);
+  const [compAttack, setCompAttack] = useState(initial.compAttack);
+  const [compRelease, setCompRelease] = useState(initial.compRelease);
 
-  // ── Effect IDs (permanent, set once on mount) ─────────────────────────
+  const [activePresetName, setActivePresetName] = useState<string | null>(initial.activePresetName);
+  const [selectedCategory, setSelectedCategoryState] = useState(initial.selectedCategory);
+
+  // ── Shorthand: update React state + store in one call ─────────────────
+  const store = useSynthChannelStore.getState;
+  const patch = useCallback(
+    (p: Partial<ChannelSynthParams>) => store().patchParams(channelId, p),
+    [channelId, store],
+  );
+
+  const setSelectedCategory = useCallback(
+    (cat: ChannelSynthParams['selectedCategory']) => {
+      setSelectedCategoryState(cat);
+      patch({ selectedCategory: cat });
+    },
+    [patch],
+  );
+
+  // ── Effect ID refs (permanent, set once when instrument is first created) ─
   const filterIdRef = useRef<number | null>(null);
   const reverbIdRef = useRef<number | null>(null);
   const delayIdRef = useRef<number | null>(null);
@@ -206,71 +218,106 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
   const distortionIdRef = useRef<number | null>(null);
   const compressorIdRef = useRef<number | null>(null);
 
-  // ── Mount: create instrument + all effects (disabled) ─────────────────
+  // ── Mount: (re)create instrument and restore all params ───────────────
+  //
+  // createOscillatorInstrument ALWAYS creates a fresh native instrument,
+  // destroying any previous one. So on every mount we must re-add effects
+  // and re-apply the full stored param snapshot to native.
   useEffect(() => {
-    const success = NativeAudioModule.createOscillatorInstrument(
-      channelId,
-      'Main Synth',
-      16,
-      'sine',
-    );
-    if (success) {
-      NativeAudioModule.setADSR(channelId, 0.01, 0.1, 0.8, 0.3);
+    const { params: p } = useSynthChannelStore.getState().getOrInit(channelId);
 
-      const fId = NativeAudioModule.addEffect(channelId, 'filter');
-      if (fId >= 0) {
-        NativeAudioModule.setEffectEnabled(channelId, fId, false);
-        NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', 1000);
-        NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', 0.7);
-        NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0);
-        filterIdRef.current = fId;
-      }
+    // Pass stored waveform so the instrument starts with the right sound
+    NativeAudioModule.createOscillatorInstrument(channelId, 'Main Synth', 16, p.waveform);
+    NativeAudioModule.setADSR(channelId, 0.01, 0.1, 0.8, 0.3);
 
-      const rId = NativeAudioModule.addEffect(channelId, 'reverb');
-      if (rId >= 0) {
-        NativeAudioModule.setEffectEnabled(channelId, rId, false);
-        NativeAudioModule.setEffectParameter(channelId, rId, 'roomSize', 0.5);
-        NativeAudioModule.setEffectParameter(channelId, rId, 'wetLevel', 0.33);
-        reverbIdRef.current = rId;
-      }
+    // Add effects to the fresh instrument
+    const fId = NativeAudioModule.addEffect(channelId, 'filter');
+    const rId = NativeAudioModule.addEffect(channelId, 'reverb');
+    const dId = NativeAudioModule.addEffect(channelId, 'delay');
+    const chId = NativeAudioModule.addEffect(channelId, 'chorus');
+    const distId = NativeAudioModule.addEffect(channelId, 'distortion');
+    const compId = NativeAudioModule.addEffect(channelId, 'compressor');
 
-      const dId = NativeAudioModule.addEffect(channelId, 'delay');
-      if (dId >= 0) {
-        NativeAudioModule.setEffectEnabled(channelId, dId, false);
-        NativeAudioModule.setEffectParameter(channelId, dId, 'delayTime', 500);
-        NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', 0.4);
-        NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', 0.5);
-        delayIdRef.current = dId;
-      }
+    filterIdRef.current = fId >= 0 ? fId : null;
+    reverbIdRef.current = rId >= 0 ? rId : null;
+    delayIdRef.current = dId >= 0 ? dId : null;
+    chorusIdRef.current = chId >= 0 ? chId : null;
+    distortionIdRef.current = distId >= 0 ? distId : null;
+    compressorIdRef.current = compId >= 0 ? compId : null;
 
-      const chId = NativeAudioModule.addEffect(channelId, 'chorus');
-      if (chId >= 0) {
-        NativeAudioModule.setEffectEnabled(channelId, chId, false);
-        NativeAudioModule.setEffectParameter(channelId, chId, 'rate', 1.0);
-        NativeAudioModule.setEffectParameter(channelId, chId, 'depth', 0.25);
-        NativeAudioModule.setEffectParameter(channelId, chId, 'mix', 0.5);
-        chorusIdRef.current = chId;
-      }
+    // Re-apply all stored osc params (no-op on first visit since they match defaults)
+    NativeAudioModule.setOsc2Waveform(channelId, p.osc2Waveform);
+    NativeAudioModule.setOsc2Level(channelId, p.osc2Level);
+    NativeAudioModule.setOsc2Semi(channelId, p.osc2Semi);
+    NativeAudioModule.setOsc2Detune(channelId, p.osc2Detune);
+    NativeAudioModule.setSubLevel(channelId, p.subLevel);
+    NativeAudioModule.setNoiseLevel(channelId, p.noiseLevel);
 
-      const distId = NativeAudioModule.addEffect(channelId, 'distortion');
-      if (distId >= 0) {
-        NativeAudioModule.setEffectEnabled(channelId, distId, false);
-        NativeAudioModule.setEffectParameter(channelId, distId, 'drive', 1.0);
-        NativeAudioModule.setEffectParameter(channelId, distId, 'mix', 0.5);
-        NativeAudioModule.setEffectParameter(channelId, distId, 'tone', 0.5);
-        distortionIdRef.current = distId;
-      }
-
-      const compId = NativeAudioModule.addEffect(channelId, 'compressor');
-      if (compId >= 0) {
-        NativeAudioModule.setEffectEnabled(channelId, compId, false);
-        NativeAudioModule.setEffectParameter(channelId, compId, 'threshold', -20);
-        NativeAudioModule.setEffectParameter(channelId, compId, 'ratio', 4);
-        NativeAudioModule.setEffectParameter(channelId, compId, 'attack', 10);
-        NativeAudioModule.setEffectParameter(channelId, compId, 'release', 100);
-        compressorIdRef.current = compId;
-      }
+    // Voice filter
+    NativeAudioModule.setVoiceFilterEnabled(channelId, p.voiceFilterEnabled);
+    if (p.voiceFilterEnabled) {
+      NativeAudioModule.setVoiceFilterCutoff(channelId, p.voiceFilterCutoff);
+      NativeAudioModule.setVoiceFilterResonance(channelId, p.voiceFilterResonance);
+      NativeAudioModule.setVoiceFilterEnvAmount(channelId, p.voiceFilterEnvAmount);
     }
+
+    // Chain filter
+    if (fId >= 0) {
+      NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', p.chainFilterCutoff);
+      NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', p.chainFilterResonance);
+      NativeAudioModule.setEffectParameter(channelId, fId, 'type', FILTER_TYPES.indexOf(p.chainFilterType));
+      NativeAudioModule.setEffectEnabled(channelId, fId, p.chainFilterEnabled);
+    }
+
+    // Reverb
+    if (rId >= 0) {
+      NativeAudioModule.setEffectParameter(channelId, rId, 'roomSize', p.reverbRoomSize);
+      NativeAudioModule.setEffectParameter(channelId, rId, 'wetLevel', p.reverbWetLevel);
+      NativeAudioModule.setEffectEnabled(channelId, rId, p.reverbEnabled);
+    }
+
+    // Delay
+    if (dId >= 0) {
+      NativeAudioModule.setEffectParameter(channelId, dId, 'delayTime', p.delayTime);
+      NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', p.delayFeedback);
+      NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', p.delayWetLevel);
+      NativeAudioModule.setEffectEnabled(channelId, dId, p.delayEnabled);
+    }
+
+    // Chorus
+    if (chId >= 0) {
+      NativeAudioModule.setEffectParameter(channelId, chId, 'rate', p.chorusRate);
+      NativeAudioModule.setEffectParameter(channelId, chId, 'depth', p.chorusDepth);
+      NativeAudioModule.setEffectParameter(channelId, chId, 'mix', p.chorusMix);
+      NativeAudioModule.setEffectEnabled(channelId, chId, p.chorusEnabled);
+    }
+
+    // Distortion
+    if (distId >= 0) {
+      NativeAudioModule.setEffectParameter(channelId, distId, 'drive', p.distortionDrive);
+      NativeAudioModule.setEffectParameter(channelId, distId, 'mix', p.distortionMix);
+      NativeAudioModule.setEffectParameter(channelId, distId, 'tone', p.distortionTone);
+      NativeAudioModule.setEffectEnabled(channelId, distId, p.distortionEnabled);
+    }
+
+    // Compressor
+    if (compId >= 0) {
+      NativeAudioModule.setEffectParameter(channelId, compId, 'threshold', p.compThreshold);
+      NativeAudioModule.setEffectParameter(channelId, compId, 'ratio', p.compRatio);
+      NativeAudioModule.setEffectParameter(channelId, compId, 'attack', p.compAttack);
+      NativeAudioModule.setEffectParameter(channelId, compId, 'release', p.compRelease);
+      NativeAudioModule.setEffectEnabled(channelId, compId, p.compressorEnabled);
+    }
+
+    // Persist the new effect IDs (they change each mount since instrument is recreated)
+    useSynthChannelStore.getState().setEffectIds(channelId, {
+      filterId: fId,
+      reverbId: rId,
+      delayId: dId,
+      chorusId: chId,
+      distortionId: distId,
+      compressorId: compId,
+    });
 
     return () => {
       NativeAudioModule.allNotesOff(channelId);
@@ -281,6 +328,79 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
   const handlePresetSelect = useCallback(
     (preset: SynthPreset) => {
       applyPreset(channelId, preset);
+
+      // Use store for current values as fallbacks (avoids stale closure)
+      const cur = useSynthChannelStore.getState().getOrInit(channelId).params;
+
+      // Compute final effect values (preset value ?? current stored value)
+      const reverbFx = preset.effects?.find(e => e.type === 'reverb') ?? null;
+      const newReverbEnabled = reverbFx !== null;
+      const newReverbRoomSize = reverbFx?.params.roomSize ?? cur.reverbRoomSize;
+      const newReverbWetLevel = reverbFx?.params.wetLevel ?? cur.reverbWetLevel;
+
+      const delayFx = preset.effects?.find(e => e.type === 'delay') ?? null;
+      const newDelayEnabled = delayFx !== null;
+      const newDelayTime = delayFx?.params.delayTime ?? cur.delayTime;
+      const newDelayFeedback = delayFx?.params.feedback ?? cur.delayFeedback;
+      const newDelayWetLevel = delayFx?.params.wetLevel ?? cur.delayWetLevel;
+
+      const chorusFx = preset.effects?.find(e => e.type === 'chorus') ?? null;
+      const newChorusEnabled = chorusFx !== null;
+      const newChorusRate = chorusFx?.params.rate ?? cur.chorusRate;
+      const newChorusDepth = chorusFx?.params.depth ?? cur.chorusDepth;
+      const newChorusMix = chorusFx?.params.mix ?? cur.chorusMix;
+
+      const distFx = preset.effects?.find(e => e.type === 'distortion') ?? null;
+      const newDistEnabled = distFx !== null;
+      const newDistDrive = distFx?.params.drive ?? cur.distortionDrive;
+      const newDistMix = distFx?.params.mix ?? cur.distortionMix;
+      const newDistTone = distFx?.params.tone ?? cur.distortionTone;
+
+      const compFx = preset.effects?.find(e => e.type === 'compressor') ?? null;
+      const newCompEnabled = compFx !== null;
+      const newCompThreshold = compFx?.params.threshold ?? cur.compThreshold;
+      const newCompRatio = compFx?.params.ratio ?? cur.compRatio;
+      const newCompAttack = compFx?.params.attack ?? cur.compAttack;
+      const newCompRelease = compFx?.params.release ?? cur.compRelease;
+
+      // Apply to native
+      const applyFx = (
+        id: number | null,
+        enabled: boolean,
+        applyParams: (id: number) => void,
+      ) => {
+        if (id === null || id < 0) return;
+        NativeAudioModule.setEffectEnabled(channelId, id, enabled);
+        if (enabled) applyParams(id);
+      };
+
+      applyFx(reverbIdRef.current, newReverbEnabled, id => {
+        NativeAudioModule.setEffectParameter(channelId, id, 'roomSize', newReverbRoomSize);
+        NativeAudioModule.setEffectParameter(channelId, id, 'wetLevel', newReverbWetLevel);
+      });
+      applyFx(delayIdRef.current, newDelayEnabled, id => {
+        NativeAudioModule.setEffectParameter(channelId, id, 'delayTime', newDelayTime);
+        NativeAudioModule.setEffectParameter(channelId, id, 'feedback', newDelayFeedback);
+        NativeAudioModule.setEffectParameter(channelId, id, 'wetLevel', newDelayWetLevel);
+      });
+      applyFx(chorusIdRef.current, newChorusEnabled, id => {
+        NativeAudioModule.setEffectParameter(channelId, id, 'rate', newChorusRate);
+        NativeAudioModule.setEffectParameter(channelId, id, 'depth', newChorusDepth);
+        NativeAudioModule.setEffectParameter(channelId, id, 'mix', newChorusMix);
+      });
+      applyFx(distortionIdRef.current, newDistEnabled, id => {
+        NativeAudioModule.setEffectParameter(channelId, id, 'drive', newDistDrive);
+        NativeAudioModule.setEffectParameter(channelId, id, 'mix', newDistMix);
+        NativeAudioModule.setEffectParameter(channelId, id, 'tone', newDistTone);
+      });
+      applyFx(compressorIdRef.current, newCompEnabled, id => {
+        NativeAudioModule.setEffectParameter(channelId, id, 'threshold', newCompThreshold);
+        NativeAudioModule.setEffectParameter(channelId, id, 'ratio', newCompRatio);
+        NativeAudioModule.setEffectParameter(channelId, id, 'attack', newCompAttack);
+        NativeAudioModule.setEffectParameter(channelId, id, 'release', newCompRelease);
+      });
+
+      // Update React state
       setActivePresetName(preset.name);
       setWaveform(preset.waveform1);
       setOsc2Waveform(preset.waveform2);
@@ -293,83 +413,63 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       setVoiceFilterCutoff(preset.filterCutoff);
       setVoiceFilterResonance(preset.filterResonance);
       setVoiceFilterEnvAmount(preset.filterEnvAmount);
+      setReverbEnabled(newReverbEnabled);
+      setReverbRoomSize(newReverbRoomSize);
+      setReverbWetLevel(newReverbWetLevel);
+      setDelayEnabled(newDelayEnabled);
+      setDelayTime(newDelayTime);
+      setDelayFeedback(newDelayFeedback);
+      setDelayWetLevel(newDelayWetLevel);
+      setChorusEnabled(newChorusEnabled);
+      setChorusRate(newChorusRate);
+      setChorusDepth(newChorusDepth);
+      setChorusMix(newChorusMix);
+      setDistortionEnabled(newDistEnabled);
+      setDistortionDrive(newDistDrive);
+      setDistortionMix(newDistMix);
+      setDistortionTone(newDistTone);
+      setCompressorEnabled(newCompEnabled);
+      setCompThreshold(newCompThreshold);
+      setCompRatio(newCompRatio);
+      setCompAttack(newCompAttack);
+      setCompRelease(newCompRelease);
 
-      const syncEffect = (
-        type: string,
-        ref: React.MutableRefObject<number | null>,
-        setEnabled: (v: boolean) => void,
-        paramSyncFn?: (params: Record<string, number>) => void,
-      ) => {
-        const fx = preset.effects?.find(e => e.type === type) ?? null;
-        const has = fx !== null;
-        if (ref.current !== null) {
-          NativeAudioModule.setEffectEnabled(channelId, ref.current, has);
-          if (has && paramSyncFn) paramSyncFn(fx!.params);
-        }
-        setEnabled(has);
-      };
-
-      syncEffect('reverb', reverbIdRef, setReverbEnabled, params => {
-        const rs = params.roomSize ?? reverbRoomSize;
-        const wl = params.wetLevel ?? reverbWetLevel;
-        NativeAudioModule.setEffectParameter(channelId, reverbIdRef.current!, 'roomSize', rs);
-        NativeAudioModule.setEffectParameter(channelId, reverbIdRef.current!, 'wetLevel', wl);
-        setReverbRoomSize(rs);
-        setReverbWetLevel(wl);
-      });
-
-      syncEffect('delay', delayIdRef, setDelayEnabled, params => {
-        const dt = params.delayTime ?? delayTime;
-        const fb = params.feedback ?? delayFeedback;
-        const wl = params.wetLevel ?? delayWetLevel;
-        NativeAudioModule.setEffectParameter(channelId, delayIdRef.current!, 'delayTime', dt);
-        NativeAudioModule.setEffectParameter(channelId, delayIdRef.current!, 'feedback', fb);
-        NativeAudioModule.setEffectParameter(channelId, delayIdRef.current!, 'wetLevel', wl);
-        setDelayTime(dt);
-        setDelayFeedback(fb);
-        setDelayWetLevel(wl);
-      });
-
-      syncEffect('chorus', chorusIdRef, setChorusEnabled, params => {
-        const r = params.rate ?? chorusRate;
-        const d = params.depth ?? chorusDepth;
-        const m = params.mix ?? chorusMix;
-        NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current!, 'rate', r);
-        NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current!, 'depth', d);
-        NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current!, 'mix', m);
-        setChorusRate(r);
-        setChorusDepth(d);
-        setChorusMix(m);
-      });
-
-      syncEffect('distortion', distortionIdRef, setDistortionEnabled, params => {
-        const dr = params.drive ?? distortionDrive;
-        const m = params.mix ?? distortionMix;
-        const t = params.tone ?? distortionTone;
-        NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current!, 'drive', dr);
-        NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current!, 'mix', m);
-        NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current!, 'tone', t);
-        setDistortionDrive(dr);
-        setDistortionMix(m);
-        setDistortionTone(t);
-      });
-
-      syncEffect('compressor', compressorIdRef, setCompressorEnabled, params => {
-        const th = params.threshold ?? compThreshold;
-        const ra = params.ratio ?? compRatio;
-        const at = params.attack ?? compAttack;
-        const re = params.release ?? compRelease;
-        NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current!, 'threshold', th);
-        NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current!, 'ratio', ra);
-        NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current!, 'attack', at);
-        NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current!, 'release', re);
-        setCompThreshold(th);
-        setCompRatio(ra);
-        setCompAttack(at);
-        setCompRelease(re);
+      // Persist all to store in one batch
+      useSynthChannelStore.getState().patchParams(channelId, {
+        activePresetName: preset.name,
+        waveform: preset.waveform1,
+        osc2Waveform: preset.waveform2,
+        osc2Level: preset.osc2Level,
+        osc2Semi: preset.osc2Semi,
+        osc2Detune: preset.detuneCents2,
+        subLevel: preset.subLevel,
+        noiseLevel: preset.noiseLevel,
+        voiceFilterEnabled: preset.filterEnabled,
+        voiceFilterCutoff: preset.filterCutoff,
+        voiceFilterResonance: preset.filterResonance,
+        voiceFilterEnvAmount: preset.filterEnvAmount,
+        reverbEnabled: newReverbEnabled,
+        reverbRoomSize: newReverbRoomSize,
+        reverbWetLevel: newReverbWetLevel,
+        delayEnabled: newDelayEnabled,
+        delayTime: newDelayTime,
+        delayFeedback: newDelayFeedback,
+        delayWetLevel: newDelayWetLevel,
+        chorusEnabled: newChorusEnabled,
+        chorusRate: newChorusRate,
+        chorusDepth: newChorusDepth,
+        chorusMix: newChorusMix,
+        distortionEnabled: newDistEnabled,
+        distortionDrive: newDistDrive,
+        distortionMix: newDistMix,
+        distortionTone: newDistTone,
+        compressorEnabled: newCompEnabled,
+        compThreshold: newCompThreshold,
+        compRatio: newCompRatio,
+        compAttack: newCompAttack,
+        compRelease: newCompRelease,
       });
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [channelId],
   );
 
@@ -381,9 +481,10 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
         setWaveform(wf);
         setActivePresetName(null);
         NativeAudioModule.setWaveform(channelId, wf);
+        patch({ waveform: wf, activePresetName: null });
       }
     },
-    [channelId],
+    [channelId, patch],
   );
 
   const onOsc2WaveformChange = useCallback(
@@ -393,31 +494,55 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
         setOsc2Waveform(wf);
         setActivePresetName(null);
         NativeAudioModule.setOsc2Waveform(channelId, wf);
+        patch({ osc2Waveform: wf, activePresetName: null });
       }
     },
-    [channelId],
+    [channelId, patch],
   );
 
   const onOsc2LevelChange = useCallback(
     (v: number) => NativeAudioModule.setOsc2Level(channelId, v),
     [channelId],
   );
+  const onOsc2LevelComplete = useCallback(
+    (v: number) => { setOsc2Level(v); patch({ osc2Level: v }); },
+    [patch],
+  );
+
   const onOsc2SemiChange = useCallback(
     (v: number) => NativeAudioModule.setOsc2Semi(channelId, Math.round(v)),
     [channelId],
   );
-  const onOsc2SemiComplete = useCallback((v: number) => setOsc2Semi(Math.round(v)), []);
+  const onOsc2SemiComplete = useCallback(
+    (v: number) => { const r = Math.round(v); setOsc2Semi(r); patch({ osc2Semi: r }); },
+    [patch],
+  );
+
   const onOsc2DetuneChange = useCallback(
     (v: number) => NativeAudioModule.setOsc2Detune(channelId, v),
     [channelId],
   );
+  const onOsc2DetuneComplete = useCallback(
+    (v: number) => { setOsc2Detune(v); patch({ osc2Detune: v }); },
+    [patch],
+  );
+
   const onSubLevelChange = useCallback(
     (v: number) => NativeAudioModule.setSubLevel(channelId, v),
     [channelId],
   );
+  const onSubLevelComplete = useCallback(
+    (v: number) => { setSubLevel(v); patch({ subLevel: v }); },
+    [patch],
+  );
+
   const onNoiseLevelChange = useCallback(
     (v: number) => NativeAudioModule.setNoiseLevel(channelId, v),
     [channelId],
+  );
+  const onNoiseLevelComplete = useCallback(
+    (v: number) => { setNoiseLevel(v); patch({ noiseLevel: v }); },
+    [patch],
   );
 
   // ── Voice filter callbacks ────────────────────────────────────────────
@@ -425,21 +550,36 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     setVoiceFilterEnabled(prev => {
       const next = !prev;
       NativeAudioModule.setVoiceFilterEnabled(channelId, next);
+      patch({ voiceFilterEnabled: next });
       return next;
     });
-  }, [channelId]);
+  }, [channelId, patch]);
 
   const onVoiceFilterCutoffChange = useCallback(
     (v: number) => NativeAudioModule.setVoiceFilterCutoff(channelId, v),
     [channelId],
   );
+  const onVoiceFilterCutoffComplete = useCallback(
+    (v: number) => { setVoiceFilterCutoff(v); patch({ voiceFilterCutoff: v }); },
+    [patch],
+  );
+
   const onVoiceFilterResonanceChange = useCallback(
     (v: number) => NativeAudioModule.setVoiceFilterResonance(channelId, v),
     [channelId],
   );
+  const onVoiceFilterResonanceComplete = useCallback(
+    (v: number) => { setVoiceFilterResonance(v); patch({ voiceFilterResonance: v }); },
+    [patch],
+  );
+
   const onVoiceFilterEnvAmountChange = useCallback(
     (v: number) => NativeAudioModule.setVoiceFilterEnvAmount(channelId, v),
     [channelId],
+  );
+  const onVoiceFilterEnvAmountComplete = useCallback(
+    (v: number) => { setVoiceFilterEnvAmount(v); patch({ voiceFilterEnvAmount: v }); },
+    [patch],
   );
 
   // ── Chain filter callbacks ────────────────────────────────────────────
@@ -454,16 +594,19 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       NativeAudioModule.setEffectParameter(channelId, id, 'type', FILTER_TYPES.indexOf(chainFilterType));
     }
     setChainFilterEnabled(newEnabled);
-  }, [channelId, chainFilterEnabled, chainFilterCutoff, chainFilterResonance, chainFilterType]);
+    patch({ chainFilterEnabled: newEnabled });
+  }, [channelId, chainFilterEnabled, chainFilterCutoff, chainFilterResonance, chainFilterType, patch]);
 
   const changeChainFilterType = useCallback(() => {
     const nextIndex = (FILTER_TYPES.indexOf(chainFilterType) + 1) % FILTER_TYPES.length;
-    setChainFilterType(FILTER_TYPES[nextIndex]);
+    const nextType = FILTER_TYPES[nextIndex];
+    setChainFilterType(nextType);
+    patch({ chainFilterType: nextType });
     const id = filterIdRef.current;
     if (chainFilterEnabled && id !== null) {
       NativeAudioModule.setEffectParameter(channelId, id, 'type', nextIndex);
     }
-  }, [channelId, chainFilterType, chainFilterEnabled]);
+  }, [channelId, chainFilterType, chainFilterEnabled, patch]);
 
   const onChainFilterCutoffChange = useCallback(
     (v: number) => {
@@ -473,6 +616,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onChainFilterCutoffComplete = useCallback(
+    (v: number) => { setChainFilterCutoff(v); patch({ chainFilterCutoff: v }); },
+    [patch],
+  );
+
   const onChainFilterResonanceChange = useCallback(
     (v: number) => {
       if (filterIdRef.current !== null) {
@@ -480,6 +628,10 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       }
     },
     [channelId],
+  );
+  const onChainFilterResonanceComplete = useCallback(
+    (v: number) => { setChainFilterResonance(v); patch({ chainFilterResonance: v }); },
+    [patch],
   );
 
   // ── Reverb callbacks ──────────────────────────────────────────────────
@@ -493,7 +645,8 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       NativeAudioModule.setEffectParameter(channelId, id, 'wetLevel', reverbWetLevel);
     }
     setReverbEnabled(newEnabled);
-  }, [channelId, reverbEnabled, reverbRoomSize, reverbWetLevel]);
+    patch({ reverbEnabled: newEnabled });
+  }, [channelId, reverbEnabled, reverbRoomSize, reverbWetLevel, patch]);
 
   const onReverbRoomSizeChange = useCallback(
     (v: number) => {
@@ -503,6 +656,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onReverbRoomSizeComplete = useCallback(
+    (v: number) => { setReverbRoomSize(v); patch({ reverbRoomSize: v }); },
+    [patch],
+  );
+
   const onReverbWetLevelChange = useCallback(
     (v: number) => {
       if (reverbIdRef.current !== null) {
@@ -510,6 +668,10 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       }
     },
     [channelId],
+  );
+  const onReverbWetLevelComplete = useCallback(
+    (v: number) => { setReverbWetLevel(v); patch({ reverbWetLevel: v }); },
+    [patch],
   );
 
   // ── Delay callbacks ───────────────────────────────────────────────────
@@ -524,7 +686,8 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       NativeAudioModule.setEffectParameter(channelId, id, 'wetLevel', delayWetLevel);
     }
     setDelayEnabled(newEnabled);
-  }, [channelId, delayEnabled, delayTime, delayFeedback, delayWetLevel]);
+    patch({ delayEnabled: newEnabled });
+  }, [channelId, delayEnabled, delayTime, delayFeedback, delayWetLevel, patch]);
 
   const onDelayTimeChange = useCallback(
     (v: number) => {
@@ -534,6 +697,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onDelayTimeComplete = useCallback(
+    (v: number) => { setDelayTime(v); patch({ delayTime: v }); },
+    [patch],
+  );
+
   const onDelayFeedbackChange = useCallback(
     (v: number) => {
       if (delayIdRef.current !== null) {
@@ -542,6 +710,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onDelayFeedbackComplete = useCallback(
+    (v: number) => { setDelayFeedback(v); patch({ delayFeedback: v }); },
+    [patch],
+  );
+
   const onDelayWetLevelChange = useCallback(
     (v: number) => {
       if (delayIdRef.current !== null) {
@@ -549,6 +722,10 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       }
     },
     [channelId],
+  );
+  const onDelayWetLevelComplete = useCallback(
+    (v: number) => { setDelayWetLevel(v); patch({ delayWetLevel: v }); },
+    [patch],
   );
 
   // ── Chorus callbacks ──────────────────────────────────────────────────
@@ -563,7 +740,8 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       NativeAudioModule.setEffectParameter(channelId, id, 'mix', chorusMix);
     }
     setChorusEnabled(newEnabled);
-  }, [channelId, chorusEnabled, chorusRate, chorusDepth, chorusMix]);
+    patch({ chorusEnabled: newEnabled });
+  }, [channelId, chorusEnabled, chorusRate, chorusDepth, chorusMix, patch]);
 
   const onChorusRateChange = useCallback(
     (v: number) => {
@@ -573,6 +751,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onChorusRateComplete = useCallback(
+    (v: number) => { setChorusRate(v); patch({ chorusRate: v }); },
+    [patch],
+  );
+
   const onChorusDepthChange = useCallback(
     (v: number) => {
       if (chorusIdRef.current !== null) {
@@ -581,6 +764,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onChorusDepthComplete = useCallback(
+    (v: number) => { setChorusDepth(v); patch({ chorusDepth: v }); },
+    [patch],
+  );
+
   const onChorusMixChange = useCallback(
     (v: number) => {
       if (chorusIdRef.current !== null) {
@@ -588,6 +776,10 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       }
     },
     [channelId],
+  );
+  const onChorusMixComplete = useCallback(
+    (v: number) => { setChorusMix(v); patch({ chorusMix: v }); },
+    [patch],
   );
 
   // ── Distortion callbacks ──────────────────────────────────────────────
@@ -602,7 +794,8 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       NativeAudioModule.setEffectParameter(channelId, id, 'tone', distortionTone);
     }
     setDistortionEnabled(newEnabled);
-  }, [channelId, distortionEnabled, distortionDrive, distortionMix, distortionTone]);
+    patch({ distortionEnabled: newEnabled });
+  }, [channelId, distortionEnabled, distortionDrive, distortionMix, distortionTone, patch]);
 
   const onDistortionDriveChange = useCallback(
     (v: number) => {
@@ -612,6 +805,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onDistortionDriveComplete = useCallback(
+    (v: number) => { setDistortionDrive(v); patch({ distortionDrive: v }); },
+    [patch],
+  );
+
   const onDistortionMixChange = useCallback(
     (v: number) => {
       if (distortionIdRef.current !== null) {
@@ -620,6 +818,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onDistortionMixComplete = useCallback(
+    (v: number) => { setDistortionMix(v); patch({ distortionMix: v }); },
+    [patch],
+  );
+
   const onDistortionToneChange = useCallback(
     (v: number) => {
       if (distortionIdRef.current !== null) {
@@ -627,6 +830,10 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       }
     },
     [channelId],
+  );
+  const onDistortionToneComplete = useCallback(
+    (v: number) => { setDistortionTone(v); patch({ distortionTone: v }); },
+    [patch],
   );
 
   // ── Compressor callbacks ──────────────────────────────────────────────
@@ -642,7 +849,8 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       NativeAudioModule.setEffectParameter(channelId, id, 'release', compRelease);
     }
     setCompressorEnabled(newEnabled);
-  }, [channelId, compressorEnabled, compThreshold, compRatio, compAttack, compRelease]);
+    patch({ compressorEnabled: newEnabled });
+  }, [channelId, compressorEnabled, compThreshold, compRatio, compAttack, compRelease, patch]);
 
   const onCompThresholdChange = useCallback(
     (v: number) => {
@@ -652,6 +860,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onCompThresholdComplete = useCallback(
+    (v: number) => { setCompThreshold(v); patch({ compThreshold: v }); },
+    [patch],
+  );
+
   const onCompRatioChange = useCallback(
     (v: number) => {
       if (compressorIdRef.current !== null) {
@@ -660,6 +873,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onCompRatioComplete = useCallback(
+    (v: number) => { setCompRatio(v); patch({ compRatio: v }); },
+    [patch],
+  );
+
   const onCompAttackChange = useCallback(
     (v: number) => {
       if (compressorIdRef.current !== null) {
@@ -668,6 +886,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     },
     [channelId],
   );
+  const onCompAttackComplete = useCallback(
+    (v: number) => { setCompAttack(v); patch({ compAttack: v }); },
+    [patch],
+  );
+
   const onCompReleaseChange = useCallback(
     (v: number) => {
       if (compressorIdRef.current !== null) {
@@ -675,6 +898,10 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
       }
     },
     [channelId],
+  );
+  const onCompReleaseComplete = useCallback(
+    (v: number) => { setCompRelease(v); patch({ compRelease: v }); },
+    [patch],
   );
 
   return {
@@ -720,62 +947,62 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     onWaveformChange,
     onOsc2WaveformChange,
     onOsc2LevelChange,
-    onOsc2LevelComplete: setOsc2Level,
+    onOsc2LevelComplete,
     onOsc2SemiChange,
     onOsc2SemiComplete,
     onOsc2DetuneChange,
-    onOsc2DetuneComplete: setOsc2Detune,
+    onOsc2DetuneComplete,
     onSubLevelChange,
-    onSubLevelComplete: setSubLevel,
+    onSubLevelComplete,
     onNoiseLevelChange,
-    onNoiseLevelComplete: setNoiseLevel,
+    onNoiseLevelComplete,
     toggleVoiceFilter,
     onVoiceFilterCutoffChange,
-    onVoiceFilterCutoffComplete: setVoiceFilterCutoff,
+    onVoiceFilterCutoffComplete,
     onVoiceFilterResonanceChange,
-    onVoiceFilterResonanceComplete: setVoiceFilterResonance,
+    onVoiceFilterResonanceComplete,
     onVoiceFilterEnvAmountChange,
-    onVoiceFilterEnvAmountComplete: setVoiceFilterEnvAmount,
+    onVoiceFilterEnvAmountComplete,
     toggleChainFilter,
     changeChainFilterType,
     onChainFilterCutoffChange,
-    onChainFilterCutoffComplete: setChainFilterCutoff,
+    onChainFilterCutoffComplete,
     onChainFilterResonanceChange,
-    onChainFilterResonanceComplete: setChainFilterResonance,
+    onChainFilterResonanceComplete,
     toggleReverb,
     onReverbRoomSizeChange,
-    onReverbRoomSizeComplete: setReverbRoomSize,
+    onReverbRoomSizeComplete,
     onReverbWetLevelChange,
-    onReverbWetLevelComplete: setReverbWetLevel,
+    onReverbWetLevelComplete,
     toggleDelay,
     onDelayTimeChange,
-    onDelayTimeComplete: setDelayTime,
+    onDelayTimeComplete,
     onDelayFeedbackChange,
-    onDelayFeedbackComplete: setDelayFeedback,
+    onDelayFeedbackComplete,
     onDelayWetLevelChange,
-    onDelayWetLevelComplete: setDelayWetLevel,
+    onDelayWetLevelComplete,
     toggleChorus,
     onChorusRateChange,
-    onChorusRateComplete: setChorusRate,
+    onChorusRateComplete,
     onChorusDepthChange,
-    onChorusDepthComplete: setChorusDepth,
+    onChorusDepthComplete,
     onChorusMixChange,
-    onChorusMixComplete: setChorusMix,
+    onChorusMixComplete,
     toggleDistortion,
     onDistortionDriveChange,
-    onDistortionDriveComplete: setDistortionDrive,
+    onDistortionDriveComplete,
     onDistortionMixChange,
-    onDistortionMixComplete: setDistortionMix,
+    onDistortionMixComplete,
     onDistortionToneChange,
-    onDistortionToneComplete: setDistortionTone,
+    onDistortionToneComplete,
     toggleCompressor,
     onCompThresholdChange,
-    onCompThresholdComplete: setCompThreshold,
+    onCompThresholdComplete,
     onCompRatioChange,
-    onCompRatioComplete: setCompRatio,
+    onCompRatioComplete,
     onCompAttackChange,
-    onCompAttackComplete: setCompAttack,
+    onCompAttackComplete,
     onCompReleaseChange,
-    onCompReleaseComplete: setCompRelease,
+    onCompReleaseComplete,
   };
 }
