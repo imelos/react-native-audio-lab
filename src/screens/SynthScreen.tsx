@@ -9,7 +9,6 @@ import {
   FlatList,
 } from 'react-native';
 import NativeAudioModule from '../specs/NativeAudioModule';
-import Slider from '@react-native-community/slider';
 import Player from '../features/music-pad/Player';
 import { Props } from '../navigation/Navigation';
 import { useHeaderHeight } from '@react-navigation/elements';
@@ -20,65 +19,7 @@ import {
   type SynthPreset,
 } from '../data/synthPresets';
 import { applyPreset } from '../utils/applyPreset';
-
-/**
- * Self-managing slider that tracks its own display value internally.
- * During drag only `onChange` fires (for native audio calls — no parent re-render).
- * On release `onComplete` fires to sync parent state.
- * `formatLabel(value)` produces the display string.
- */
-const EffectSlider = React.memo(
-  ({
-    formatLabel,
-    value: externalValue,
-    min,
-    max,
-    onChange,
-    onComplete,
-    tintColor = '#4caf50',
-  }: {
-    formatLabel: (v: number) => string;
-    value: number;
-    min: number;
-    max: number;
-    onChange: (v: number) => void;
-    onComplete?: (v: number) => void;
-    tintColor?: string;
-  }) => {
-    const [localVal, setLocalVal] = useState(externalValue);
-    const dragging = useRef(false);
-
-    // Sync from external when not dragging (e.g. preset selection)
-    useEffect(() => {
-      if (!dragging.current) setLocalVal(externalValue);
-    }, [externalValue]);
-
-    return (
-      <View style={styles.sliderContainer}>
-        <Text style={styles.sliderLabel}>{formatLabel(localVal)}</Text>
-        <Slider
-          style={styles.slider}
-          minimumValue={min}
-          maximumValue={max}
-          value={localVal}
-          onSlidingStart={() => {
-            dragging.current = true;
-          }}
-          onValueChange={v => {
-            setLocalVal(v); // local re-render only (memo prevents parent)
-            onChange(v); // native call — no setState on parent
-          }}
-          onSlidingComplete={v => {
-            dragging.current = false;
-            onComplete?.(v); // sync parent state once on release
-          }}
-          minimumTrackTintColor={tintColor}
-          maximumTrackTintColor="#444"
-        />
-      </View>
-    );
-  },
-);
+import KnobPanel, { type KnobConfig } from '../components/knob/KnobPanel';
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -586,23 +527,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
     }
   };
 
-  // ── Waveform / grid / key helpers ─────────────────────────────────────
-  const changeWaveform = () => {
-    const next =
-      WAVEFORMS[(WAVEFORMS.indexOf(currentWaveform) + 1) % WAVEFORMS.length];
-    setCurrentWaveform(next);
-    setActivePresetName(null);
-    NativeAudioModule.setWaveform(channelId, next);
-  };
-
-  const changeOsc2Waveform = () => {
-    const next =
-      WAVEFORMS[(WAVEFORMS.indexOf(osc2Waveform) + 1) % WAVEFORMS.length];
-    setOsc2Waveform(next);
-    setActivePresetName(null);
-    NativeAudioModule.setOsc2Waveform(channelId, next);
-  };
-
+  // ── Grid / key helpers ─────────────────────────────────────────────────
   const changeGridSize = () => {
     const sizes: GridSize[] = ['4x4', '5x5', '6x6', '8x8'];
     setGridSize(sizes[(sizes.indexOf(gridSize) + 1) % sizes.length]);
@@ -752,73 +677,97 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
           >
-            {/* Osc 1 */}
-            <View style={styles.controlRow}>
-              <Text style={styles.label}>Osc1: {currentWaveform}</Text>
-              <Button
-                title="Change"
-                onPress={changeWaveform}
-                color={color}
-              />
-            </View>
-
-            {/* Osc 2 */}
-            <View style={styles.effectSection}>
-              <View style={styles.controlRow}>
-                <Text style={styles.label}>Osc2: {osc2Waveform}</Text>
-                <Button
-                  title="Change"
-                  onPress={changeOsc2Waveform}
-                  color={color}
-                />
-              </View>
-              <EffectSlider
-                formatLabel={v => `Level: ${(v * 100).toFixed(0)}%`}
-                value={osc2Level}
-                min={0}
-                max={1}
-                onChange={v => NativeAudioModule.setOsc2Level(channelId, v)}
-                onComplete={setOsc2Level}
-                tintColor={color}
-              />
-              <EffectSlider
-                formatLabel={v => `Semi: ${v > 0 ? '+' : ''}${Math.round(v)}st`}
-                value={osc2Semi}
-                min={-24}
-                max={24}
-                onChange={v => NativeAudioModule.setOsc2Semi(channelId, Math.round(v))}
-                onComplete={v => setOsc2Semi(Math.round(v))}
-                tintColor={color}
-              />
-              <EffectSlider
-                formatLabel={v => `Detune: ${v > 0 ? '+' : ''}${v.toFixed(0)}ct`}
-                value={osc2Detune}
-                min={-100}
-                max={100}
-                onChange={v => NativeAudioModule.setOsc2Detune(channelId, v)}
-                onComplete={setOsc2Detune}
-                tintColor={color}
-              />
-            </View>
-
-            {/* Sub + Noise */}
-            <EffectSlider
-              formatLabel={v => `Sub: ${(v * 100).toFixed(0)}%`}
-              value={subLevel}
-              min={0}
-              max={1}
-              onChange={v => NativeAudioModule.setSubLevel(channelId, v)}
-              onComplete={setSubLevel}
-              tintColor={color}
+            {/* Osc 1 + Osc 2 waveforms */}
+            <KnobPanel
+              color={color}
+              knobs={[
+                {
+                  label: 'Osc 1',
+                  value: WAVEFORMS.indexOf(currentWaveform),
+                  min: 0,
+                  max: WAVEFORMS.length - 1,
+                  step: 1,
+                  formatValue: v => WAVEFORMS[Math.round(v)] ?? 'sine',
+                  onChange: v => {
+                    const wf = WAVEFORMS[Math.round(v)];
+                    if (wf) {
+                      setCurrentWaveform(wf);
+                      setActivePresetName(null);
+                      NativeAudioModule.setWaveform(channelId, wf);
+                    }
+                  },
+                },
+                {
+                  label: 'Osc 2',
+                  value: WAVEFORMS.indexOf(osc2Waveform),
+                  min: 0,
+                  max: WAVEFORMS.length - 1,
+                  step: 1,
+                  formatValue: v => WAVEFORMS[Math.round(v)] ?? 'sine',
+                  onChange: v => {
+                    const wf = WAVEFORMS[Math.round(v)];
+                    if (wf) {
+                      setOsc2Waveform(wf);
+                      setActivePresetName(null);
+                      NativeAudioModule.setOsc2Waveform(channelId, wf);
+                    }
+                  },
+                },
+                {
+                  label: 'Osc2 Level',
+                  value: osc2Level,
+                  min: 0,
+                  max: 1,
+                  formatValue: v => `${(v * 100).toFixed(0)}%`,
+                  onChange: v => NativeAudioModule.setOsc2Level(channelId, v),
+                  onComplete: setOsc2Level,
+                },
+                {
+                  label: 'Semi',
+                  value: osc2Semi,
+                  min: -24,
+                  max: 24,
+                  step: 1,
+                  formatValue: v => `${v > 0 ? '+' : ''}${Math.round(v)}st`,
+                  onChange: v => NativeAudioModule.setOsc2Semi(channelId, Math.round(v)),
+                  onComplete: v => setOsc2Semi(Math.round(v)),
+                },
+              ]}
             />
-            <EffectSlider
-              formatLabel={v => `Noise: ${(v * 100).toFixed(0)}%`}
-              value={noiseLevel}
-              min={0}
-              max={1}
-              onChange={v => NativeAudioModule.setNoiseLevel(channelId, v)}
-              onComplete={setNoiseLevel}
-              tintColor={color}
+
+            {/* Detune + Sub + Noise */}
+            <KnobPanel
+              color={color}
+              knobs={[
+                {
+                  label: 'Detune',
+                  value: osc2Detune,
+                  min: -100,
+                  max: 100,
+                  step: 1,
+                  formatValue: v => `${v > 0 ? '+' : ''}${v.toFixed(0)}ct`,
+                  onChange: v => NativeAudioModule.setOsc2Detune(channelId, v),
+                  onComplete: setOsc2Detune,
+                },
+                {
+                  label: 'Sub',
+                  value: subLevel,
+                  min: 0,
+                  max: 1,
+                  formatValue: v => `${(v * 100).toFixed(0)}%`,
+                  onChange: v => NativeAudioModule.setSubLevel(channelId, v),
+                  onComplete: setSubLevel,
+                },
+                {
+                  label: 'Noise',
+                  value: noiseLevel,
+                  min: 0,
+                  max: 1,
+                  formatValue: v => `${(v * 100).toFixed(0)}%`,
+                  onChange: v => NativeAudioModule.setNoiseLevel(channelId, v),
+                  onComplete: setNoiseLevel,
+                },
+              ]}
             />
           </ScrollView>
         );
@@ -845,35 +794,38 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 />
               </View>
               {voiceFilterEnabled && (
-                <>
-                  <EffectSlider
-                    formatLabel={v => `Cutoff: ${Math.round(v)} Hz`}
-                    value={voiceFilterCutoff}
-                    min={20}
-                    max={20000}
-                    onChange={v => NativeAudioModule.setVoiceFilterCutoff(channelId, v)}
-                    onComplete={setVoiceFilterCutoff}
-                    tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Resonance: ${v.toFixed(2)}`}
-                    value={voiceFilterResonance}
-                    min={0}
-                    max={1}
-                    onChange={v => NativeAudioModule.setVoiceFilterResonance(channelId, v)}
-                    onComplete={setVoiceFilterResonance}
-                    tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Env Amount: ${(v * 100).toFixed(0)}%`}
-                    value={voiceFilterEnvAmount}
-                    min={0}
-                    max={1}
-                    onChange={v => NativeAudioModule.setVoiceFilterEnvAmount(channelId, v)}
-                    onComplete={setVoiceFilterEnvAmount}
-                    tintColor={color}
-                  />
-                </>
+                <KnobPanel
+                  color={color}
+                  knobs={[
+                    {
+                      label: 'Cutoff',
+                      value: voiceFilterCutoff,
+                      min: 20,
+                      max: 20000,
+                      formatValue: v => `${Math.round(v)}`,
+                      onChange: v => NativeAudioModule.setVoiceFilterCutoff(channelId, v),
+                      onComplete: setVoiceFilterCutoff,
+                    },
+                    {
+                      label: 'Resonance',
+                      value: voiceFilterResonance,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => v.toFixed(2),
+                      onChange: v => NativeAudioModule.setVoiceFilterResonance(channelId, v),
+                      onComplete: setVoiceFilterResonance,
+                    },
+                    {
+                      label: 'Env Amt',
+                      value: voiceFilterEnvAmount,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => NativeAudioModule.setVoiceFilterEnvAmount(channelId, v),
+                      onComplete: setVoiceFilterEnvAmount,
+                    },
+                  ]}
+                />
               )}
             </View>
           </ScrollView>
@@ -906,23 +858,28 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                       color={color}
                     />
                   </View>
-                  <EffectSlider
-                    formatLabel={v => `Cutoff: ${Math.round(v)} Hz`}
-                    value={chainFilterCutoff}
-                    min={20}
-                    max={20000}
-                    onChange={v => filterIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, filterIdRef.current, 'cutoff', v)}
-                    onComplete={setChainFilterCutoff}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Resonance: ${v.toFixed(2)}`}
-                    value={chainFilterResonance}
-                    min={0.1}
-                    max={10}
-                    onChange={v => filterIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, filterIdRef.current, 'resonance', v)}
-                    onComplete={setChainFilterResonance}
-                  tintColor={color}
+                  <KnobPanel
+                    color={color}
+                    knobs={[
+                      {
+                        label: 'Cutoff',
+                        value: chainFilterCutoff,
+                        min: 20,
+                        max: 20000,
+                        formatValue: v => `${Math.round(v)}`,
+                        onChange: v => filterIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, filterIdRef.current, 'cutoff', v),
+                        onComplete: setChainFilterCutoff,
+                      },
+                      {
+                        label: 'Resonance',
+                        value: chainFilterResonance,
+                        min: 0.1,
+                        max: 10,
+                        formatValue: v => v.toFixed(2),
+                        onChange: v => filterIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, filterIdRef.current, 'resonance', v),
+                        onComplete: setChainFilterResonance,
+                      },
+                    ]}
                   />
                 </>
               )}
@@ -939,26 +896,29 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 />
               </View>
               {reverbEnabled && (
-                <>
-                  <EffectSlider
-                    formatLabel={v => `Room Size: ${(v * 100).toFixed(0)}%`}
-                    value={reverbRoomSize}
-                    min={0}
-                    max={1}
-                    onChange={v => reverbIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, reverbIdRef.current, 'roomSize', v)}
-                    onComplete={setReverbRoomSize}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Wet: ${(v * 100).toFixed(0)}%`}
-                    value={reverbWetLevel}
-                    min={0}
-                    max={1}
-                    onChange={v => reverbIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, reverbIdRef.current, 'wetLevel', v)}
-                    onComplete={setReverbWetLevel}
-                  tintColor={color}
-                  />
-                </>
+                <KnobPanel
+                  color={color}
+                  knobs={[
+                    {
+                      label: 'Room Size',
+                      value: reverbRoomSize,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => reverbIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, reverbIdRef.current, 'roomSize', v),
+                      onComplete: setReverbRoomSize,
+                    },
+                    {
+                      label: 'Wet',
+                      value: reverbWetLevel,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => reverbIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, reverbIdRef.current, 'wetLevel', v),
+                      onComplete: setReverbWetLevel,
+                    },
+                  ]}
+                />
               )}
             </View>
 
@@ -973,35 +933,38 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 />
               </View>
               {delayEnabled && (
-                <>
-                  <EffectSlider
-                    formatLabel={v => `Time: ${Math.round(v)} ms`}
-                    value={delayTime}
-                    min={1}
-                    max={2000}
-                    onChange={v => delayIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, delayIdRef.current, 'delayTime', v)}
-                    onComplete={setDelayTime}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Feedback: ${(v * 100).toFixed(0)}%`}
-                    value={delayFeedback}
-                    min={0}
-                    max={0.95}
-                    onChange={v => delayIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, delayIdRef.current, 'feedback', v)}
-                    onComplete={setDelayFeedback}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Wet: ${(v * 100).toFixed(0)}%`}
-                    value={delayWetLevel}
-                    min={0}
-                    max={1}
-                    onChange={v => delayIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, delayIdRef.current, 'wetLevel', v)}
-                    onComplete={setDelayWetLevel}
-                  tintColor={color}
-                  />
-                </>
+                <KnobPanel
+                  color={color}
+                  knobs={[
+                    {
+                      label: 'Time',
+                      value: delayTime,
+                      min: 1,
+                      max: 2000,
+                      formatValue: v => `${Math.round(v)}ms`,
+                      onChange: v => delayIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, delayIdRef.current, 'delayTime', v),
+                      onComplete: setDelayTime,
+                    },
+                    {
+                      label: 'Feedback',
+                      value: delayFeedback,
+                      min: 0,
+                      max: 0.95,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => delayIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, delayIdRef.current, 'feedback', v),
+                      onComplete: setDelayFeedback,
+                    },
+                    {
+                      label: 'Wet',
+                      value: delayWetLevel,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => delayIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, delayIdRef.current, 'wetLevel', v),
+                      onComplete: setDelayWetLevel,
+                    },
+                  ]}
+                />
               )}
             </View>
 
@@ -1016,35 +979,38 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 />
               </View>
               {chorusEnabled && (
-                <>
-                  <EffectSlider
-                    formatLabel={v => `Rate: ${v.toFixed(1)} Hz`}
-                    value={chorusRate}
-                    min={0.1}
-                    max={10}
-                    onChange={v => chorusIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current, 'rate', v)}
-                    onComplete={setChorusRate}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Depth: ${(v * 100).toFixed(0)}%`}
-                    value={chorusDepth}
-                    min={0}
-                    max={1}
-                    onChange={v => chorusIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current, 'depth', v)}
-                    onComplete={setChorusDepth}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Mix: ${(v * 100).toFixed(0)}%`}
-                    value={chorusMix}
-                    min={0}
-                    max={1}
-                    onChange={v => chorusIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current, 'mix', v)}
-                    onComplete={setChorusMix}
-                  tintColor={color}
-                  />
-                </>
+                <KnobPanel
+                  color={color}
+                  knobs={[
+                    {
+                      label: 'Rate',
+                      value: chorusRate,
+                      min: 0.1,
+                      max: 10,
+                      formatValue: v => `${v.toFixed(1)}Hz`,
+                      onChange: v => chorusIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current, 'rate', v),
+                      onComplete: setChorusRate,
+                    },
+                    {
+                      label: 'Depth',
+                      value: chorusDepth,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => chorusIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current, 'depth', v),
+                      onComplete: setChorusDepth,
+                    },
+                    {
+                      label: 'Mix',
+                      value: chorusMix,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => chorusIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, chorusIdRef.current, 'mix', v),
+                      onComplete: setChorusMix,
+                    },
+                  ]}
+                />
               )}
             </View>
 
@@ -1059,35 +1025,38 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 />
               </View>
               {distortionEnabled && (
-                <>
-                  <EffectSlider
-                    formatLabel={v => `Drive: ${v.toFixed(1)}`}
-                    value={distortionDrive}
-                    min={1}
-                    max={100}
-                    onChange={v => distortionIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current, 'drive', v)}
-                    onComplete={setDistortionDrive}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Mix: ${(v * 100).toFixed(0)}%`}
-                    value={distortionMix}
-                    min={0}
-                    max={1}
-                    onChange={v => distortionIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current, 'mix', v)}
-                    onComplete={setDistortionMix}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Tone: ${(v * 100).toFixed(0)}%`}
-                    value={distortionTone}
-                    min={0}
-                    max={1}
-                    onChange={v => distortionIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current, 'tone', v)}
-                    onComplete={setDistortionTone}
-                  tintColor={color}
-                  />
-                </>
+                <KnobPanel
+                  color={color}
+                  knobs={[
+                    {
+                      label: 'Drive',
+                      value: distortionDrive,
+                      min: 1,
+                      max: 100,
+                      formatValue: v => v.toFixed(1),
+                      onChange: v => distortionIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current, 'drive', v),
+                      onComplete: setDistortionDrive,
+                    },
+                    {
+                      label: 'Mix',
+                      value: distortionMix,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => distortionIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current, 'mix', v),
+                      onComplete: setDistortionMix,
+                    },
+                    {
+                      label: 'Tone',
+                      value: distortionTone,
+                      min: 0,
+                      max: 1,
+                      formatValue: v => `${(v * 100).toFixed(0)}%`,
+                      onChange: v => distortionIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, distortionIdRef.current, 'tone', v),
+                      onComplete: setDistortionTone,
+                    },
+                  ]}
+                />
               )}
             </View>
 
@@ -1102,44 +1071,47 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 />
               </View>
               {compressorEnabled && (
-                <>
-                  <EffectSlider
-                    formatLabel={v => `Threshold: ${v.toFixed(0)} dB`}
-                    value={compThreshold}
-                    min={-60}
-                    max={0}
-                    onChange={v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'threshold', v)}
-                    onComplete={setCompThreshold}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Ratio: ${v.toFixed(1)}:1`}
-                    value={compRatio}
-                    min={1}
-                    max={20}
-                    onChange={v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'ratio', v)}
-                    onComplete={setCompRatio}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Attack: ${v.toFixed(1)} ms`}
-                    value={compAttack}
-                    min={0.1}
-                    max={100}
-                    onChange={v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'attack', v)}
-                    onComplete={setCompAttack}
-                  tintColor={color}
-                  />
-                  <EffectSlider
-                    formatLabel={v => `Release: ${v.toFixed(0)} ms`}
-                    value={compRelease}
-                    min={10}
-                    max={1000}
-                    onChange={v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'release', v)}
-                    onComplete={setCompRelease}
-                  tintColor={color}
-                  />
-                </>
+                <KnobPanel
+                  color={color}
+                  knobs={[
+                    {
+                      label: 'Threshold',
+                      value: compThreshold,
+                      min: -60,
+                      max: 0,
+                      formatValue: v => `${v.toFixed(0)}dB`,
+                      onChange: v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'threshold', v),
+                      onComplete: setCompThreshold,
+                    },
+                    {
+                      label: 'Ratio',
+                      value: compRatio,
+                      min: 1,
+                      max: 20,
+                      formatValue: v => `${v.toFixed(1)}:1`,
+                      onChange: v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'ratio', v),
+                      onComplete: setCompRatio,
+                    },
+                    {
+                      label: 'Attack',
+                      value: compAttack,
+                      min: 0.1,
+                      max: 100,
+                      formatValue: v => `${v.toFixed(1)}ms`,
+                      onChange: v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'attack', v),
+                      onComplete: setCompAttack,
+                    },
+                    {
+                      label: 'Release',
+                      value: compRelease,
+                      min: 10,
+                      max: 1000,
+                      formatValue: v => `${v.toFixed(0)}ms`,
+                      onChange: v => compressorIdRef.current !== null && NativeAudioModule.setEffectParameter(channelId, compressorIdRef.current, 'release', v),
+                      onComplete: setCompRelease,
+                    },
+                  ]}
+                />
               )}
             </View>
           </ScrollView>
@@ -1275,18 +1247,6 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  sliderContainer: {
-    marginBottom: 12,
-  },
-  sliderLabel: {
-    color: '#ffffff',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  slider: {
-    width: '100%',
-    height: 40,
   },
   presetSection: {
     marginBottom: 12,
