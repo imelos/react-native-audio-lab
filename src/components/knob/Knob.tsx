@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, PanResponder } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 const DEFAULT_SIZE = 70;
@@ -43,17 +43,15 @@ const Knob: React.FC<KnobProps> = ({
 
   const [innerValue, setInnerValue] = useState(value || 0);
 
-  // Mutable refs safe to read in PanResponder callbacks (no closure staleness)
+  // Mutable refs — safe to read in touch callbacks (no closure staleness)
   const currentRef = useRef(value || 0);
-  const startRef = useRef(value || 0);
   const onValueChangeRef = useRef(onValueChange);
   const onCompleteRef = useRef(onComplete);
-
-  // Keep callback refs current every render
-  onValueChangeRef.current = onValueChange;
-  onCompleteRef.current = onComplete;
   const onDragStartRef = useRef(onDragStart);
   const onDragEndRef = useRef(onDragEnd);
+
+  onValueChangeRef.current = onValueChange;
+  onCompleteRef.current = onComplete;
   onDragStartRef.current = onDragStart;
   onDragEndRef.current = onDragEnd;
 
@@ -68,48 +66,69 @@ const Knob: React.FC<KnobProps> = ({
 
   const RANGE = maximumValue - minimumValue;
 
-  // PanResponder lives in the same UIView touch layer as the grid's
-  // onTouchStart/End — no UIGestureRecognizer interference.
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        // Claim on touch start so the parent ScrollView can't steal the drag
-        onStartShouldSetPanResponder: () => true,
-        onStartShouldSetPanResponderCapture: () => false,
-        onMoveShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponderCapture: () => false,
-        // Refuse termination so ScrollView can't reclaim mid-drag
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: () => {
-          dragging.current = true;
-          startRef.current = currentRef.current;
-          onDragStartRef.current?.();
-        },
-        onPanResponderMove: (_, g) => {
-          const deltaRatio = -g.dy / DRAG_PIXELS;
-          let next = startRef.current + deltaRatio * RANGE;
-          next = Math.min(maximumValue, Math.max(minimumValue, next));
-          if (step > 0) {
-            next =
-              Math.round((next - minimumValue) / step) * step + minimumValue;
-          }
-          currentRef.current = next;
-          setInnerValue(next);
-          onValueChangeRef.current(next);
-        },
-        onPanResponderRelease: () => {
-          dragging.current = false;
-          onCompleteRef.current?.(currentRef.current);
-          onDragEndRef.current?.();
-        },
-        onPanResponderTerminate: () => {
-          dragging.current = false;
-          onDragEndRef.current?.();
-        },
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [minimumValue, maximumValue, step, RANGE],
-  );
+  // Track which touch identifier is controlling this knob, plus where it started.
+  // Native onTouch* events are delivered per-view independently — no single-
+  // responder restriction — so multiple knobs and the grid can all receive
+  // simultaneous touch events without any RNGH gesture system interference.
+  const touchRef = useRef<{
+    id: string;
+    startY: number;
+    startValue: number;
+  } | null>(null);
+
+  const handleTouchStart = (e: any) => {
+    if (touchRef.current !== null) return; // already tracking a finger on this knob
+    const t = e.nativeEvent.changedTouches[0];
+    if (!t) return;
+    dragging.current = true;
+    touchRef.current = {
+      id: String(t.identifier),
+      startY: t.pageY,
+      startValue: currentRef.current,
+    };
+    onDragStartRef.current?.();
+  };
+
+  const handleTouchMove = (e: any) => {
+    if (!touchRef.current) return;
+    const touches = e.nativeEvent.touches;
+    for (let i = 0; i < touches.length; i++) {
+      const t = touches[i];
+      if (String(t.identifier) !== touchRef.current.id) continue;
+      const dy = t.pageY - touchRef.current.startY; // positive = downward = decrease
+      const deltaRatio = -dy / DRAG_PIXELS;
+      let next = touchRef.current.startValue + deltaRatio * RANGE;
+      next = Math.min(maximumValue, Math.max(minimumValue, next));
+      if (step > 0) {
+        next =
+          Math.round((next - minimumValue) / step) * step + minimumValue;
+      }
+      currentRef.current = next;
+      setInnerValue(next);
+      onValueChangeRef.current(next);
+      break;
+    }
+  };
+
+  const handleTouchEnd = (e: any) => {
+    if (!touchRef.current) return;
+    const changed = e.nativeEvent.changedTouches;
+    for (let i = 0; i < changed.length; i++) {
+      if (String(changed[i].identifier) !== touchRef.current.id) continue;
+      touchRef.current = null;
+      dragging.current = false;
+      onCompleteRef.current?.(currentRef.current);
+      onDragEndRef.current?.();
+      return;
+    }
+  };
+
+  const handleTouchCancel = () => {
+    if (!touchRef.current) return;
+    touchRef.current = null;
+    dragging.current = false;
+    onDragEndRef.current?.();
+  };
 
   const progress = (innerValue - minimumValue) / (maximumValue - minimumValue);
   const displayValue = formatValue
@@ -120,7 +139,10 @@ const Knob: React.FC<KnobProps> = ({
     <View style={styles.container}>
       <View
         style={[styles.knob, { width: size, height: size }]}
-        {...panResponder.panHandlers}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
       >
         <Svg width={size} height={size}>
           <Circle
