@@ -153,7 +153,10 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
       const targetSequence = slotSequencesRef.current.get(
         slotKey(channel.id, slotIndex),
       );
-      if (targetSequence && sequencer.getSequence(channel.id) !== targetSequence) {
+      if (
+        targetSequence &&
+        sequencer.getSequence(channel.id) !== targetSequence
+      ) {
         sequencer.setSequence(channel.id, targetSequence);
       }
       navigateToChannelSynth(channel);
@@ -360,7 +363,9 @@ const SessionScreen: React.FC<Props<'session'>> = ({ navigation }) => {
                         ]}
                         onPress={() => stopChannel(ch.id)}
                       >
-                        <Text style={styles.stopText}>⏹</Text>
+                        <Text style={[styles.stopText, { color: ch.color }]}>
+                          U+23F9
+                        </Text>
                       </TouchableOpacity>
                     );
                   }

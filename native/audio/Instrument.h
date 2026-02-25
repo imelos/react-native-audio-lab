@@ -52,6 +52,18 @@ public:
     void setDetune(float cents);
     void setVoiceParams(const BaseOscillatorVoice::VoiceParams& params);
 
+    // Individual per-voice parameter forwarding
+    void setOsc2Waveform(BaseOscillatorVoice::Waveform wf);
+    void setOsc2Level(float level);
+    void setOsc2Semi(int semi);
+    void setOsc2Detune(float cents);
+    void setSubLevel(float level);
+    void setNoiseLevel(float level);
+    void setVoiceFilterEnabled(bool enabled);
+    void setVoiceFilterCutoff(float hz);
+    void setVoiceFilterResonance(float res);
+    void setVoiceFilterEnvAmount(float amt);
+
     // ──────────────────────────────────────────
     // Effects chain management
     // ──────────────────────────────────────────

@@ -106,6 +106,18 @@ public:
     void setDetune(int channel, float cents);
     void setVoiceParams(int channel, const BaseOscillatorVoice::VoiceParams& params);
 
+    // Individual per-voice parameter control
+    void setOsc2Waveform(int channel, BaseOscillatorVoice::Waveform wf);
+    void setOsc2Level(int channel, float level);
+    void setOsc2Semi(int channel, int semi);
+    void setOsc2Detune(int channel, float cents);
+    void setSubLevel(int channel, float level);
+    void setNoiseLevel(int channel, float level);
+    void setVoiceFilterEnabled(int channel, bool enabled);
+    void setVoiceFilterCutoff(int channel, float hz);
+    void setVoiceFilterResonance(int channel, float res);
+    void setVoiceFilterEnvAmount(int channel, float amt);
+
     // ──────────────────────────────────────────
     // Common parameter control (works for both instrument types)
     // ──────────────────────────────────────────

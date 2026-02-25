@@ -45,8 +45,8 @@ void BaseOscillatorVoice::startNote(int midiNoteNumber,
     noteVelocity = velocity;
 
     // Reset filter state
-    filterZ1 = 0.0f;
-    filterZ2 = 0.0f;
+    svfIc1eq = 0.0f;
+    svfIc2eq = 0.0f;
 
     adsr.noteOn();
 }
@@ -197,25 +197,36 @@ float BaseOscillatorVoice::getOscValue(Waveform wf, double phase)
 
 float BaseOscillatorVoice::applyFilter(float input, float envValue)
 {
-    // One-pole RC lowpass with envelope modulation and resonance feedback
-    // Cutoff modulated by envelope: baseCutoff * (1 + envAmount * env)
+    // Topology-preserving transform (TPT) State Variable Filter
+    // Based on Vadim Zavalishin / Andy Cytomic design — unconditionally stable
+    // at all cutoff and resonance values.
+
     float modulatedCutoff = voiceParams.filterCutoff *
         (1.0f + voiceParams.filterEnvAmount * envValue);
 
-    // Clamp to Nyquist
     float sr = static_cast<float>(getSampleRate());
     modulatedCutoff = juce::jlimit(20.0f, sr * 0.49f, modulatedCutoff);
 
-    // RC coefficient: alpha = 1 - e^(-2*pi*fc/fs)
-    float alpha = 1.0f - std::exp(-juce::MathConstants<float>::twoPi * modulatedCutoff / sr);
+    // g = tan(pi * fc / fs) — pre-warped cutoff coefficient
+    float g = std::tan(juce::MathConstants<float>::pi * modulatedCutoff / sr);
 
-    // Apply resonance feedback (subtract filtered feedback)
-    float feedback = voiceParams.filterResonance * 4.0f; // scale resonance 0-1 to usable range
-    float inputWithFeedback = input - feedback * (filterZ1 - input);
+    // k = damping factor: k = 2 - 2*resonance gives range [2..0]
+    // k=2 is no resonance, k→0 is self-oscillation. We clamp at 0.1 for safety.
+    float k = juce::jlimit(0.1f, 2.0f, 2.0f * (1.0f - voiceParams.filterResonance));
 
-    // Two cascaded one-pole filters for steeper roll-off
-    filterZ1 += alpha * (inputWithFeedback - filterZ1);
-    filterZ2 += alpha * (filterZ1 - filterZ2);
+    // Coefficients
+    float a1 = 1.0f / (1.0f + g * (g + k));
+    float a2 = g * a1;
+    float a3 = g * a2;
 
-    return filterZ2;
+    // Tick the SVF
+    float v3 = input - svfIc2eq;
+    float v1 = a1 * svfIc1eq + a2 * v3;
+    float v2 = svfIc2eq + a2 * svfIc1eq + a3 * v3;
+
+    svfIc1eq = 2.0f * v1 - svfIc1eq;
+    svfIc2eq = 2.0f * v2 - svfIc2eq;
+
+    // v2 = lowpass output
+    return v2;
 }

@@ -297,6 +297,80 @@ static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
 }
 
 // ────────────────────────────────────────────────
+// Individual Per-Voice Parameters
+// ────────────────────────────────────────────────
+
+- (void)setOsc2Waveform:(double)channel
+               waveform:(NSString *)waveform {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Waveform(static_cast<int>(channel), waveformFromString(waveform));
+    }
+}
+
+- (void)setOsc2Level:(double)channel
+               level:(double)level {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Level(static_cast<int>(channel), static_cast<float>(level));
+    }
+}
+
+- (void)setOsc2Semi:(double)channel
+               semi:(double)semi {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Semi(static_cast<int>(channel), static_cast<int>(semi));
+    }
+}
+
+- (void)setOsc2Detune:(double)channel
+                cents:(double)cents {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Detune(static_cast<int>(channel), static_cast<float>(cents));
+    }
+}
+
+- (void)setSubLevel:(double)channel
+              level:(double)level {
+    if (_audioEngine) {
+        _audioEngine->setSubLevel(static_cast<int>(channel), static_cast<float>(level));
+    }
+}
+
+- (void)setNoiseLevel:(double)channel
+                level:(double)level {
+    if (_audioEngine) {
+        _audioEngine->setNoiseLevel(static_cast<int>(channel), static_cast<float>(level));
+    }
+}
+
+- (void)setVoiceFilterEnabled:(double)channel
+                      enabled:(BOOL)enabled {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterEnabled(static_cast<int>(channel), enabled);
+    }
+}
+
+- (void)setVoiceFilterCutoff:(double)channel
+                      cutoff:(double)cutoff {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterCutoff(static_cast<int>(channel), static_cast<float>(cutoff));
+    }
+}
+
+- (void)setVoiceFilterResonance:(double)channel
+                      resonance:(double)resonance {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterResonance(static_cast<int>(channel), static_cast<float>(resonance));
+    }
+}
+
+- (void)setVoiceFilterEnvAmount:(double)channel
+                         amount:(double)amount {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterEnvAmount(static_cast<int>(channel), static_cast<float>(amount));
+    }
+}
+
+// ────────────────────────────────────────────────
 // Effects Management
 // ────────────────────────────────────────────────
 

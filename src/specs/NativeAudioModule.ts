@@ -94,6 +94,20 @@ export interface Spec extends TurboModule {
   setDetune(channel: number, cents: number): void;
 
   // ────────────────────────────────────────────────
+  // Individual Per-Voice Parameters
+  // ────────────────────────────────────────────────
+  setOsc2Waveform(channel: number, waveform: string): void;
+  setOsc2Level(channel: number, level: number): void;
+  setOsc2Semi(channel: number, semi: number): void;
+  setOsc2Detune(channel: number, cents: number): void;
+  setSubLevel(channel: number, level: number): void;
+  setNoiseLevel(channel: number, level: number): void;
+  setVoiceFilterEnabled(channel: number, enabled: boolean): void;
+  setVoiceFilterCutoff(channel: number, cutoff: number): void;
+  setVoiceFilterResonance(channel: number, resonance: number): void;
+  setVoiceFilterEnvAmount(channel: number, amount: number): void;
+
+  // ────────────────────────────────────────────────
   // Effects Management (Oscillator only)
   // ────────────────────────────────────────────────
   addEffect(channel: number, type: string): number;  // Returns effect ID

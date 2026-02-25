@@ -59,6 +59,18 @@ public:
     void setDetune(float cents);
     void setVoiceParams(const VoiceParams& params);
 
+    // Individual per-voice parameter setters
+    void setOsc2Waveform(Waveform wf) { voiceParams.waveform2 = wf; }
+    void setOsc2Level(float level) { voiceParams.osc2Level = juce::jlimit(0.0f, 1.0f, level); }
+    void setOsc2Semi(int semi) { voiceParams.osc2Semi = juce::jlimit(-24, 24, semi); }
+    void setOsc2Detune(float cents) { voiceParams.detuneCents2 = juce::jlimit(-100.0f, 100.0f, cents); }
+    void setSubLevel(float level) { voiceParams.subLevel = juce::jlimit(0.0f, 1.0f, level); }
+    void setNoiseLevel(float level) { voiceParams.noiseLevel = juce::jlimit(0.0f, 1.0f, level); }
+    void setVoiceFilterEnabled(bool enabled) { voiceParams.filterEnabled = enabled; }
+    void setVoiceFilterCutoff(float hz) { voiceParams.filterCutoff = juce::jlimit(20.0f, 20000.0f, hz); }
+    void setVoiceFilterResonance(float res) { voiceParams.filterResonance = juce::jlimit(0.0f, 1.0f, res); }
+    void setVoiceFilterEnvAmount(float amt) { voiceParams.filterEnvAmount = juce::jlimit(0.0f, 1.0f, amt); }
+
 private:
     VoiceParams voiceParams;
 
@@ -82,9 +94,9 @@ private:
     // Noise RNG
     juce::Random noiseRng;
 
-    // Per-voice filter state (one-pole with resonance feedback)
-    float filterZ1 = 0.0f;    // filter memory (z^-1)
-    float filterZ2 = 0.0f;    // second stage for resonance
+    // Per-voice filter state (SVF — state variable filter)
+    float svfIc1eq = 0.0f;    // integrator 1 state
+    float svfIc2eq = 0.0f;    // integrator 2 state
 
     static float getOscValue(Waveform wf, double phase);
     float applyFilter(float input, float envValue);

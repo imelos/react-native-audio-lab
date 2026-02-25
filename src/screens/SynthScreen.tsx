@@ -20,7 +20,35 @@ import {
   type SynthPreset,
 } from '../data/synthPresets';
 import { applyPreset } from '../utils/applyPreset';
-// import Knob from '../components/knob/Knob';
+
+const EffectSlider = ({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+  tintColor = '#4caf50',
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+  tintColor?: string;
+}) => (
+  <View style={styles.sliderContainer}>
+    <Text style={styles.sliderLabel}>{label}</Text>
+    <Slider
+      style={styles.slider}
+      minimumValue={min}
+      maximumValue={max}
+      value={value}
+      onValueChange={onChange}
+      minimumTrackTintColor={tintColor}
+      maximumTrackTintColor="#444"
+    />
+  </View>
+);
 
 const WAVEFORMS = ['sine', 'saw', 'square', 'triangle'] as const;
 type Waveform = (typeof WAVEFORMS)[number];
@@ -60,7 +88,14 @@ type ScaleType = keyof typeof SCALES;
 const FILTER_TYPES = ['LowPass', 'HighPass', 'BandPass'] as const;
 type FilterType = (typeof FILTER_TYPES)[number];
 
-type TabType = 'instrument' | 'filter' | 'fx';
+type TabType = 'instrument' | 'oscillators' | 'filter' | 'fx';
+
+const TAB_LABELS: Record<TabType, string> = {
+  instrument: 'Instrument',
+  oscillators: 'Oscillators',
+  filter: 'Filter',
+  fx: 'FX',
+};
 
 const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   const { channelId, color } = route.params;
@@ -77,11 +112,27 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
     useState<PresetCategory>('Keys');
   const [activePresetName, setActivePresetName] = useState<string | null>(null);
 
+  // ── Oscillator 2 state ─────────────────────────────────────────────
+  const [osc2Waveform, setOsc2Waveform] = useState<Waveform>('sine');
+  const [osc2Level, setOsc2Level] = useState(0);
+  const [osc2Semi, setOsc2Semi] = useState(0);
+  const [osc2Detune, setOsc2Detune] = useState(0);
+
+  // ── Sub / Noise state ──────────────────────────────────────────────
+  const [subLevel, setSubLevel] = useState(0);
+  const [noiseLevel, setNoiseLevel] = useState(0);
+
+  // ── Per-voice filter state ─────────────────────────────────────────
+  const [voiceFilterEnabled, setVoiceFilterEnabled] = useState(false);
+  const [voiceFilterCutoff, setVoiceFilterCutoff] = useState(8000);
+  const [voiceFilterResonance, setVoiceFilterResonance] = useState(0);
+  const [voiceFilterEnvAmount, setVoiceFilterEnvAmount] = useState(0);
+
   // ── Chain filter state (user-controlled, never touched by presets) ───
-  const [filterEnabled, setFilterEnabled] = useState(false);
-  const [filterType, setFilterType] = useState<FilterType>('LowPass');
-  const [filterCutoff, setFilterCutoff] = useState(1000);
-  const [filterResonance, setFilterResonance] = useState(0.7);
+  const [chainFilterEnabled, setChainFilterEnabled] = useState(false);
+  const [chainFilterType, setChainFilterType] = useState<FilterType>('LowPass');
+  const [chainFilterCutoff, setChainFilterCutoff] = useState(1000);
+  const [chainFilterResonance, setChainFilterResonance] = useState(0.7);
 
   // ── Reverb state ─────────────────────────────────────────────────────
   const [reverbEnabled, setReverbEnabled] = useState(false);
@@ -94,14 +145,34 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   const [delayFeedback, setDelayFeedback] = useState(0.4);
   const [delayWetLevel, setDelayWetLevel] = useState(0.5);
 
+  // ── Chorus state ─────────────────────────────────────────────────────
+  const [chorusEnabled, setChorusEnabled] = useState(false);
+  const [chorusRate, setChorusRate] = useState(1.0);
+  const [chorusDepth, setChorusDepth] = useState(0.25);
+  const [chorusMix, setChorusMix] = useState(0.5);
+
+  // ── Distortion state ─────────────────────────────────────────────────
+  const [distortionEnabled, setDistortionEnabled] = useState(false);
+  const [distortionDrive, setDistortionDrive] = useState(1.0);
+  const [distortionMix, setDistortionMix] = useState(0.5);
+  const [distortionTone, setDistortionTone] = useState(0.5);
+
+  // ── Compressor state ─────────────────────────────────────────────────
+  const [compressorEnabled, setCompressorEnabled] = useState(false);
+  const [compThreshold, setCompThreshold] = useState(-20);
+  const [compRatio, setCompRatio] = useState(4);
+  const [compAttack, setCompAttack] = useState(10);
+  const [compRelease, setCompRelease] = useState(100);
+
   // ── Permanent effect IDs (set once on mount, never change) ───────────
-  // Refs so callbacks always read the current ID with no stale closures
-  // and without triggering re-renders.
   const filterIdRef = useRef<number | null>(null);
   const reverbIdRef = useRef<number | null>(null);
   const delayIdRef = useRef<number | null>(null);
+  const chorusIdRef = useRef<number | null>(null);
+  const distortionIdRef = useRef<number | null>(null);
+  const compressorIdRef = useRef<number | null>(null);
 
-  // ── Mount: create instrument + all three effects (disabled) ──────────
+  // ── Mount: create instrument + all six effects (disabled) ─────────
   useEffect(() => {
     const success = NativeAudioModule.createOscillatorInstrument(
       channelId,
@@ -112,15 +183,17 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
     if (success) {
       NativeAudioModule.setADSR(channelId, 0.01, 0.1, 0.8, 0.3);
 
+      // Chain filter
       const fId = NativeAudioModule.addEffect(channelId, 'filter');
       if (fId >= 0) {
         NativeAudioModule.setEffectEnabled(channelId, fId, false);
         NativeAudioModule.setEffectParameter(channelId, fId, 'cutoff', 1000);
         NativeAudioModule.setEffectParameter(channelId, fId, 'resonance', 0.7);
-        NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0); // LowPass
+        NativeAudioModule.setEffectParameter(channelId, fId, 'type', 0);
         filterIdRef.current = fId;
       }
 
+      // Reverb
       const rId = NativeAudioModule.addEffect(channelId, 'reverb');
       if (rId >= 0) {
         NativeAudioModule.setEffectEnabled(channelId, rId, false);
@@ -129,6 +202,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
         reverbIdRef.current = rId;
       }
 
+      // Delay
       const dId = NativeAudioModule.addEffect(channelId, 'delay');
       if (dId >= 0) {
         NativeAudioModule.setEffectEnabled(channelId, dId, false);
@@ -136,6 +210,47 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
         NativeAudioModule.setEffectParameter(channelId, dId, 'feedback', 0.4);
         NativeAudioModule.setEffectParameter(channelId, dId, 'wetLevel', 0.5);
         delayIdRef.current = dId;
+      }
+
+      // Chorus
+      const chId = NativeAudioModule.addEffect(channelId, 'chorus');
+      if (chId >= 0) {
+        NativeAudioModule.setEffectEnabled(channelId, chId, false);
+        NativeAudioModule.setEffectParameter(channelId, chId, 'rate', 1.0);
+        NativeAudioModule.setEffectParameter(channelId, chId, 'depth', 0.25);
+        NativeAudioModule.setEffectParameter(channelId, chId, 'mix', 0.5);
+        chorusIdRef.current = chId;
+      }
+
+      // Distortion
+      const distId = NativeAudioModule.addEffect(channelId, 'distortion');
+      if (distId >= 0) {
+        NativeAudioModule.setEffectEnabled(channelId, distId, false);
+        NativeAudioModule.setEffectParameter(channelId, distId, 'drive', 1.0);
+        NativeAudioModule.setEffectParameter(channelId, distId, 'mix', 0.5);
+        NativeAudioModule.setEffectParameter(channelId, distId, 'tone', 0.5);
+        distortionIdRef.current = distId;
+      }
+
+      // Compressor
+      const compId = NativeAudioModule.addEffect(channelId, 'compressor');
+      if (compId >= 0) {
+        NativeAudioModule.setEffectEnabled(channelId, compId, false);
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          compId,
+          'threshold',
+          -20,
+        );
+        NativeAudioModule.setEffectParameter(channelId, compId, 'ratio', 4);
+        NativeAudioModule.setEffectParameter(channelId, compId, 'attack', 10);
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          compId,
+          'release',
+          100,
+        );
+        compressorIdRef.current = compId;
       }
     }
 
@@ -145,180 +260,300 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   }, [channelId]);
 
   // ── Preset selection ─────────────────────────────────────────────────
-  // Applies voice params + updates reverb/delay. Chain filter is untouched.
   const handlePresetSelect = useCallback(
     (preset: SynthPreset) => {
       applyPreset(channelId, preset);
       setActivePresetName(preset.name);
       setCurrentWaveform(preset.waveform1);
 
-      const reverbEffect =
-        preset.effects?.find(e => e.type === 'reverb') ?? null;
-      const delayEffect = preset.effects?.find(e => e.type === 'delay') ?? null;
+      // Sync oscillator UI state from preset
+      setOsc2Waveform(preset.waveform2);
+      setOsc2Level(preset.osc2Level);
+      setOsc2Semi(preset.osc2Semi);
+      setOsc2Detune(preset.detuneCents2);
+      setSubLevel(preset.subLevel);
+      setNoiseLevel(preset.noiseLevel);
+
+      // Sync per-voice filter UI state from preset
+      setVoiceFilterEnabled(preset.filterEnabled);
+      setVoiceFilterCutoff(preset.filterCutoff);
+      setVoiceFilterResonance(preset.filterResonance);
+      setVoiceFilterEnvAmount(preset.filterEnvAmount);
+
+      // Helper to sync an effect from preset
+      const syncEffect = (
+        type: string,
+        ref: React.MutableRefObject<number | null>,
+        setEnabled: (v: boolean) => void,
+        paramSyncFn?: (params: Record<string, number>) => void,
+      ) => {
+        const fx = preset.effects?.find(e => e.type === type) ?? null;
+        const has = fx !== null;
+        if (ref.current !== null) {
+          NativeAudioModule.setEffectEnabled(channelId, ref.current, has);
+          if (has && paramSyncFn) {
+            paramSyncFn(fx!.params);
+          }
+        }
+        setEnabled(has);
+      };
 
       // Reverb
-      const hasReverb = reverbEffect !== null;
-      if (reverbIdRef.current !== null) {
-        NativeAudioModule.setEffectEnabled(
+      syncEffect('reverb', reverbIdRef, setReverbEnabled, params => {
+        const rs = params.roomSize ?? reverbRoomSize;
+        const wl = params.wetLevel ?? reverbWetLevel;
+        NativeAudioModule.setEffectParameter(
           channelId,
-          reverbIdRef.current,
-          hasReverb,
+          reverbIdRef.current!,
+          'roomSize',
+          rs,
         );
-        if (hasReverb) {
-          const roomSize = reverbEffect!.params.roomSize ?? reverbRoomSize;
-          const wetLevel = reverbEffect!.params.wetLevel ?? reverbWetLevel;
-          NativeAudioModule.setEffectParameter(
-            channelId,
-            reverbIdRef.current,
-            'roomSize',
-            roomSize,
-          );
-          NativeAudioModule.setEffectParameter(
-            channelId,
-            reverbIdRef.current,
-            'wetLevel',
-            wetLevel,
-          );
-          setReverbRoomSize(roomSize);
-          setReverbWetLevel(wetLevel);
-        }
-      }
-      setReverbEnabled(hasReverb);
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          reverbIdRef.current!,
+          'wetLevel',
+          wl,
+        );
+        setReverbRoomSize(rs);
+        setReverbWetLevel(wl);
+      });
 
       // Delay
-      const hasDelay = delayEffect !== null;
-      if (delayIdRef.current !== null) {
-        NativeAudioModule.setEffectEnabled(
+      syncEffect('delay', delayIdRef, setDelayEnabled, params => {
+        const dt = params.delayTime ?? delayTime;
+        const fb = params.feedback ?? delayFeedback;
+        const wl = params.wetLevel ?? delayWetLevel;
+        NativeAudioModule.setEffectParameter(
           channelId,
-          delayIdRef.current,
-          hasDelay,
+          delayIdRef.current!,
+          'delayTime',
+          dt,
         );
-        if (hasDelay) {
-          const dt = delayEffect!.params.delayTime ?? delayTime;
-          const fb = delayEffect!.params.feedback ?? delayFeedback;
-          const wl = delayEffect!.params.wetLevel ?? delayWetLevel;
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          delayIdRef.current!,
+          'feedback',
+          fb,
+        );
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          delayIdRef.current!,
+          'wetLevel',
+          wl,
+        );
+        setDelayTime(dt);
+        setDelayFeedback(fb);
+        setDelayWetLevel(wl);
+      });
+
+      // Chorus
+      syncEffect('chorus', chorusIdRef, setChorusEnabled, params => {
+        const r = params.rate ?? chorusRate;
+        const d = params.depth ?? chorusDepth;
+        const m = params.mix ?? chorusMix;
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          chorusIdRef.current!,
+          'rate',
+          r,
+        );
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          chorusIdRef.current!,
+          'depth',
+          d,
+        );
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          chorusIdRef.current!,
+          'mix',
+          m,
+        );
+        setChorusRate(r);
+        setChorusDepth(d);
+        setChorusMix(m);
+      });
+
+      // Distortion
+      syncEffect('distortion', distortionIdRef, setDistortionEnabled, params => {
+        const dr = params.drive ?? distortionDrive;
+        const m = params.mix ?? distortionMix;
+        const t = params.tone ?? distortionTone;
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          distortionIdRef.current!,
+          'drive',
+          dr,
+        );
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          distortionIdRef.current!,
+          'mix',
+          m,
+        );
+        NativeAudioModule.setEffectParameter(
+          channelId,
+          distortionIdRef.current!,
+          'tone',
+          t,
+        );
+        setDistortionDrive(dr);
+        setDistortionMix(m);
+        setDistortionTone(t);
+      });
+
+      // Compressor
+      syncEffect(
+        'compressor',
+        compressorIdRef,
+        setCompressorEnabled,
+        params => {
+          const th = params.threshold ?? compThreshold;
+          const ra = params.ratio ?? compRatio;
+          const at = params.attack ?? compAttack;
+          const re = params.release ?? compRelease;
           NativeAudioModule.setEffectParameter(
             channelId,
-            delayIdRef.current,
-            'delayTime',
-            dt,
+            compressorIdRef.current!,
+            'threshold',
+            th,
           );
           NativeAudioModule.setEffectParameter(
             channelId,
-            delayIdRef.current,
-            'feedback',
-            fb,
+            compressorIdRef.current!,
+            'ratio',
+            ra,
           );
           NativeAudioModule.setEffectParameter(
             channelId,
-            delayIdRef.current,
-            'wetLevel',
-            wl,
+            compressorIdRef.current!,
+            'attack',
+            at,
           );
-          setDelayTime(dt);
-          setDelayFeedback(fb);
-          setDelayWetLevel(wl);
-        }
-      }
-      setDelayEnabled(hasDelay);
+          NativeAudioModule.setEffectParameter(
+            channelId,
+            compressorIdRef.current!,
+            'release',
+            re,
+          );
+          setCompThreshold(th);
+          setCompRatio(ra);
+          setCompAttack(at);
+          setCompRelease(re);
+        },
+      );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [channelId],
-    // reverbRoomSize / delayTime etc. are used only as fallbacks when the preset
-    // doesn't supply a value — stale closure is acceptable there. Effect IDs
-    // are read from refs (always current). State setters are stable.
   );
 
-  // ── Chain filter toggle ───────────────────────────────────────────────
-  const toggleFilter = () => {
-    const id = filterIdRef.current;
-    if (id === null || id < 0) return;
-    const newEnabled = !filterEnabled;
-    NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
-    if (newEnabled) {
-      // Sync current UI values to native on enable
+  // ── Effect toggles ──────────────────────────────────────────────────
+
+  const makeToggle = (
+    ref: React.MutableRefObject<number | null>,
+    enabled: boolean,
+    setEnabled: (v: boolean) => void,
+    syncParams?: (id: number) => void,
+  ) => {
+    return () => {
+      const id = ref.current;
+      if (id === null || id < 0) return;
+      const newEnabled = !enabled;
+      NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
+      if (newEnabled && syncParams) syncParams(id);
+      setEnabled(newEnabled);
+    };
+  };
+
+  const toggleChainFilter = makeToggle(
+    filterIdRef,
+    chainFilterEnabled,
+    setChainFilterEnabled,
+    id => {
       NativeAudioModule.setEffectParameter(
         channelId,
         id,
         'cutoff',
-        filterCutoff,
+        chainFilterCutoff,
       );
       NativeAudioModule.setEffectParameter(
         channelId,
         id,
         'resonance',
-        filterResonance,
+        chainFilterResonance,
       );
       NativeAudioModule.setEffectParameter(
         channelId,
         id,
         'type',
-        FILTER_TYPES.indexOf(filterType),
+        FILTER_TYPES.indexOf(chainFilterType),
       );
-    }
-    setFilterEnabled(newEnabled);
-  };
+    },
+  );
 
-  const changeFilterType = () => {
+  const toggleReverb = makeToggle(
+    reverbIdRef,
+    reverbEnabled,
+    setReverbEnabled,
+    id => {
+      NativeAudioModule.setEffectParameter(channelId, id, 'roomSize', reverbRoomSize);
+      NativeAudioModule.setEffectParameter(channelId, id, 'wetLevel', reverbWetLevel);
+    },
+  );
+
+  const toggleDelay = makeToggle(
+    delayIdRef,
+    delayEnabled,
+    setDelayEnabled,
+    id => {
+      NativeAudioModule.setEffectParameter(channelId, id, 'delayTime', delayTime);
+      NativeAudioModule.setEffectParameter(channelId, id, 'feedback', delayFeedback);
+      NativeAudioModule.setEffectParameter(channelId, id, 'wetLevel', delayWetLevel);
+    },
+  );
+
+  const toggleChorus = makeToggle(
+    chorusIdRef,
+    chorusEnabled,
+    setChorusEnabled,
+    id => {
+      NativeAudioModule.setEffectParameter(channelId, id, 'rate', chorusRate);
+      NativeAudioModule.setEffectParameter(channelId, id, 'depth', chorusDepth);
+      NativeAudioModule.setEffectParameter(channelId, id, 'mix', chorusMix);
+    },
+  );
+
+  const toggleDistortion = makeToggle(
+    distortionIdRef,
+    distortionEnabled,
+    setDistortionEnabled,
+    id => {
+      NativeAudioModule.setEffectParameter(channelId, id, 'drive', distortionDrive);
+      NativeAudioModule.setEffectParameter(channelId, id, 'mix', distortionMix);
+      NativeAudioModule.setEffectParameter(channelId, id, 'tone', distortionTone);
+    },
+  );
+
+  const toggleCompressor = makeToggle(
+    compressorIdRef,
+    compressorEnabled,
+    setCompressorEnabled,
+    id => {
+      NativeAudioModule.setEffectParameter(channelId, id, 'threshold', compThreshold);
+      NativeAudioModule.setEffectParameter(channelId, id, 'ratio', compRatio);
+      NativeAudioModule.setEffectParameter(channelId, id, 'attack', compAttack);
+      NativeAudioModule.setEffectParameter(channelId, id, 'release', compRelease);
+    },
+  );
+
+  const changeChainFilterType = () => {
     const nextIndex =
-      (FILTER_TYPES.indexOf(filterType) + 1) % FILTER_TYPES.length;
-    setFilterType(FILTER_TYPES[nextIndex]);
+      (FILTER_TYPES.indexOf(chainFilterType) + 1) % FILTER_TYPES.length;
+    setChainFilterType(FILTER_TYPES[nextIndex]);
     const id = filterIdRef.current;
-    if (filterEnabled && id !== null) {
+    if (chainFilterEnabled && id !== null) {
       NativeAudioModule.setEffectParameter(channelId, id, 'type', nextIndex);
     }
-  };
-
-  // ── Reverb toggle ─────────────────────────────────────────────────────
-  const toggleReverb = () => {
-    const id = reverbIdRef.current;
-    if (id === null || id < 0) return;
-    const newEnabled = !reverbEnabled;
-    NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
-    if (newEnabled) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        id,
-        'roomSize',
-        reverbRoomSize,
-      );
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        id,
-        'wetLevel',
-        reverbWetLevel,
-      );
-    }
-    setReverbEnabled(newEnabled);
-  };
-
-  // ── Delay toggle ──────────────────────────────────────────────────────
-  const toggleDelay = () => {
-    const id = delayIdRef.current;
-    if (id === null || id < 0) return;
-    const newEnabled = !delayEnabled;
-    NativeAudioModule.setEffectEnabled(channelId, id, newEnabled);
-    if (newEnabled) {
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        id,
-        'delayTime',
-        delayTime,
-      );
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        id,
-        'feedback',
-        delayFeedback,
-      );
-      NativeAudioModule.setEffectParameter(
-        channelId,
-        id,
-        'wetLevel',
-        delayWetLevel,
-      );
-    }
-    setDelayEnabled(newEnabled);
   };
 
   // ── Waveform / grid / key helpers ─────────────────────────────────────
@@ -328,6 +563,14 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
     setCurrentWaveform(next);
     setActivePresetName(null);
     NativeAudioModule.setWaveform(channelId, next);
+  };
+
+  const changeOsc2Waveform = () => {
+    const next =
+      WAVEFORMS[(WAVEFORMS.indexOf(osc2Waveform) + 1) % WAVEFORMS.length];
+    setOsc2Waveform(next);
+    setActivePresetName(null);
+    NativeAudioModule.setOsc2Waveform(channelId, next);
   };
 
   const changeGridSize = () => {
@@ -438,15 +681,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             </View>
 
             <View style={styles.controlRow}>
-              <Text style={styles.label}>Waveform: {currentWaveform}</Text>
-              <Button
-                title="Change Wave"
-                onPress={changeWaveform}
-                color={color}
-              />
-            </View>
-
-            <View style={styles.controlRow}>
               <Text style={styles.label}>Key: {selectedKey}</Text>
               <Button title="Change Key" onPress={changeKey} color={color} />
             </View>
@@ -460,7 +694,6 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 color={color}
               />
             </View>
-
             <View style={styles.controlRow}>
               <Text style={styles.label}>
                 Mode: {useScale ? 'Scale' : 'Chromatic'}
@@ -482,6 +715,95 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
           </ScrollView>
         );
 
+      case 'oscillators':
+        return (
+          <ScrollView
+            style={styles.tabContent}
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled
+          >
+            {/* Osc 1 */}
+            <View style={styles.controlRow}>
+              <Text style={styles.label}>Osc1: {currentWaveform}</Text>
+              <Button
+                title="Change"
+                onPress={changeWaveform}
+                color={color}
+              />
+            </View>
+
+            {/* Osc 2 */}
+            <View style={styles.effectSection}>
+              <View style={styles.controlRow}>
+                <Text style={styles.label}>Osc2: {osc2Waveform}</Text>
+                <Button
+                  title="Change"
+                  onPress={changeOsc2Waveform}
+                  color={color}
+                />
+              </View>
+              <EffectSlider
+                label={`Level: ${(osc2Level * 100).toFixed(0)}%`}
+                value={osc2Level}
+                min={0}
+                max={1}
+                onChange={v => {
+                  setOsc2Level(v);
+                  NativeAudioModule.setOsc2Level(channelId, v);
+                }}
+                tintColor={color}
+              />
+              <EffectSlider
+                label={`Semi: ${osc2Semi > 0 ? '+' : ''}${osc2Semi}st`}
+                value={osc2Semi}
+                min={-24}
+                max={24}
+                onChange={v => {
+                  const rounded = Math.round(v);
+                  setOsc2Semi(rounded);
+                  NativeAudioModule.setOsc2Semi(channelId, rounded);
+                }}
+                tintColor={color}
+              />
+              <EffectSlider
+                label={`Detune: ${osc2Detune > 0 ? '+' : ''}${osc2Detune.toFixed(0)}ct`}
+                value={osc2Detune}
+                min={-100}
+                max={100}
+                onChange={v => {
+                  setOsc2Detune(v);
+                  NativeAudioModule.setOsc2Detune(channelId, v);
+                }}
+                tintColor={color}
+              />
+            </View>
+
+            {/* Sub + Noise */}
+            <EffectSlider
+              label={`Sub: ${(subLevel * 100).toFixed(0)}%`}
+              value={subLevel}
+              min={0}
+              max={1}
+              onChange={v => {
+                setSubLevel(v);
+                NativeAudioModule.setSubLevel(channelId, v);
+              }}
+              tintColor={color}
+            />
+            <EffectSlider
+              label={`Noise: ${(noiseLevel * 100).toFixed(0)}%`}
+              value={noiseLevel}
+              min={0}
+              max={1}
+              onChange={v => {
+                setNoiseLevel(v);
+                NativeAudioModule.setNoiseLevel(channelId, v);
+              }}
+              tintColor={color}
+            />
+          </ScrollView>
+        );
+
       case 'filter':
         return (
           <ScrollView
@@ -489,74 +811,58 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
           >
-            <View style={styles.effectHeader}>
-              <Text style={styles.effectTitle}>Filter</Text>
-              <Button
-                title={filterEnabled ? 'ON' : 'OFF'}
-                onPress={toggleFilter}
-                color={filterEnabled ? '#4caf50' : '#757575'}
-              />
+            {/* Per-voice filter */}
+            <View style={styles.effectSection}>
+              <View style={styles.effectHeader}>
+                <Text style={styles.effectTitle}>Voice Filter</Text>
+                <Button
+                  title={voiceFilterEnabled ? 'ON' : 'OFF'}
+                  onPress={() => {
+                    const next = !voiceFilterEnabled;
+                    setVoiceFilterEnabled(next);
+                    NativeAudioModule.setVoiceFilterEnabled(channelId, next);
+                  }}
+                  color={voiceFilterEnabled ? '#4caf50' : '#757575'}
+                />
+              </View>
+              {voiceFilterEnabled && (
+                <>
+                  <EffectSlider
+                    label={`Cutoff: ${Math.round(voiceFilterCutoff)} Hz`}
+                    value={voiceFilterCutoff}
+                    min={20}
+                    max={20000}
+                    onChange={v => {
+                      setVoiceFilterCutoff(v);
+                      NativeAudioModule.setVoiceFilterCutoff(channelId, v);
+                    }}
+                    tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Resonance: ${voiceFilterResonance.toFixed(2)}`}
+                    value={voiceFilterResonance}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setVoiceFilterResonance(v);
+                      NativeAudioModule.setVoiceFilterResonance(channelId, v);
+                    }}
+                    tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Env Amount: ${(voiceFilterEnvAmount * 100).toFixed(0)}%`}
+                    value={voiceFilterEnvAmount}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setVoiceFilterEnvAmount(v);
+                      NativeAudioModule.setVoiceFilterEnvAmount(channelId, v);
+                    }}
+                    tintColor={color}
+                  />
+                </>
+              )}
             </View>
-            {filterEnabled && (
-              <>
-                <View style={styles.controlRow}>
-                  <Text style={styles.label}>Type: {filterType}</Text>
-                  <Button
-                    title="Change Type"
-                    onPress={changeFilterType}
-                    color={color}
-                  />
-                </View>
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    Cutoff: {Math.round(filterCutoff)} Hz
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={20}
-                    maximumValue={20000}
-                    value={filterCutoff}
-                    onValueChange={v => {
-                      setFilterCutoff(v);
-                      if (filterIdRef.current !== null) {
-                        NativeAudioModule.setEffectParameter(
-                          channelId,
-                          filterIdRef.current,
-                          'cutoff',
-                          v,
-                        );
-                      }
-                    }}
-                    minimumTrackTintColor={color}
-                    maximumTrackTintColor="#444"
-                  />
-                </View>
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>
-                    Resonance: {filterResonance.toFixed(2)}
-                  </Text>
-                  <Slider
-                    style={styles.slider}
-                    minimumValue={0.1}
-                    maximumValue={10}
-                    value={filterResonance}
-                    onValueChange={v => {
-                      setFilterResonance(v);
-                      if (filterIdRef.current !== null) {
-                        NativeAudioModule.setEffectParameter(
-                          channelId,
-                          filterIdRef.current,
-                          'resonance',
-                          v,
-                        );
-                      }
-                    }}
-                    minimumTrackTintColor={color}
-                    maximumTrackTintColor="#444"
-                  />
-                </View>
-              </>
-            )}
           </ScrollView>
         );
 
@@ -567,6 +873,66 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled
           >
+            {/* Chain Filter */}
+            <View style={styles.effectSection}>
+              <View style={styles.effectHeader}>
+                <Text style={styles.effectTitle}>Chain Filter</Text>
+                <Button
+                  title={chainFilterEnabled ? 'ON' : 'OFF'}
+                  onPress={toggleChainFilter}
+                  color={chainFilterEnabled ? '#4caf50' : '#757575'}
+                />
+              </View>
+              {chainFilterEnabled && (
+                <>
+                  <View style={styles.controlRow}>
+                    <Text style={styles.label}>Type: {chainFilterType}</Text>
+                    <Button
+                      title="Change Type"
+                      onPress={changeChainFilterType}
+                      color={color}
+                    />
+                  </View>
+                  <EffectSlider
+                    label={`Cutoff: ${Math.round(chainFilterCutoff)} Hz`}
+                    value={chainFilterCutoff}
+                    min={20}
+                    max={20000}
+                    onChange={v => {
+                      setChainFilterCutoff(v);
+                      if (filterIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          filterIdRef.current,
+                          'cutoff',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Resonance: ${chainFilterResonance.toFixed(2)}`}
+                    value={chainFilterResonance}
+                    min={0.1}
+                    max={10}
+                    onChange={v => {
+                      setChainFilterResonance(v);
+                      if (filterIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          filterIdRef.current,
+                          'resonance',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                </>
+              )}
+            </View>
+
             {/* Reverb */}
             <View style={styles.effectSection}>
               <View style={styles.effectHeader}>
@@ -579,54 +945,42 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               </View>
               {reverbEnabled && (
                 <>
-                  <View style={styles.sliderContainer}>
-                    <Text style={styles.sliderLabel}>
-                      Room Size: {(reverbRoomSize * 100).toFixed(0)}%
-                    </Text>
-                    <Slider
-                      style={styles.slider}
-                      minimumValue={0}
-                      maximumValue={1}
-                      value={reverbRoomSize}
-                      onValueChange={v => {
-                        setReverbRoomSize(v);
-                        if (reverbIdRef.current !== null) {
-                          NativeAudioModule.setEffectParameter(
-                            channelId,
-                            reverbIdRef.current,
-                            'roomSize',
-                            v,
-                          );
-                        }
-                      }}
-                      minimumTrackTintColor={color}
-                      maximumTrackTintColor="#444"
-                    />
-                  </View>
-                  <View style={styles.sliderContainer}>
-                    <Text style={styles.sliderLabel}>
-                      Wet: {(reverbWetLevel * 100).toFixed(0)}%
-                    </Text>
-                    <Slider
-                      style={styles.slider}
-                      minimumValue={0}
-                      maximumValue={1}
-                      value={reverbWetLevel}
-                      onValueChange={v => {
-                        setReverbWetLevel(v);
-                        if (reverbIdRef.current !== null) {
-                          NativeAudioModule.setEffectParameter(
-                            channelId,
-                            reverbIdRef.current,
-                            'wetLevel',
-                            v,
-                          );
-                        }
-                      }}
-                      minimumTrackTintColor={color}
-                      maximumTrackTintColor="#444"
-                    />
-                  </View>
+                  <EffectSlider
+                    label={`Room Size: ${(reverbRoomSize * 100).toFixed(0)}%`}
+                    value={reverbRoomSize}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setReverbRoomSize(v);
+                      if (reverbIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          reverbIdRef.current,
+                          'roomSize',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Wet: ${(reverbWetLevel * 100).toFixed(0)}%`}
+                    value={reverbWetLevel}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setReverbWetLevel(v);
+                      if (reverbIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          reverbIdRef.current,
+                          'wetLevel',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
                 </>
               )}
             </View>
@@ -643,78 +997,288 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
               </View>
               {delayEnabled && (
                 <>
-                  <View style={styles.sliderContainer}>
-                    <Text style={styles.sliderLabel}>
-                      Delay Time: {Math.round(delayTime)} ms
-                    </Text>
-                    <Slider
-                      style={styles.slider}
-                      minimumValue={1}
-                      maximumValue={2000}
-                      value={delayTime}
-                      onValueChange={v => {
-                        setDelayTime(v);
-                        if (delayIdRef.current !== null) {
-                          NativeAudioModule.setEffectParameter(
-                            channelId,
-                            delayIdRef.current,
-                            'delayTime',
-                            v,
-                          );
-                        }
-                      }}
-                      minimumTrackTintColor={color}
-                      maximumTrackTintColor="#444"
-                    />
-                  </View>
-                  <View style={styles.sliderContainer}>
-                    <Text style={styles.sliderLabel}>
-                      Feedback: {(delayFeedback * 100).toFixed(0)}%
-                    </Text>
-                    <Slider
-                      style={styles.slider}
-                      minimumValue={0}
-                      maximumValue={0.95}
-                      value={delayFeedback}
-                      onValueChange={v => {
-                        setDelayFeedback(v);
-                        if (delayIdRef.current !== null) {
-                          NativeAudioModule.setEffectParameter(
-                            channelId,
-                            delayIdRef.current,
-                            'feedback',
-                            v,
-                          );
-                        }
-                      }}
-                      minimumTrackTintColor={color}
-                      maximumTrackTintColor="#444"
-                    />
-                  </View>
-                  <View style={styles.sliderContainer}>
-                    <Text style={styles.sliderLabel}>
-                      Wet: {(delayWetLevel * 100).toFixed(0)}%
-                    </Text>
-                    <Slider
-                      style={styles.slider}
-                      minimumValue={0}
-                      maximumValue={1}
-                      value={delayWetLevel}
-                      onValueChange={v => {
-                        setDelayWetLevel(v);
-                        if (delayIdRef.current !== null) {
-                          NativeAudioModule.setEffectParameter(
-                            channelId,
-                            delayIdRef.current,
-                            'wetLevel',
-                            v,
-                          );
-                        }
-                      }}
-                      minimumTrackTintColor={color}
-                      maximumTrackTintColor="#444"
-                    />
-                  </View>
+                  <EffectSlider
+                    label={`Time: ${Math.round(delayTime)} ms`}
+                    value={delayTime}
+                    min={1}
+                    max={2000}
+                    onChange={v => {
+                      setDelayTime(v);
+                      if (delayIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          delayIdRef.current,
+                          'delayTime',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Feedback: ${(delayFeedback * 100).toFixed(0)}%`}
+                    value={delayFeedback}
+                    min={0}
+                    max={0.95}
+                    onChange={v => {
+                      setDelayFeedback(v);
+                      if (delayIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          delayIdRef.current,
+                          'feedback',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Wet: ${(delayWetLevel * 100).toFixed(0)}%`}
+                    value={delayWetLevel}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setDelayWetLevel(v);
+                      if (delayIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          delayIdRef.current,
+                          'wetLevel',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                </>
+              )}
+            </View>
+
+            {/* Chorus */}
+            <View style={styles.effectSection}>
+              <View style={styles.effectHeader}>
+                <Text style={styles.effectTitle}>Chorus</Text>
+                <Button
+                  title={chorusEnabled ? 'ON' : 'OFF'}
+                  onPress={toggleChorus}
+                  color={chorusEnabled ? '#4caf50' : '#757575'}
+                />
+              </View>
+              {chorusEnabled && (
+                <>
+                  <EffectSlider
+                    label={`Rate: ${chorusRate.toFixed(1)} Hz`}
+                    value={chorusRate}
+                    min={0.1}
+                    max={10}
+                    onChange={v => {
+                      setChorusRate(v);
+                      if (chorusIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          chorusIdRef.current,
+                          'rate',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Depth: ${(chorusDepth * 100).toFixed(0)}%`}
+                    value={chorusDepth}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setChorusDepth(v);
+                      if (chorusIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          chorusIdRef.current,
+                          'depth',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Mix: ${(chorusMix * 100).toFixed(0)}%`}
+                    value={chorusMix}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setChorusMix(v);
+                      if (chorusIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          chorusIdRef.current,
+                          'mix',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                </>
+              )}
+            </View>
+
+            {/* Distortion */}
+            <View style={styles.effectSection}>
+              <View style={styles.effectHeader}>
+                <Text style={styles.effectTitle}>Distortion</Text>
+                <Button
+                  title={distortionEnabled ? 'ON' : 'OFF'}
+                  onPress={toggleDistortion}
+                  color={distortionEnabled ? '#4caf50' : '#757575'}
+                />
+              </View>
+              {distortionEnabled && (
+                <>
+                  <EffectSlider
+                    label={`Drive: ${distortionDrive.toFixed(1)}`}
+                    value={distortionDrive}
+                    min={1}
+                    max={100}
+                    onChange={v => {
+                      setDistortionDrive(v);
+                      if (distortionIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          distortionIdRef.current,
+                          'drive',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Mix: ${(distortionMix * 100).toFixed(0)}%`}
+                    value={distortionMix}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setDistortionMix(v);
+                      if (distortionIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          distortionIdRef.current,
+                          'mix',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Tone: ${(distortionTone * 100).toFixed(0)}%`}
+                    value={distortionTone}
+                    min={0}
+                    max={1}
+                    onChange={v => {
+                      setDistortionTone(v);
+                      if (distortionIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          distortionIdRef.current,
+                          'tone',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                </>
+              )}
+            </View>
+
+            {/* Compressor */}
+            <View style={styles.effectSection}>
+              <View style={styles.effectHeader}>
+                <Text style={styles.effectTitle}>Compressor</Text>
+                <Button
+                  title={compressorEnabled ? 'ON' : 'OFF'}
+                  onPress={toggleCompressor}
+                  color={compressorEnabled ? '#4caf50' : '#757575'}
+                />
+              </View>
+              {compressorEnabled && (
+                <>
+                  <EffectSlider
+                    label={`Threshold: ${compThreshold.toFixed(0)} dB`}
+                    value={compThreshold}
+                    min={-60}
+                    max={0}
+                    onChange={v => {
+                      setCompThreshold(v);
+                      if (compressorIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          compressorIdRef.current,
+                          'threshold',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Ratio: ${compRatio.toFixed(1)}:1`}
+                    value={compRatio}
+                    min={1}
+                    max={20}
+                    onChange={v => {
+                      setCompRatio(v);
+                      if (compressorIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          compressorIdRef.current,
+                          'ratio',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Attack: ${compAttack.toFixed(1)} ms`}
+                    value={compAttack}
+                    min={0.1}
+                    max={100}
+                    onChange={v => {
+                      setCompAttack(v);
+                      if (compressorIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          compressorIdRef.current,
+                          'attack',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
+                  <EffectSlider
+                    label={`Release: ${compRelease.toFixed(0)} ms`}
+                    value={compRelease}
+                    min={10}
+                    max={1000}
+                    onChange={v => {
+                      setCompRelease(v);
+                      if (compressorIdRef.current !== null) {
+                        NativeAudioModule.setEffectParameter(
+                          channelId,
+                          compressorIdRef.current,
+                          'release',
+                          v,
+                        );
+                      }
+                    }}
+                  tintColor={color}
+                  />
                 </>
               )}
             </View>
@@ -726,7 +1290,9 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
   return (
     <View style={[styles.container, { paddingTop: headerHeight }]}>
       <View style={styles.tabBar}>
-        {(['instrument', 'filter', 'fx'] as TabType[]).map(tab => (
+        {(
+          ['instrument', 'oscillators', 'filter', 'fx'] as TabType[]
+        ).map(tab => (
           <TouchableOpacity
             key={tab}
             style={[
@@ -741,11 +1307,7 @@ const SynthScreen: React.FC<Props<'synth'>> = ({ route }) => {
                 activeTab === tab && styles.activeTabText,
               ]}
             >
-              {tab === 'instrument'
-                ? 'Instrument'
-                : tab === 'filter'
-                ? 'Filter'
-                : 'FX'}
+              {TAB_LABELS[tab]}
             </Text>
           </TouchableOpacity>
         ))}

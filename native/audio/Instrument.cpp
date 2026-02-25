@@ -55,6 +55,57 @@ private:
     SimpleFilterProcessor filter;
 };
 
+class ChorusEffectWrapper : public Instrument::EffectProcessor
+{
+public:
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override
+    {
+        chorus.prepareToPlay(sampleRate, samplesPerBlock);
+    }
+    void releaseResources() override { chorus.releaseResources(); }
+    void processBlock(juce::AudioBuffer<float>& buffer) override
+    {
+        chorus.processBlock(buffer);
+    }
+    SimpleChorusProcessor* getProcessor() { return &chorus; }
+private:
+    SimpleChorusProcessor chorus;
+};
+
+class DistortionEffectWrapper : public Instrument::EffectProcessor
+{
+public:
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override
+    {
+        distortion.prepareToPlay(sampleRate, samplesPerBlock);
+    }
+    void releaseResources() override { distortion.releaseResources(); }
+    void processBlock(juce::AudioBuffer<float>& buffer) override
+    {
+        distortion.processBlock(buffer);
+    }
+    SimpleDistortionProcessor* getProcessor() { return &distortion; }
+private:
+    SimpleDistortionProcessor distortion;
+};
+
+class CompressorEffectWrapper : public Instrument::EffectProcessor
+{
+public:
+    void prepareToPlay(double sampleRate, int samplesPerBlock) override
+    {
+        compressor.prepareToPlay(sampleRate, samplesPerBlock);
+    }
+    void releaseResources() override { compressor.releaseResources(); }
+    void processBlock(juce::AudioBuffer<float>& buffer) override
+    {
+        compressor.processBlock(buffer);
+    }
+    SimpleCompressorProcessor* getProcessor() { return &compressor; }
+private:
+    SimpleCompressorProcessor compressor;
+};
+
 // ──────────────────────────────────────────
 // Instrument Implementation
 // ──────────────────────────────────────────
@@ -222,6 +273,75 @@ void Instrument::setVoiceParams(const BaseOscillatorVoice::VoiceParams& params)
     }
 }
 
+// Macro to reduce boilerplate for per-voice forwarding
+#define INSTRUMENT_FORWARD_TO_VOICES(method, ...) \
+    for (int i = 0; i < synth.getNumVoices(); ++i) { \
+        if (auto* voice = dynamic_cast<BaseOscillatorVoice*>(synth.getVoice(i))) \
+            voice->method(__VA_ARGS__); \
+    }
+
+void Instrument::setOsc2Waveform(BaseOscillatorVoice::Waveform wf)
+{
+    config.voiceParams.waveform2 = wf;
+    INSTRUMENT_FORWARD_TO_VOICES(setOsc2Waveform, wf)
+}
+
+void Instrument::setOsc2Level(float level)
+{
+    config.voiceParams.osc2Level = level;
+    INSTRUMENT_FORWARD_TO_VOICES(setOsc2Level, level)
+}
+
+void Instrument::setOsc2Semi(int semi)
+{
+    config.voiceParams.osc2Semi = semi;
+    INSTRUMENT_FORWARD_TO_VOICES(setOsc2Semi, semi)
+}
+
+void Instrument::setOsc2Detune(float cents)
+{
+    config.voiceParams.detuneCents2 = cents;
+    INSTRUMENT_FORWARD_TO_VOICES(setOsc2Detune, cents)
+}
+
+void Instrument::setSubLevel(float level)
+{
+    config.voiceParams.subLevel = level;
+    INSTRUMENT_FORWARD_TO_VOICES(setSubLevel, level)
+}
+
+void Instrument::setNoiseLevel(float level)
+{
+    config.voiceParams.noiseLevel = level;
+    INSTRUMENT_FORWARD_TO_VOICES(setNoiseLevel, level)
+}
+
+void Instrument::setVoiceFilterEnabled(bool enabled)
+{
+    config.voiceParams.filterEnabled = enabled;
+    INSTRUMENT_FORWARD_TO_VOICES(setVoiceFilterEnabled, enabled)
+}
+
+void Instrument::setVoiceFilterCutoff(float hz)
+{
+    config.voiceParams.filterCutoff = hz;
+    INSTRUMENT_FORWARD_TO_VOICES(setVoiceFilterCutoff, hz)
+}
+
+void Instrument::setVoiceFilterResonance(float res)
+{
+    config.voiceParams.filterResonance = res;
+    INSTRUMENT_FORWARD_TO_VOICES(setVoiceFilterResonance, res)
+}
+
+void Instrument::setVoiceFilterEnvAmount(float amt)
+{
+    config.voiceParams.filterEnvAmount = amt;
+    INSTRUMENT_FORWARD_TO_VOICES(setVoiceFilterEnvAmount, amt)
+}
+
+#undef INSTRUMENT_FORWARD_TO_VOICES
+
 // ──────────────────────────────────────────
 // Effects chain management
 // ──────────────────────────────────────────
@@ -331,7 +451,6 @@ void Instrument::setEffectParameter(int effectId, const juce::String& paramName,
                         filter->setResonance(value);
                     else if (paramName.equalsIgnoreCase("type"))
                     {
-                        // value: 0 = LowPass, 1 = HighPass, 2 = BandPass
                         int typeInt = static_cast<int>(value);
                         if (typeInt == 0)
                             filter->setFilterType(SimpleFilterProcessor::FilterType::LowPass);
@@ -340,6 +459,54 @@ void Instrument::setEffectParameter(int effectId, const juce::String& paramName,
                         else if (typeInt == 2)
                             filter->setFilterType(SimpleFilterProcessor::FilterType::BandPass);
                     }
+                }
+            }
+            else if (effect->type == EffectType::Chorus)
+            {
+                auto* wrapper = dynamic_cast<ChorusEffectWrapper*>(effect->processor.get());
+                if (wrapper)
+                {
+                    auto* proc = wrapper->getProcessor();
+                    if (paramName.equalsIgnoreCase("rate"))
+                        proc->setRate(value);
+                    else if (paramName.equalsIgnoreCase("depth"))
+                        proc->setDepth(value);
+                    else if (paramName.equalsIgnoreCase("mix"))
+                        proc->setMix(value);
+                    else if (paramName.equalsIgnoreCase("feedback"))
+                        proc->setFeedback(value);
+                }
+            }
+            else if (effect->type == EffectType::Distortion)
+            {
+                auto* wrapper = dynamic_cast<DistortionEffectWrapper*>(effect->processor.get());
+                if (wrapper)
+                {
+                    auto* proc = wrapper->getProcessor();
+                    if (paramName.equalsIgnoreCase("drive"))
+                        proc->setDrive(value);
+                    else if (paramName.equalsIgnoreCase("mix"))
+                        proc->setMix(value);
+                    else if (paramName.equalsIgnoreCase("tone"))
+                        proc->setTone(value);
+                }
+            }
+            else if (effect->type == EffectType::Compressor)
+            {
+                auto* wrapper = dynamic_cast<CompressorEffectWrapper*>(effect->processor.get());
+                if (wrapper)
+                {
+                    auto* proc = wrapper->getProcessor();
+                    if (paramName.equalsIgnoreCase("threshold"))
+                        proc->setThreshold(value);
+                    else if (paramName.equalsIgnoreCase("ratio"))
+                        proc->setRatio(value);
+                    else if (paramName.equalsIgnoreCase("attack"))
+                        proc->setAttack(value);
+                    else if (paramName.equalsIgnoreCase("release"))
+                        proc->setRelease(value);
+                    else if (paramName.equalsIgnoreCase("makeupGain"))
+                        proc->setMakeupGain(value);
                 }
             }
             break;
@@ -387,10 +554,13 @@ std::unique_ptr<Instrument::EffectProcessor> Instrument::createEffect(EffectType
             return std::make_unique<FilterEffectWrapper>();
             
         case EffectType::Chorus:
+            return std::make_unique<ChorusEffectWrapper>();
+
         case EffectType::Distortion:
+            return std::make_unique<DistortionEffectWrapper>();
+
         case EffectType::Compressor:
-            // TODO: Implement these effects
-            return nullptr;
+            return std::make_unique<CompressorEffectWrapper>();
             
         default:
             return nullptr;

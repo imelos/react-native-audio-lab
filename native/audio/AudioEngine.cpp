@@ -365,6 +365,66 @@ void AudioEngine::setVoiceParams(int channel, const BaseOscillatorVoice::VoicePa
     }
 }
 
+void AudioEngine::setOsc2Waveform(int channel, BaseOscillatorVoice::Waveform wf)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Waveform(wf);
+}
+
+void AudioEngine::setOsc2Level(int channel, float level)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Level(level);
+}
+
+void AudioEngine::setOsc2Semi(int channel, int semi)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Semi(semi);
+}
+
+void AudioEngine::setOsc2Detune(int channel, float cents)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Detune(cents);
+}
+
+void AudioEngine::setSubLevel(int channel, float level)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setSubLevel(level);
+}
+
+void AudioEngine::setNoiseLevel(int channel, float level)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setNoiseLevel(level);
+}
+
+void AudioEngine::setVoiceFilterEnabled(int channel, bool enabled)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterEnabled(enabled);
+}
+
+void AudioEngine::setVoiceFilterCutoff(int channel, float hz)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterCutoff(hz);
+}
+
+void AudioEngine::setVoiceFilterResonance(int channel, float res)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterResonance(res);
+}
+
+void AudioEngine::setVoiceFilterEnvAmount(int channel, float amt)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterEnvAmount(amt);
+}
+
 // ──────────────────────────────────────────
 // Common parameter control
 // ──────────────────────────────────────────
