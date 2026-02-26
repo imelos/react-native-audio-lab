@@ -20,6 +20,7 @@ export type RootStackParamList = {
   session: undefined;
   synth: {
     channelId: number;
+    color: string;
   };
 };
 

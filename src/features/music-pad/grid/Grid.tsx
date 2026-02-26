@@ -8,8 +8,8 @@ import { View, StyleSheet, Text } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withTiming,
 } from 'react-native-reanimated';
+import { getTouchTransitions } from './touchTransitions';
 
 function midiToNoteName(midiNote: number): string {
   const noteNames = [
@@ -39,18 +39,19 @@ interface GridPadHandle {
 interface GridPadProps {
   note: number;
   index: number;
+  color: string;
   onLayout: (index: number, event: any) => void;
   isInScale?: boolean;
 }
 
 const GridPad = forwardRef<GridPadHandle, GridPadProps>(
-  ({ note, index, onLayout, isInScale = true }, ref) => {
+  ({ note, index, color, onLayout, isInScale = true }, ref) => {
     const backgroundColor = useSharedValue(0);
     const viewRef = useRef<Animated.View>(null);
 
     useImperativeHandle(ref, () => ({
       setActive: (active: boolean) => {
-        backgroundColor.value = withTiming(active ? 1 : 0, { duration: 0 });
+        backgroundColor.value = active ? 1 : 0;
       },
       view: viewRef.current,
     }));
@@ -58,7 +59,7 @@ const GridPad = forwardRef<GridPadHandle, GridPadProps>(
     const animatedStyle = useAnimatedStyle(() => ({
       backgroundColor:
         backgroundColor.value === 1
-          ? '#6200ee'
+          ? color
           : isInScale
           ? '#2a2a2a'
           : '#1a1a1a',
@@ -87,6 +88,7 @@ export interface GridHandle {
 }
 
 export interface GridProps {
+  color: string;
   gridNotes: number[];
   rows: number;
   cols: number;
@@ -100,6 +102,7 @@ export interface GridProps {
 const Grid = forwardRef<GridHandle, GridProps>(
   (
     {
+      color,
       gridNotes,
       rows,
       cols,
@@ -165,94 +168,71 @@ const Grid = forwardRef<GridHandle, GridProps>(
       [gridNotes],
     );
 
-    const handleTouchStart = useCallback(
-      (event: any) => {
-        const touches = event.nativeEvent.touches;
-
+    const buildTouchNoteMap = useCallback(
+      (touches: any): Map<string, number> => {
+        const next = new Map<string, number>();
         for (let i = 0; i < touches.length; i++) {
           const touch = touches[i];
           const { pageX, pageY, identifier } = touch;
           const note = findNoteAtPosition(pageX, pageY);
-
           if (note !== null) {
-            const touchId = String(identifier);
-
-            if (!touchNotesRef.current.has(touchId)) {
-              setPadActive(note, true);
-              touchNotesRef.current.set(touchId, note);
-              onNoteOn(note, 0.85);
-            }
+            next.set(String(identifier), note);
           }
         }
+        return next;
       },
-      [findNoteAtPosition, setPadActive, onNoteOn],
+      [findNoteAtPosition],
+    );
+
+    const syncTouchState = useCallback(
+      (nextTouchNotes: Map<string, number>) => {
+        const prevTouchNotes = touchNotesRef.current;
+        const { noteOns, noteOffs } = getTouchTransitions(
+          prevTouchNotes,
+          nextTouchNotes,
+        );
+
+        noteOns.forEach(note => {
+          setPadActive(note, true);
+          onNoteOn(note, 0.85);
+        });
+
+        noteOffs.forEach(note => {
+          setPadActive(note, false);
+          onNoteOff(note);
+        });
+
+        touchNotesRef.current = nextTouchNotes;
+      },
+      [setPadActive, onNoteOn, onNoteOff],
+    );
+
+    const handleTouchStart = useCallback(
+      (event: any) => {
+        syncTouchState(buildTouchNoteMap(event.nativeEvent.touches));
+      },
+      [buildTouchNoteMap, syncTouchState],
     );
 
     const handleTouchMove = useCallback(
       (event: any) => {
-        const touches = event.nativeEvent.touches;
-        const currentTouchedNotes = new Map<string, number>();
-
-        for (let i = 0; i < touches.length; i++) {
-          const touch = touches[i];
-          const { pageX, pageY, identifier } = touch;
-          const note = findNoteAtPosition(pageX, pageY);
-
-          if (note !== null) {
-            const touchId = String(identifier);
-            const previousNote = touchNotesRef.current.get(touchId);
-
-            if (previousNote !== note) {
-              if (previousNote !== undefined) {
-                setPadActive(previousNote, false);
-                onNoteOff(previousNote);
-              }
-              setPadActive(note, true);
-              onNoteOn(note, 0.85);
-            }
-
-            currentTouchedNotes.set(touchId, note);
-          }
-        }
-
-        for (const [touchId, note] of touchNotesRef.current.entries()) {
-          if (!currentTouchedNotes.has(touchId)) {
-            setPadActive(note, false);
-            onNoteOff(note);
-          }
-        }
-
-        touchNotesRef.current = currentTouchedNotes;
+        syncTouchState(buildTouchNoteMap(event.nativeEvent.touches));
       },
-      [findNoteAtPosition, setPadActive, onNoteOn, onNoteOff],
+      [buildTouchNoteMap, syncTouchState],
     );
 
     const handleTouchEnd = useCallback(
       (event: any) => {
-        const touches = event.nativeEvent.touches;
-        const remainingTouches = new Map<string, number>();
-
-        for (let i = 0; i < touches.length; i++) {
-          const touch = touches[i];
-          const { pageX, pageY, identifier } = touch;
-          const note = findNoteAtPosition(pageX, pageY);
-
-          if (note !== null) {
-            remainingTouches.set(String(identifier), note);
-          }
-        }
-
-        for (const [touchId, note] of touchNotesRef.current.entries()) {
-          if (!remainingTouches.has(touchId)) {
-            setPadActive(note, false);
-            onNoteOff(note);
-          }
-        }
-
-        touchNotesRef.current = remainingTouches;
+        syncTouchState(buildTouchNoteMap(event.nativeEvent.touches));
       },
-      [findNoteAtPosition, setPadActive, onNoteOff],
+      [buildTouchNoteMap, syncTouchState],
     );
+
+    // When RNGH activates a gesture elsewhere it cancels native touches — clear
+    // all active notes so nothing gets stuck.
+    const handleTouchCancel = useCallback(() => {
+      syncTouchState(new Map());
+    }, [syncTouchState]);
 
     const setGridPadRef = useCallback(
       (index: number, handle: GridPadHandle | null) => {
@@ -277,6 +257,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchCancel}
         >
           {gridRows.reverse().map((rowPads, rowIndex) => (
             <View
@@ -294,6 +275,7 @@ const Grid = forwardRef<GridHandle, GridProps>(
                     key={`${gridSize}-${index}`}
                     note={note}
                     index={index}
+                    color={color}
                     onLayout={measureKey}
                     isInScale={isInScale}
                   />

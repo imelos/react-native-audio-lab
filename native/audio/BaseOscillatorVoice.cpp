@@ -2,19 +2,14 @@
 #include "BaseOscillatorVoice.h"
 #include "BasicSynthSound.h"
 
-// If canPlaySound uses BasicSynthSound → include it here:
-// #include "BasicSynthSound.h"
-
 BaseOscillatorVoice::BaseOscillatorVoice()
 {
-    // Important: do NOT call adsr.setSampleRate(getSampleRate()) here
     // getSampleRate() usually returns 0 at construction time
     // We set it properly later when rendering begins
 }
 
 bool BaseOscillatorVoice::canPlaySound(juce::SynthesiserSound* sound)
 {
-    // Replace with your actual sound class name
     return dynamic_cast<BasicSynthSound*>(sound) != nullptr;
 }
 
@@ -23,13 +18,51 @@ void BaseOscillatorVoice::startNote(int midiNoteNumber,
                                     juce::SynthesiserSound* /*sound*/,
                                     int /*currentPitchWheelPosition*/)
 {
-    freqHz = juce::MidiMessage::getMidiNoteInHertz(midiNoteNumber);
-    freqHz *= std::pow(2.0, detuneCents / 1200.0);
+    double newFreq = juce::MidiMessage::getMidiNoteInHertz(midiNoteNumber);
 
-    phaseDelta = freqHz * juce::MathConstants<double>::twoPi / getSampleRate();
+    // Glide: if glideTime > 0 and a previous note was sounding, glide from old freq
+    if (voiceParams.glideTime > 0.0f && isVoiceActive() && freqHz > 0.0)
+    {
+        targetFreqHz = newFreq;
+        isGliding = true;
+        double sr = getSampleRate();
+        if (sr > 0.0)
+            glideCoeff = std::exp(-1.0 / (voiceParams.glideTime * sr));
+        else
+            glideCoeff = 0.99;
+        // freqHz stays at current value — we glide from it
+    }
+    else
+    {
+        freqHz = newFreq;
+        targetFreqHz = newFreq;
+        isGliding = false;
+    }
 
-    currentPhase = 0.0;
+    // Phase deltas are computed in renderNextBlock so param changes
+    // (e.g. osc2Semi while a note is held) take effect immediately.
+    phase1 = 0.0;
+    phase2 = 0.0;
+    phaseSub = 0.0;
     noteVelocity = velocity;
+
+    // Reset unison phases — spread evenly to avoid constructive-interference
+    // spike on note onset (all-zero phases add coherently).
+    {
+        const int n = juce::jlimit(1, 8, voiceParams.unisonCount);
+        const double step = juce::MathConstants<double>::twoPi / n;
+        for (int i = 0; i < 8; ++i)
+            unisonPhases[i] = (i < n) ? i * step : 0.0;
+    }
+
+    // Reset filter state (both channels)
+    svfIc1eq  = 0.0f;
+    svfIc2eq  = 0.0f;
+    svfIc1eqR = 0.0f;
+    svfIc2eqR = 0.0f;
+
+    // Reset LFO phase
+    lfoPhase = 0.0;
 
     adsr.noteOn();
 }
@@ -44,6 +77,40 @@ void BaseOscillatorVoice::stopNote(float /*velocity*/, bool allowTailOff)
     }
 }
 
+void BaseOscillatorVoice::setUnisonCount(int count)
+{
+    int oldCount = voiceParams.unisonCount;
+    int newCount = juce::jlimit(1, 8, count);
+    voiceParams.unisonCount = newCount;
+
+    if (oldCount == 1 && newCount > 1)
+    {
+        // phase1 has been running while in single-voice mode.
+        // Seed unison phases from phase1 and spread them evenly to avoid
+        // both the discontinuity click and the constructive-interference spike.
+        const double step = juce::MathConstants<double>::twoPi / newCount;
+        for (int i = 0; i < newCount; ++i)
+        {
+            double p = phase1 + i * step;
+            if (p >= juce::MathConstants<double>::twoPi)
+                p -= juce::MathConstants<double>::twoPi;
+            unisonPhases[i] = p;
+        }
+    }
+    else if (oldCount > 1 && newCount > oldCount)
+    {
+        // Adding more voices mid-note: seed new ones spread from voice 0.
+        const double step = juce::MathConstants<double>::twoPi / newCount;
+        for (int i = oldCount; i < newCount; ++i)
+        {
+            double p = unisonPhases[0] + i * step;
+            if (p >= juce::MathConstants<double>::twoPi)
+                p -= juce::MathConstants<double>::twoPi;
+            unisonPhases[i] = p;
+        }
+    }
+}
+
 void BaseOscillatorVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer,
                                           int startSample,
                                           int numSamples)
@@ -51,11 +118,23 @@ void BaseOscillatorVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer
     if (!isVoiceActive())
         return;
 
-    // Update sample rate if it changed (very important!)
     if (getSampleRate() > 0.0)
         adsr.setSampleRate(getSampleRate());
 
     juce::ScopedNoDenormals noDenormals;
+
+    double sr = getSampleRate();
+    double twoPiOverSr = juce::MathConstants<double>::twoPi / sr;
+    const double twoPi = juce::MathConstants<double>::twoPi;
+
+    const bool hasOsc2 = voiceParams.osc2Level > 0.0f;
+    const bool hasSub = voiceParams.subLevel > 0.0f;
+    const bool hasNoise = voiceParams.noiseLevel > 0.0f;
+    const bool hasFilter = voiceParams.filterEnabled;
+    const bool hasLfo = voiceParams.lfoDepth > 0.0f;
+    const int unisonCount = voiceParams.unisonCount;
+    const bool hasUnison = unisonCount > 1;
+    const float unisonGain = hasUnison ? (1.0f / std::sqrt(static_cast<float>(unisonCount))) : 1.0f;
 
     auto* left  = outputBuffer.getWritePointer(0, startSample);
     auto* right = outputBuffer.getNumChannels() > 1 ?
@@ -71,32 +150,174 @@ void BaseOscillatorVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer
             break;
         }
 
-        float osc = getOscValue(currentPhase);
+        // ── Glide: per-sample frequency smoothing ──
+        if (isGliding)
+        {
+            freqHz += (targetFreqHz - freqHz) * (1.0 - glideCoeff);
+            if (std::abs(freqHz - targetFreqHz) < 0.01)
+            {
+                freqHz = targetFreqHz;
+                isGliding = false;
+            }
+        }
 
-        float sample = osc * (noteVelocity * 0.4f) * env;
+        // ── LFO ──
+        float lfoValue = 0.0f;
+        float lfoFilterMod = 0.0f;
+        float lfoVolMod = 1.0f;
+        double lfoFreqMul = 1.0;
+        if (hasLfo)
+        {
+            lfoValue = getOscValue(voiceParams.lfoWaveform, lfoPhase, 0.5f) * voiceParams.lfoDepth;
+            lfoPhase += voiceParams.lfoRate * twoPiOverSr;
+            if (lfoPhase >= twoPi) lfoPhase -= twoPi;
 
-        left[i] += sample;
-        if (right) right[i] += sample;
+            switch (voiceParams.lfoDestination)
+            {
+                case 0: // Pitch: ±200 cents max
+                    lfoFreqMul = std::pow(2.0, static_cast<double>(lfoValue) * 200.0 / 1200.0);
+                    break;
+                case 1: // Filter: passed to applyFilter
+                    lfoFilterMod = lfoValue;
+                    break;
+                case 2: // Volume: tremolo
+                    lfoVolMod = 1.0f + lfoValue;
+                    break;
+            }
+        }
 
-        currentPhase += phaseDelta;
-        if (currentPhase >= juce::MathConstants<double>::twoPi)
-            currentPhase -= juce::MathConstants<double>::twoPi;
+        // ── Compute phase deltas with LFO pitch mod ──
+        double effectiveFreq = freqHz * lfoFreqMul;
+        double freq1 = effectiveFreq * std::pow(2.0, voiceParams.detuneCents1 / 1200.0);
+        phaseDelta1 = freq1 * twoPiOverSr;
+
+        if (hasOsc2)
+        {
+            double freq2 = effectiveFreq * std::pow(2.0, (voiceParams.osc2Semi * 100.0 + voiceParams.detuneCents2) / 1200.0);
+            phaseDelta2 = freq2 * twoPiOverSr;
+        }
+        if (hasSub)
+        {
+            phaseDeltaSub = (freq1 * 0.5) * twoPiOverSr;
+        }
+
+        // ── Osc1 (with optional unison) ──
+        float osc = 0.0f;
+        float oscLeft = 0.0f;
+        float oscRight = 0.0f;
+
+        if (hasUnison)
+        {
+            // Render multiple detuned copies of osc1 with stereo spread
+            float halfSpread = voiceParams.unisonSpread * 0.5f;
+            for (int u = 0; u < unisonCount; ++u)
+            {
+                // Detune: spread evenly from -halfSpread to +halfSpread
+                float detuneOffset = (unisonCount == 1) ? 0.0f :
+                    -halfSpread + (static_cast<float>(u) / static_cast<float>(unisonCount - 1)) * voiceParams.unisonSpread;
+                double uniFreq = freq1 * std::pow(2.0, static_cast<double>(detuneOffset) / 1200.0);
+                double uniDelta = uniFreq * twoPiOverSr;
+
+                float sample = getOscValue(voiceParams.waveform1, unisonPhases[u], voiceParams.pulseWidth) * unisonGain;
+
+                // Stereo pan: distribute voices across stereo field
+                float pan = (unisonCount == 1) ? 0.5f :
+                    static_cast<float>(u) / static_cast<float>(unisonCount - 1); // 0..1
+                oscLeft += sample * (1.0f - pan);
+                oscRight += sample * pan;
+
+                unisonPhases[u] += uniDelta;
+                if (unisonPhases[u] >= twoPi) unisonPhases[u] -= twoPi;
+            }
+        }
+        else
+        {
+            // Single osc1
+            osc = getOscValue(voiceParams.waveform1, phase1, voiceParams.pulseWidth);
+        }
+
+        // Osc2
+        float osc2Sample = 0.0f;
+        if (hasOsc2)
+        {
+            osc2Sample = getOscValue(voiceParams.waveform2, phase2, voiceParams.pulseWidth) * voiceParams.osc2Level;
+        }
+
+        // Sub-oscillator
+        float subSample = 0.0f;
+        if (hasSub)
+        {
+            subSample = getOscValue(Waveform::Sine, phaseSub) * voiceParams.subLevel;
+        }
+
+        // Noise
+        float noiseSample = 0.0f;
+        if (hasNoise)
+        {
+            noiseSample = (noiseRng.nextFloat() * 2.0f - 1.0f) * voiceParams.noiseLevel;
+        }
+
+        // ── Mix and output ──
+        float sampleLeft, sampleRight;
+        if (hasUnison)
+        {
+            float mono = osc2Sample + subSample + noiseSample;
+            sampleLeft = oscLeft + mono;
+            sampleRight = oscRight + mono;
+        }
+        else
+        {
+            float mono = osc + osc2Sample + subSample + noiseSample;
+            sampleLeft = mono;
+            sampleRight = mono;
+        }
+
+        // Per-voice filter
+        if (hasFilter)
+        {
+            sampleLeft  = applyFilter(sampleLeft,  env, svfIc1eq,  svfIc2eq,  lfoFilterMod);
+            if (hasUnison)
+                sampleRight = applyFilter(sampleRight, env, svfIc1eqR, svfIc2eqR, lfoFilterMod);
+            else
+                sampleRight = sampleLeft; // mono path: single filter state, same output
+        }
+
+        float gain = noteVelocity * 0.4f * env * lfoVolMod;
+        sampleLeft *= gain;
+        sampleRight *= gain;
+
+        left[i] += sampleLeft;
+        if (right) right[i] += sampleRight;
+
+        // Advance phases
+        phase1 += phaseDelta1;
+        if (phase1 >= twoPi) phase1 -= twoPi;
+
+        if (hasOsc2)
+        {
+            phase2 += phaseDelta2;
+            if (phase2 >= twoPi) phase2 -= twoPi;
+        }
+
+        if (hasSub)
+        {
+            phaseSub += phaseDeltaSub;
+            if (phaseSub >= twoPi) phaseSub -= twoPi;
+        }
     }
 }
 
 void BaseOscillatorVoice::pitchWheelMoved(int /*newPitchWheelValue*/)
 {
-    // Implement pitch bend if needed later
 }
 
 void BaseOscillatorVoice::controllerMoved(int /*controllerNumber*/, int /*newControllerValue*/)
 {
-    // Implement modulation / controllers if needed later
 }
 
 void BaseOscillatorVoice::setWaveform(Waveform newType)
 {
-    waveform = newType;
+    voiceParams.waveform1 = newType;
 }
 
 void BaseOscillatorVoice::setADSR(const juce::ADSR::Parameters& params)
@@ -106,18 +327,23 @@ void BaseOscillatorVoice::setADSR(const juce::ADSR::Parameters& params)
 
 void BaseOscillatorVoice::setDetune(float cents)
 {
-    detuneCents = cents;
+    voiceParams.detuneCents1 = cents;
 }
 
-float BaseOscillatorVoice::getOscValue(double phase) const
+void BaseOscillatorVoice::setVoiceParams(const VoiceParams& params)
 {
-    switch (waveform)
+    voiceParams = params;
+}
+
+float BaseOscillatorVoice::getOscValue(Waveform wf, double phase, float pulseWidth)
+{
+    switch (wf)
     {
         case Waveform::Sine:
-            return std::sin(phase);
+            return static_cast<float>(std::sin(phase));
 
         case Waveform::Saw:
-            return 2.0f * float(phase / juce::MathConstants<double>::twoPi) - 1.0f;
+            return 2.0f * static_cast<float>(phase / juce::MathConstants<double>::twoPi) - 1.0f;
 
         case Waveform::Square:
             return (phase < juce::MathConstants<double>::pi) ? 1.0f : -1.0f;
@@ -125,10 +351,57 @@ float BaseOscillatorVoice::getOscValue(double phase) const
         case Waveform::Triangle:
             {
                 double norm = phase / juce::MathConstants<double>::twoPi;
-                return 2.0f * std::abs(2.0f * norm - 1.0f) - 1.0f;
+                return 2.0f * std::abs(2.0f * static_cast<float>(norm) - 1.0f) - 1.0f;
             }
+
+        case Waveform::Pulse:
+            return (phase < static_cast<double>(pulseWidth) * juce::MathConstants<double>::twoPi) ? 1.0f : -1.0f;
 
         default:
             return 0.0f;
     }
+}
+
+float BaseOscillatorVoice::applyFilter(float input, float envValue,
+                                       float& ic1eq, float& ic2eq,
+                                       float lfoFilterMod)
+{
+    // Topology-preserving transform (TPT) State Variable Filter
+    // Based on Vadim Zavalishin / Andy Cytomic design — unconditionally stable
+    // at all cutoff and resonance values.
+
+    float modulatedCutoff = voiceParams.filterCutoff *
+        (1.0f + voiceParams.filterEnvAmount * envValue);
+
+    // Apply LFO filter modulation (±3 octaves)
+    if (lfoFilterMod != 0.0f)
+    {
+        modulatedCutoff *= std::pow(2.0f, lfoFilterMod * 3.0f);
+    }
+
+    float sr = static_cast<float>(getSampleRate());
+    modulatedCutoff = juce::jlimit(20.0f, sr * 0.49f, modulatedCutoff);
+
+    // g = tan(pi * fc / fs) — pre-warped cutoff coefficient
+    float g = std::tan(juce::MathConstants<float>::pi * modulatedCutoff / sr);
+
+    // k = damping factor: k = 2 - 2*resonance gives range [2..0]
+    // k=2 is no resonance, k→0 is self-oscillation. We clamp at 0.1 for safety.
+    float k = juce::jlimit(0.1f, 2.0f, 2.0f * (1.0f - voiceParams.filterResonance));
+
+    // Coefficients
+    float a1 = 1.0f / (1.0f + g * (g + k));
+    float a2 = g * a1;
+    float a3 = g * a2;
+
+    // Tick the SVF
+    float v3 = input - ic2eq;
+    float v1 = a1 * ic1eq + a2 * v3;
+    float v2 = ic2eq + a2 * ic1eq + a3 * v3;
+
+    ic1eq = 2.0f * v1 - ic1eq;
+    ic2eq = 2.0f * v2 - ic2eq;
+
+    // v2 = lowpass output
+    return v2;
 }

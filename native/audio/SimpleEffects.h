@@ -308,3 +308,261 @@ private:
     FilterType filterType;
     double sampleRate;
 };
+
+// ══════════════════════════════════════════════════════════════════════
+// Simple Chorus Effect (wraps juce::dsp::Chorus)
+// ══════════════════════════════════════════════════════════════════════
+class SimpleChorusProcessor
+{
+public:
+    SimpleChorusProcessor()
+        : rate(1.0f)
+        , depth(0.25f)
+        , mix(0.5f)
+        , feedback(0.0f)
+        , sampleRate(44100.0)
+    {
+    }
+
+    void prepareToPlay(double sr, int samplesPerBlock)
+    {
+        sampleRate = sr;
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = sr;
+        spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
+        spec.numChannels = 2;
+
+        chorus.prepare(spec);
+        chorus.reset();
+
+        chorus.setRate(rate);
+        chorus.setDepth(depth);
+        chorus.setMix(mix);
+        chorus.setFeedback(feedback);
+        chorus.setCentreDelay(7.0f);
+    }
+
+    void releaseResources()
+    {
+        chorus.reset();
+    }
+
+    void processBlock(juce::AudioBuffer<float>& buffer)
+    {
+        juce::dsp::AudioBlock<float> block(buffer);
+        juce::dsp::ProcessContextReplacing<float> context(block);
+        chorus.process(context);
+    }
+
+    void setRate(float r)
+    {
+        rate = juce::jlimit(0.1f, 10.0f, r);
+        chorus.setRate(rate);
+    }
+
+    void setDepth(float d)
+    {
+        depth = juce::jlimit(0.0f, 1.0f, d);
+        chorus.setDepth(depth);
+    }
+
+    void setMix(float m)
+    {
+        mix = juce::jlimit(0.0f, 1.0f, m);
+        chorus.setMix(mix);
+    }
+
+    void setFeedback(float fb)
+    {
+        feedback = juce::jlimit(-0.95f, 0.95f, fb);
+        chorus.setFeedback(feedback);
+    }
+
+private:
+    juce::dsp::Chorus<float> chorus;
+    float rate;
+    float depth;
+    float mix;
+    float feedback;
+    double sampleRate;
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// Simple Distortion Effect (tanh soft-clip waveshaper)
+// ══════════════════════════════════════════════════════════════════════
+class SimpleDistortionProcessor
+{
+public:
+    SimpleDistortionProcessor()
+        : drive(1.0f)
+        , mix(0.5f)
+        , tone(0.5f)
+        , sampleRate(44100.0)
+        , toneFilterZ1L(0.0f)
+        , toneFilterZ1R(0.0f)
+    {
+    }
+
+    void prepareToPlay(double sr, int /*samplesPerBlock*/)
+    {
+        sampleRate = sr;
+        toneFilterZ1L = 0.0f;
+        toneFilterZ1R = 0.0f;
+    }
+
+    void releaseResources()
+    {
+        toneFilterZ1L = 0.0f;
+        toneFilterZ1R = 0.0f;
+    }
+
+    void processBlock(juce::AudioBuffer<float>& buffer)
+    {
+        const int numChannels = buffer.getNumChannels();
+        const int numSamples = buffer.getNumSamples();
+        if (numChannels < 1 || numSamples == 0)
+            return;
+
+        // Tone filter coefficient (simple one-pole lowpass)
+        // tone=0 → very dark (coeff≈0.01), tone=1 → bright (coeff=1.0, bypass)
+        float coeff = 0.01f + tone * 0.99f;
+
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            auto* data = buffer.getWritePointer(ch);
+            float& z1 = (ch == 0) ? toneFilterZ1L : toneFilterZ1R;
+
+            for (int i = 0; i < numSamples; ++i)
+            {
+                float dry = data[i];
+
+                // Apply drive + tanh soft clip
+                float driven = std::tanh(dry * drive);
+
+                // Tone filter (one-pole lowpass on distorted signal)
+                z1 += coeff * (driven - z1);
+                float wet = z1;
+
+                // Mix dry/wet
+                data[i] = dry * (1.0f - mix) + wet * mix;
+            }
+        }
+    }
+
+    void setDrive(float d)
+    {
+        drive = juce::jlimit(1.0f, 100.0f, d);
+    }
+
+    void setMix(float m)
+    {
+        mix = juce::jlimit(0.0f, 1.0f, m);
+    }
+
+    void setTone(float t)
+    {
+        tone = juce::jlimit(0.0f, 1.0f, t);
+    }
+
+private:
+    float drive;
+    float mix;
+    float tone;
+    double sampleRate;
+    float toneFilterZ1L;
+    float toneFilterZ1R;
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// Simple Compressor Effect (wraps juce::dsp::Compressor)
+// ══════════════════════════════════════════════════════════════════════
+class SimpleCompressorProcessor
+{
+public:
+    SimpleCompressorProcessor()
+        : threshold(-20.0f)
+        , ratio(4.0f)
+        , attackMs(10.0f)
+        , releaseMs(100.0f)
+        , makeupGain(0.0f)
+        , sampleRate(44100.0)
+    {
+    }
+
+    void prepareToPlay(double sr, int samplesPerBlock)
+    {
+        sampleRate = sr;
+        juce::dsp::ProcessSpec spec;
+        spec.sampleRate = sr;
+        spec.maximumBlockSize = static_cast<juce::uint32>(samplesPerBlock);
+        spec.numChannels = 2;
+
+        compressor.prepare(spec);
+        compressor.reset();
+
+        compressor.setThreshold(threshold);
+        compressor.setRatio(ratio);
+        compressor.setAttack(attackMs);
+        compressor.setRelease(releaseMs);
+
+        makeupGainLinear = juce::Decibels::decibelsToGain(makeupGain);
+    }
+
+    void releaseResources()
+    {
+        compressor.reset();
+    }
+
+    void processBlock(juce::AudioBuffer<float>& buffer)
+    {
+        juce::dsp::AudioBlock<float> block(buffer);
+        juce::dsp::ProcessContextReplacing<float> context(block);
+        compressor.process(context);
+
+        // Apply makeup gain
+        if (makeupGainLinear != 1.0f)
+        {
+            buffer.applyGain(makeupGainLinear);
+        }
+    }
+
+    void setThreshold(float dB)
+    {
+        threshold = juce::jlimit(-60.0f, 0.0f, dB);
+        compressor.setThreshold(threshold);
+    }
+
+    void setRatio(float r)
+    {
+        ratio = juce::jlimit(1.0f, 20.0f, r);
+        compressor.setRatio(ratio);
+    }
+
+    void setAttack(float ms)
+    {
+        attackMs = juce::jlimit(0.1f, 100.0f, ms);
+        compressor.setAttack(attackMs);
+    }
+
+    void setRelease(float ms)
+    {
+        releaseMs = juce::jlimit(10.0f, 1000.0f, ms);
+        compressor.setRelease(releaseMs);
+    }
+
+    void setMakeupGain(float dB)
+    {
+        makeupGain = juce::jlimit(0.0f, 40.0f, dB);
+        makeupGainLinear = juce::Decibels::decibelsToGain(makeupGain);
+    }
+
+private:
+    juce::dsp::Compressor<float> compressor;
+    float threshold;
+    float ratio;
+    float attackMs;
+    float releaseMs;
+    float makeupGain;
+    float makeupGainLinear = 1.0f;
+    double sampleRate;
+};

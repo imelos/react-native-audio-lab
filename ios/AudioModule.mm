@@ -6,6 +6,15 @@
 #import "JuceInitializer.h"
 #import <Foundation/Foundation.h>
 
+static BaseOscillatorVoice::Waveform waveformFromString(NSString *str) {
+    NSString *lower = [str lowercaseString];
+    if ([lower isEqualToString:@"saw"]) return BaseOscillatorVoice::Waveform::Saw;
+    if ([lower isEqualToString:@"square"]) return BaseOscillatorVoice::Waveform::Square;
+    if ([lower isEqualToString:@"triangle"]) return BaseOscillatorVoice::Waveform::Triangle;
+    if ([lower isEqualToString:@"pulse"]) return BaseOscillatorVoice::Waveform::Pulse;
+    return BaseOscillatorVoice::Waveform::Sine;
+}
+
 @implementation AudioModule
 
 - (instancetype)init {
@@ -63,28 +72,19 @@
 // Instrument Management
 // ────────────────────────────────────────────────
 
-- (void)createOscillatorInstrument:(double)channel
-                              name:(NSString *)name
-                         polyphony:(double)polyphony
-                          waveform:(NSString *)waveform {
-    if (!_audioEngine) return;
-    
+- (NSNumber *)createOscillatorInstrument:(double)channel
+                                    name:(NSString *)name
+                               polyphony:(double)polyphony
+                                waveform:(NSString *)waveform {
+    if (!_audioEngine) return @NO;
+
     Config config;
     config.polyphony = static_cast<int>(polyphony);
     config.name = juce::String([name UTF8String]);
-    
-    NSString *lowerWaveform = [waveform lowercaseString];
-    if ([lowerWaveform isEqualToString:@"sine"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Sine;
-    } else if ([lowerWaveform isEqualToString:@"saw"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Saw;
-    } else if ([lowerWaveform isEqualToString:@"square"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Square;
-    } else if ([lowerWaveform isEqualToString:@"triangle"]) {
-        config.waveform = BaseOscillatorVoice::Waveform::Triangle;
-    }
-    
-    _audioEngine->createOscillatorInstrument(static_cast<int>(channel), config);
+    config.waveform = waveformFromString(waveform);
+
+    bool ok = _audioEngine->createOscillatorInstrument(static_cast<int>(channel), config);
+    return @(ok);
 }
 
 - (void)createMultiSamplerInstrument:(double)channel
@@ -286,22 +286,7 @@
 - (void)setWaveform:(double)channel
                type:(NSString *)type {
     if (!_audioEngine) return;
-    
-    NSString *lowerType = [type lowercaseString];
-    
-    if ([lowerType isEqualToString:@"sine"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Sine);
-    } else if ([lowerType isEqualToString:@"saw"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Saw);
-    } else if ([lowerType isEqualToString:@"square"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Square);
-    } else if ([lowerType isEqualToString:@"triangle"]) {
-        _audioEngine->setWaveform(static_cast<int>(channel),
-                                 BaseOscillatorVoice::Waveform::Triangle);
-    }
+    _audioEngine->setWaveform(static_cast<int>(channel), waveformFromString(type));
 }
 
 - (void)setDetune:(double)channel
@@ -309,6 +294,140 @@
     if (_audioEngine) {
         _audioEngine->setDetune(static_cast<int>(channel),
                                static_cast<float>(cents));
+    }
+}
+
+// ────────────────────────────────────────────────
+// Individual Per-Voice Parameters
+// ────────────────────────────────────────────────
+
+- (void)setOsc2Waveform:(double)channel
+               waveform:(NSString *)waveform {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Waveform(static_cast<int>(channel), waveformFromString(waveform));
+    }
+}
+
+- (void)setOsc2Level:(double)channel
+               level:(double)level {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Level(static_cast<int>(channel), static_cast<float>(level));
+    }
+}
+
+- (void)setOsc2Semi:(double)channel
+               semi:(double)semi {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Semi(static_cast<int>(channel), static_cast<int>(semi));
+    }
+}
+
+- (void)setOsc2Detune:(double)channel
+                cents:(double)cents {
+    if (_audioEngine) {
+        _audioEngine->setOsc2Detune(static_cast<int>(channel), static_cast<float>(cents));
+    }
+}
+
+- (void)setSubLevel:(double)channel
+              level:(double)level {
+    if (_audioEngine) {
+        _audioEngine->setSubLevel(static_cast<int>(channel), static_cast<float>(level));
+    }
+}
+
+- (void)setNoiseLevel:(double)channel
+                level:(double)level {
+    if (_audioEngine) {
+        _audioEngine->setNoiseLevel(static_cast<int>(channel), static_cast<float>(level));
+    }
+}
+
+- (void)setVoiceFilterEnabled:(double)channel
+                      enabled:(BOOL)enabled {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterEnabled(static_cast<int>(channel), enabled);
+    }
+}
+
+- (void)setVoiceFilterCutoff:(double)channel
+                      cutoff:(double)cutoff {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterCutoff(static_cast<int>(channel), static_cast<float>(cutoff));
+    }
+}
+
+- (void)setVoiceFilterResonance:(double)channel
+                      resonance:(double)resonance {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterResonance(static_cast<int>(channel), static_cast<float>(resonance));
+    }
+}
+
+- (void)setVoiceFilterEnvAmount:(double)channel
+                         amount:(double)amount {
+    if (_audioEngine) {
+        _audioEngine->setVoiceFilterEnvAmount(static_cast<int>(channel), static_cast<float>(amount));
+    }
+}
+
+// ────────────────────────────────────────────────
+// Advanced Synthesis Parameters
+// ────────────────────────────────────────────────
+
+- (void)setPulseWidth:(double)channel
+                width:(double)width {
+    if (_audioEngine) {
+        _audioEngine->setPulseWidth(static_cast<int>(channel), static_cast<float>(width));
+    }
+}
+
+- (void)setUnisonCount:(double)channel
+                 count:(double)count {
+    if (_audioEngine) {
+        _audioEngine->setUnisonCount(static_cast<int>(channel), static_cast<int>(count));
+    }
+}
+
+- (void)setUnisonSpread:(double)channel
+                 spread:(double)spread {
+    if (_audioEngine) {
+        _audioEngine->setUnisonSpread(static_cast<int>(channel), static_cast<float>(spread));
+    }
+}
+
+- (void)setGlideTime:(double)channel
+              seconds:(double)seconds {
+    if (_audioEngine) {
+        _audioEngine->setGlideTime(static_cast<int>(channel), static_cast<float>(seconds));
+    }
+}
+
+- (void)setLfoRate:(double)channel
+              rate:(double)rate {
+    if (_audioEngine) {
+        _audioEngine->setLfoRate(static_cast<int>(channel), static_cast<float>(rate));
+    }
+}
+
+- (void)setLfoDepth:(double)channel
+              depth:(double)depth {
+    if (_audioEngine) {
+        _audioEngine->setLfoDepth(static_cast<int>(channel), static_cast<float>(depth));
+    }
+}
+
+- (void)setLfoDestination:(double)channel
+              destination:(double)destination {
+    if (_audioEngine) {
+        _audioEngine->setLfoDestination(static_cast<int>(channel), static_cast<int>(destination));
+    }
+}
+
+- (void)setLfoWaveform:(double)channel
+              waveform:(NSString *)waveform {
+    if (_audioEngine) {
+        _audioEngine->setLfoWaveform(static_cast<int>(channel), waveformFromString(waveform));
     }
 }
 
@@ -341,8 +460,6 @@
     }
     
     int effectId = _audioEngine->addEffect(static_cast<int>(channel), effectType);
-    NSLog(@"[AudioModule] Added effect '%@' to channel %d with ID %d", type, (int)channel, effectId);
-    
     return @(effectId);
 }
 
@@ -380,6 +497,71 @@
                                         juce::String([paramName UTF8String]),
                                         static_cast<float>(value));
     }
+}
+
+// ────────────────────────────────────────────────
+// Preset Application
+// ────────────────────────────────────────────────
+
+- (void)applyPreset:(double)channel
+          waveform1:(NSString *)waveform1
+        detuneCents1:(double)detuneCents1
+          waveform2:(NSString *)waveform2
+        detuneCents2:(double)detuneCents2
+           osc2Level:(double)osc2Level
+            osc2Semi:(double)osc2Semi
+            subLevel:(double)subLevel
+          noiseLevel:(double)noiseLevel
+       filterEnabled:(BOOL)filterEnabled
+        filterCutoff:(double)filterCutoff
+     filterResonance:(double)filterResonance
+     filterEnvAmount:(double)filterEnvAmount
+              attack:(double)attack
+               decay:(double)decay
+             sustain:(double)sustain
+             release:(double)release
+              volume:(double)volume
+          pulseWidth:(double)pulseWidth
+         unisonCount:(double)unisonCount
+        unisonSpread:(double)unisonSpread
+           glideTime:(double)glideTime
+             lfoRate:(double)lfoRate
+            lfoDepth:(double)lfoDepth
+      lfoDestination:(double)lfoDestination
+         lfoWaveform:(NSString *)lfoWaveform {
+    if (!_audioEngine) return;
+
+    int ch = static_cast<int>(channel);
+
+    BaseOscillatorVoice::VoiceParams params;
+    params.waveform1 = waveformFromString(waveform1);
+    params.detuneCents1 = static_cast<float>(detuneCents1);
+    params.waveform2 = waveformFromString(waveform2);
+    params.detuneCents2 = static_cast<float>(detuneCents2);
+    params.osc2Level = static_cast<float>(osc2Level);
+    params.osc2Semi = static_cast<int>(osc2Semi);
+    params.subLevel = static_cast<float>(subLevel);
+    params.noiseLevel = static_cast<float>(noiseLevel);
+    params.filterEnabled = filterEnabled;
+    params.filterCutoff = static_cast<float>(filterCutoff);
+    params.filterResonance = static_cast<float>(filterResonance);
+    params.filterEnvAmount = static_cast<float>(filterEnvAmount);
+    params.pulseWidth = static_cast<float>(pulseWidth);
+    params.unisonCount = static_cast<int>(unisonCount);
+    params.unisonSpread = static_cast<float>(unisonSpread);
+    params.glideTime = static_cast<float>(glideTime);
+    params.lfoRate = static_cast<float>(lfoRate);
+    params.lfoDepth = static_cast<float>(lfoDepth);
+    params.lfoDestination = static_cast<int>(lfoDestination);
+    params.lfoWaveform = waveformFromString(lfoWaveform);
+
+    _audioEngine->setVoiceParams(ch, params);
+    _audioEngine->setADSR(ch,
+                          static_cast<float>(attack),
+                          static_cast<float>(decay),
+                          static_cast<float>(sustain),
+                          static_cast<float>(release));
+    _audioEngine->setVolume(ch, static_cast<float>(volume));
 }
 
 // ────────────────────────────────────────────────

@@ -6,12 +6,12 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
-import {
-  NoteRepeatMode,
-  NOTE_REPEAT_MODES,
-} from './hooks/useNoteRepeat';
+import { NoteRepeatMode, NOTE_REPEAT_MODES } from './hooks/useNoteRepeat';
+
+import Animated, { SlideInLeft } from 'react-native-reanimated';
 
 interface NoteRepeatSelectorProps {
+  color: string;
   mode: NoteRepeatMode;
   visible: boolean;
   onSelect: (mode: NoteRepeatMode) => void;
@@ -19,6 +19,7 @@ interface NoteRepeatSelectorProps {
 }
 
 export default function NoteRepeatSelector({
+  color,
   mode,
   visible,
   onSelect,
@@ -27,7 +28,11 @@ export default function NoteRepeatSelector({
   if (!visible) return null;
 
   return (
-    <View style={styles.overlay} pointerEvents="box-none">
+    <Animated.View
+      style={styles.overlay}
+      pointerEvents="box-none"
+      entering={SlideInLeft.duration(100)}
+    >
       {/* Backdrop — tap to close */}
       <Pressable style={styles.backdrop} onPress={onClose} />
 
@@ -39,7 +44,10 @@ export default function NoteRepeatSelector({
           return (
             <TouchableOpacity
               key={m}
-              style={[styles.modeButton, isActive && styles.activeModeButton]}
+              style={[
+                styles.modeButton,
+                isActive && { backgroundColor: color },
+              ]}
               onPress={() => {
                 onSelect(m);
                 onClose();
@@ -54,7 +62,7 @@ export default function NoteRepeatSelector({
           );
         })}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -70,8 +78,9 @@ const styles = StyleSheet.create({
   panel: {
     width: 72,
     backgroundColor: '#1a1a1a',
-    borderRightWidth: 1,
-    borderRightColor: '#333',
+    borderWidth: 1,
+    borderRadius: 4,
+    borderColor: '#333',
     paddingVertical: 8,
     paddingHorizontal: 4,
     justifyContent: 'center',
@@ -91,9 +100,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
   },
-  activeModeButton: {
-    backgroundColor: '#6200ee',
-  },
+  activeModeButton: {},
   modeText: {
     color: '#888',
     fontSize: 14,

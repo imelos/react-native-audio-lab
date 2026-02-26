@@ -12,6 +12,7 @@ struct Config
 {
     int polyphony = 16;
     BaseOscillatorVoice::Waveform waveform = BaseOscillatorVoice::Waveform::Sine;
+    BaseOscillatorVoice::VoiceParams voiceParams;
     juce::ADSR::Parameters adsrParams { 0.01f, 0.1f, 0.8f, 0.3f };
     float volume = 0.7f;
     float pan = 0.5f;  // 0.0 = left, 0.5 = center, 1.0 = right
@@ -49,7 +50,30 @@ public:
     void setVolume(float volume);  // 0.0 to 1.0
     void setPan(float pan);        // 0.0 (left) to 1.0 (right)
     void setDetune(float cents);
-    
+    void setVoiceParams(const BaseOscillatorVoice::VoiceParams& params);
+
+    // Individual per-voice parameter forwarding
+    void setOsc2Waveform(BaseOscillatorVoice::Waveform wf);
+    void setOsc2Level(float level);
+    void setOsc2Semi(int semi);
+    void setOsc2Detune(float cents);
+    void setSubLevel(float level);
+    void setNoiseLevel(float level);
+    void setVoiceFilterEnabled(bool enabled);
+    void setVoiceFilterCutoff(float hz);
+    void setVoiceFilterResonance(float res);
+    void setVoiceFilterEnvAmount(float amt);
+
+    // New synthesis features
+    void setPulseWidth(float pw);
+    void setUnisonCount(int count);
+    void setUnisonSpread(float spread);
+    void setGlideTime(float seconds);
+    void setLfoRate(float rate);
+    void setLfoDepth(float depth);
+    void setLfoDestination(int dest);
+    void setLfoWaveform(BaseOscillatorVoice::Waveform wf);
+
     // ──────────────────────────────────────────
     // Effects chain management
     // ──────────────────────────────────────────
@@ -123,12 +147,13 @@ private:
     Config config;
     juce::Synthesiser synth;
     std::vector<std::unique_ptr<Effect>> effectsChain;
-    
+    juce::SpinLock effectsLock;  // Protects effectsChain (audio-thread safe)
+
     double currentSampleRate = 44100.0;
     int currentBlockSize = 512;
-    
+
     int nextEffectId = 1;
-    
+
     // Temporary buffers for effects processing
     juce::AudioBuffer<float> effectsBuffer;
     juce::MidiBuffer emptyMidiBuffer;  // For effects that need MIDI input

@@ -1,6 +1,12 @@
 import performance from 'react-native-performance';
 import NativeAudioModule from '../../../specs/NativeAudioModule';
 import type { LoopSequence, NoteEvent } from '../utils/loopUtils';
+import {
+  computeLoopTime,
+  findNextEventIndex,
+  getRecordingTimelineContext,
+  normalizeRecordedTimestamp,
+} from '../engine/sequencer/timing';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -25,11 +31,29 @@ interface ChannelState {
   activeNotes: Set<number>;
   eventIndex: number;
   lastLoopTime: number;
+  // Clip launch state
+  clipLaunched: boolean;
+  playbackStartTime: number;
+  queuedLaunchTime: number | null;
+  queuedLaunchSequence: LoopSequence | null;
+  queuedStopTime: number | null;
   // Recording
   isRecording: boolean;
   recordingStartTime: number;
-  recordingLoopOffset: number; // where in the master loop recording started
+  recordingLoopOffset: number; // where in the active recording timeline we started
+  recordingTimelineDuration: number; // seq.duration for overdub, else masterDuration
   recordedEvents: NoteEvent[];
+}
+
+export interface ChannelPlaybackSnapshot {
+  hasSequence: boolean;
+  isLaunched: boolean;
+  isPlayingNow: boolean;
+  isQueuedToLaunch: boolean;
+  isQueuedToStop: boolean;
+  loopTimeMs: number;
+  loopDurationMs: number;
+  progress: number;
 }
 
 export type TransportState = 'stopped' | 'playing';
@@ -45,6 +69,8 @@ const NO_OP_DELEGATE: ChannelDelegate = {
   onTick() {},
   onLoopWrap() {},
 };
+
+const DEFAULT_LAUNCH_QUANTIZATION_MS = 2000; // 1 bar @ 120 BPM
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
@@ -88,9 +114,15 @@ class GlobalSequencer {
       activeNotes: new Set(),
       eventIndex: 0,
       lastLoopTime: -1,
+      clipLaunched: false,
+      playbackStartTime: 0,
+      queuedLaunchTime: null,
+      queuedLaunchSequence: null,
+      queuedStopTime: null,
       isRecording: false,
       recordingStartTime: 0,
       recordingLoopOffset: 0,
+      recordingTimelineDuration: 0,
       recordedEvents: [],
     });
   }
@@ -98,8 +130,7 @@ class GlobalSequencer {
   unregisterChannel(channel: number): void {
     const state = this.channels.get(channel);
     if (!state) return;
-    // Silence anything still ringing
-    state.activeNotes.forEach(n => NativeAudioModule.noteOff(channel, n));
+    this.silenceChannel(channel, state);
     this.channels.delete(channel);
     if (this.channels.size === 0) this.stop();
   }
@@ -118,20 +149,61 @@ class GlobalSequencer {
     const state = this.channels.get(channel);
     if (!state) return;
 
+    const hadSequence = !!state.sequence;
+
+    // Sequence replacement/removal must silence any currently playing notes
+    // for this channel, otherwise notes can hang while transport continues.
+    this.silenceChannel(channel, state);
+
     if (sequence) {
-      // Ensure sorted for cursor-based playback.
-      // noteOff MUST come before noteOn at the same timestamp — otherwise
-      // pairNotes creates zero-length ghost notes when a note ends and
-      // restarts at the same grid boundary (repeat mode chords).
-      sequence.events = [...sequence.events].sort(
-        (a, b) =>
-          a.timestamp - b.timestamp ||
-          (a.type === 'noteOff' ? -1 : 1),
-      );
+      this.sortSequenceEvents(sequence);
     }
+
     state.sequence = sequence;
-    state.eventIndex = 0;
-    state.lastLoopTime = -1;
+    state.queuedLaunchSequence = null;
+
+    if (!sequence) {
+      state.clipLaunched = false;
+      state.playbackStartTime = 0;
+      state.queuedLaunchTime = null;
+      state.queuedStopTime = null;
+      state.eventIndex = 0;
+      state.lastLoopTime = -1;
+      this.recalcMasterDuration();
+      this.channelSequenceListeners.forEach(fn => fn(channel, sequence));
+      return;
+    }
+
+    if (!hadSequence) {
+      // New clips default to launched so first recording behaves as before.
+      state.clipLaunched = true;
+      state.playbackStartTime =
+        this._transportState === 'playing'
+          ? this.globalStartTime
+          : performance.now();
+      state.queuedLaunchTime = null;
+      state.queuedStopTime = null;
+    }
+
+    // While transport is running, replacing a launched sequence must NOT replay
+    // events that are already in the past for the current loop position.
+    if (
+      this._transportState === 'playing' &&
+      state.clipLaunched &&
+      sequence.duration > 0
+    ) {
+      const loopTime = computeLoopTime(
+        performance.now(),
+        this.getChannelPlaybackStartTime(state),
+        sequence.duration,
+      );
+      state.lastLoopTime = loopTime;
+      state.eventIndex = findNextEventIndex(sequence.events, loopTime);
+    } else {
+      state.eventIndex = 0;
+      state.lastLoopTime = -1;
+    }
+
     this.recalcMasterDuration();
     this.channelSequenceListeners.forEach(fn => fn(channel, sequence));
   }
@@ -152,6 +224,108 @@ class GlobalSequencer {
     return this.masterDuration;
   }
 
+  // ── Clip launch / stop (Ableton-style channel behavior) ────────────────
+
+  launchChannelClip(channel: number): void {
+    const state = this.channels.get(channel);
+    if (!state?.sequence) return;
+    this.launchChannelSequence(channel, state.sequence);
+  }
+
+  launchChannelSequence(channel: number, sequence: LoopSequence): void {
+    const state = this.channels.get(channel);
+    if (!state) return;
+
+    this.sortSequenceEvents(sequence);
+
+    if (this._transportState !== 'playing') {
+      if (state.sequence !== sequence) {
+        this.setSequence(channel, sequence);
+      }
+      state.clipLaunched = true;
+      state.playbackStartTime = performance.now();
+      state.queuedLaunchTime = null;
+      state.queuedLaunchSequence = null;
+      state.queuedStopTime = null;
+      state.eventIndex = 0;
+      state.lastLoopTime = -1;
+      this.play();
+      return;
+    }
+
+    const triggerAt = this.getNextGridTime(
+      this.getLaunchQuantizationMs(state.sequence),
+    );
+
+    // Relaunch behavior: any currently sounding clip on this channel
+    // is stopped exactly at the same quantized boundary as the relaunch.
+    state.queuedStopTime =
+      state.clipLaunched || state.queuedLaunchTime != null
+        ? triggerAt
+        : null;
+    state.queuedLaunchTime = triggerAt;
+    state.queuedLaunchSequence = sequence;
+  }
+
+  stopChannelClips(channel: number): void {
+    const state = this.channels.get(channel);
+    if (!state) return;
+
+    // Stop should always cancel any pending launch.
+    state.queuedLaunchTime = null;
+    state.queuedLaunchSequence = null;
+
+    if (!state.sequence || this._transportState !== 'playing') {
+      this.forceStopChannel(channel, state);
+      return;
+    }
+
+    if (!state.clipLaunched) {
+      state.queuedStopTime = null;
+      return;
+    }
+
+    state.queuedStopTime = this.getNextGridTime(
+      this.getLaunchQuantizationMs(state.sequence),
+    );
+  }
+
+  getChannelPlaybackSnapshot(channel: number): ChannelPlaybackSnapshot {
+    const state = this.channels.get(channel);
+    const sequence = state?.sequence ?? null;
+    const hasSequence = sequence != null;
+    const isLaunched = !!state?.clipLaunched && hasSequence;
+    const isPlayingNow = isLaunched && this._transportState === 'playing';
+    const loopDurationMs = sequence?.duration ?? 0;
+
+    let loopTimeMs = 0;
+    if (isPlayingNow && loopDurationMs > 0 && state) {
+      loopTimeMs = computeLoopTime(
+        performance.now(),
+        this.getChannelPlaybackStartTime(state),
+        loopDurationMs,
+      );
+    } else if (isLaunched && loopDurationMs > 0 && state && state.lastLoopTime >= 0) {
+      loopTimeMs = state.lastLoopTime;
+    }
+
+    const progress =
+      loopDurationMs > 0
+        ? Math.max(0, Math.min(1, loopTimeMs / loopDurationMs))
+        : 0;
+
+    return {
+      hasSequence,
+      isLaunched,
+      isPlayingNow,
+      isQueuedToLaunch: state?.queuedLaunchTime != null,
+      isQueuedToStop: state?.queuedStopTime != null,
+      loopTimeMs,
+      loopDurationMs,
+      progress,
+    };
+  }
+
   // ── Recording helpers (per-channel) ──────────────────────────────────────
 
   startRecording(channel: number): void {
@@ -161,13 +335,22 @@ class GlobalSequencer {
     s.recordingStartTime = performance.now();
     s.recordedEvents = [];
 
-    // Capture where in the master loop we are so recorded events
-    // can be placed at the correct loop-relative position
-    if (this._transportState === 'playing' && this.masterDuration > 0) {
-      const elapsed = performance.now() - this.globalStartTime;
-      s.recordingLoopOffset = elapsed % this.masterDuration;
-    } else {
-      s.recordingLoopOffset = 0;
+    // Capture where in the active timeline we are so recorded events can
+    // be placed at the correct loop-relative position when recording stops.
+    const now = performance.now();
+    const timelineStartTime = s.sequence
+      ? this.getChannelPlaybackStartTime(s)
+      : this.globalStartTime;
+    const timeline = getRecordingTimelineContext({
+      isPlaying: this._transportState === 'playing',
+      now,
+      globalStartTime: timelineStartTime,
+      sequenceDuration: s.sequence?.duration ?? 0,
+      masterDuration: this.masterDuration,
+    });
+    s.recordingTimelineDuration = timeline.duration;
+    s.recordingLoopOffset = timeline.offset;
+    if (timeline.duration === 0) {
       // Start the RAF loop so delegates receive onTick during recording
       // even when no sequence is playing yet.
       this.ensureRAF();
@@ -179,13 +362,30 @@ class GlobalSequencer {
     if (!s) return [];
     s.isRecording = false;
     const offset = s.recordingLoopOffset;
-    // Offset events so they're loop-aligned (e.g. if recording started at
-    // 2000ms into a 4000ms loop, a note played immediately gets timestamp 2000ms)
-    const evts = s.recordedEvents.map(e => ({
-      ...e,
-      timestamp: e.timestamp + offset,
-    }));
+    const timelineDuration = s.recordingTimelineDuration;
+    // Offset events so they're timeline-aligned (sequence timeline for overdub,
+    // master timeline for first-take while transport is running).
+    let lastTimestamp = -Infinity;
+    const evts = s.recordedEvents.map(e => {
+      let timestamp = e.timestamp + offset;
+
+      // Keep timestamps monotonic in recording order. This preserves pairs
+      // that cross loop boundaries (e.g. first note starts before the
+      // recording offset and ends after it) so they are not dropped later.
+      if (timelineDuration > 0) {
+        while (timestamp < lastTimestamp - 1) {
+          timestamp += timelineDuration;
+        }
+      }
+      lastTimestamp = timestamp;
+
+      return {
+        ...e,
+        timestamp,
+      };
+    });
     s.recordedEvents = [];
+    s.recordingTimelineDuration = 0;
 
     // Stop RAF if nothing else needs it
     if (this._transportState !== 'playing' && !this.isAnyChannelRecording()) {
@@ -199,9 +399,10 @@ class GlobalSequencer {
   }
 
   /** Called by the Player when the user touches a pad during recording.
-   *  An optional `timestamp` (ms since recording started) overrides the
-   *  auto-computed wall-clock time — used by note-repeat to record
-   *  grid-aligned events without RAF jitter. */
+   *  Optional `timestamp` semantics:
+   *   - while stopped: ms since recording start
+   *   - while playing: loop-local musical ms
+   *  Used by note-repeat to record grid-aligned events without RAF jitter. */
   pushRecordEvent(
     channel: number,
     type: 'noteOn' | 'noteOff',
@@ -211,7 +412,14 @@ class GlobalSequencer {
   ): void {
     const s = this.channels.get(channel);
     if (!s?.isRecording) return;
-    const ts = timestamp ?? performance.now() - s.recordingStartTime;
+    const rawTs = timestamp ?? performance.now() - s.recordingStartTime;
+    const ts = normalizeRecordedTimestamp({
+      rawTimestamp: rawTs,
+      hasExplicitTimestamp: timestamp != null,
+      isPlaying: this._transportState === 'playing',
+      recordingLoopOffset: s.recordingLoopOffset,
+      recordingTimelineDuration: s.recordingTimelineDuration,
+    });
     s.recordedEvents.push({ type, note, timestamp: ts, velocity });
   }
 
@@ -221,11 +429,19 @@ class GlobalSequencer {
     if (this._transportState === 'playing') return;
     if (this.masterDuration === 0) return;
 
+    const startTime = performance.now();
     this._transportState = 'playing';
+    this.globalStartTime = startTime;
 
     this.channels.forEach(s => {
       s.eventIndex = 0;
       s.lastLoopTime = -1;
+      s.queuedLaunchTime = null;
+      s.queuedLaunchSequence = null;
+      s.queuedStopTime = null;
+      if (s.sequence && s.clipLaunched) {
+        s.playbackStartTime = startTime;
+      }
     });
 
     this.emitTransport();
@@ -238,13 +454,12 @@ class GlobalSequencer {
 
     // Silence every channel
     this.channels.forEach((s, ch) => {
-      s.activeNotes.forEach(n => {
-        NativeAudioModule.noteOff(ch, n);
-        s.delegate.onNoteOff(n);
-      });
-      s.activeNotes.clear();
+      this.silenceChannel(ch, s);
       s.eventIndex = 0;
       s.lastLoopTime = -1;
+      s.queuedLaunchTime = null;
+      s.queuedLaunchSequence = null;
+      s.queuedStopTime = null;
     });
 
     // Stop RAF if no channels are recording
@@ -289,7 +504,6 @@ class GlobalSequencer {
   /** Start RAF if not already running. */
   private ensureRAF(): void {
     if (this.rafId !== null) return;
-    this.globalStartTime = performance.now();
     this.startRAF();
   }
 
@@ -319,7 +533,7 @@ class GlobalSequencer {
       const elapsed = now - this.globalStartTime;
 
       this.channels.forEach((s, ch) => {
-        const seq = s.sequence;
+        let seq = s.sequence;
 
         // ── Recording-only mode (no sequences playing yet) ────────
         if (!isPlaying) {
@@ -331,9 +545,36 @@ class GlobalSequencer {
           return;
         }
 
-        // ── Channels without a sequence still get tick updates so the
-        // playhead tracks the global position while recording ──────
+        // Apply queued clip stop/relaunch exactly on quantized boundary.
+        if (s.queuedStopTime != null && now >= s.queuedStopTime) {
+          this.forceStopChannel(ch, s);
+        }
+        if (s.queuedLaunchTime != null && now >= s.queuedLaunchTime) {
+          if (
+            s.queuedLaunchSequence &&
+            s.sequence !== s.queuedLaunchSequence
+          ) {
+            // Swap clip contents exactly on the launch boundary so the newly
+            // selected clip never leaks audio before the quantized restart.
+            this.setSequence(ch, s.queuedLaunchSequence);
+          }
+          this.forceLaunchChannel(ch, s, s.queuedLaunchTime);
+        }
+        seq = s.sequence;
+
+        // ── Channels without a sequence ────────────────────────────
         if (!seq) {
+          // First-take recording on a new channel should use linear
+          // recording time, not master loop time, so preview can extend
+          // beyond existing channels before commit.
+          if (s.isRecording) {
+            const recElapsed = now - s.recordingStartTime;
+            const musicalTime = recElapsed + s.recordingLoopOffset;
+            s.delegate.onTick(musicalTime, this.masterDuration);
+            return;
+          }
+
+          // Non-recording channels still follow global loop position.
           if (this.masterDuration > 0) {
             const loopTime = elapsed % this.masterDuration;
             s.delegate.onTick(loopTime, this.masterDuration);
@@ -341,15 +582,26 @@ class GlobalSequencer {
           return;
         }
 
-        const loopTime = elapsed % seq.duration;
+        if (!s.clipLaunched) {
+          if (s.isRecording) {
+            const recElapsed = now - s.recordingStartTime;
+            const musicalTime = recElapsed + s.recordingLoopOffset;
+            s.delegate.onTick(musicalTime, seq.duration);
+          } else {
+            s.delegate.onTick(0, seq.duration);
+          }
+          return;
+        }
+
+        const loopTime = computeLoopTime(
+          now,
+          this.getChannelPlaybackStartTime(s),
+          seq.duration,
+        );
 
         // ── Loop wrap ──────────────────────────────────────────────
         if (loopTime < s.lastLoopTime) {
-          s.activeNotes.forEach(n => {
-            NativeAudioModule.noteOff(ch, n);
-            s.delegate.onNoteOff(n);
-          });
-          s.activeNotes.clear();
+          this.silenceChannel(ch, s);
           s.eventIndex = 0;
           s.delegate.onLoopWrap();
         }
@@ -375,7 +627,6 @@ class GlobalSequencer {
 
         // ── Per-frame tick (playhead, visualizer) ──────────────────
         s.delegate.onTick(loopTime, seq.duration);
-
         s.lastLoopTime = loopTime;
       });
 
@@ -405,16 +656,24 @@ class GlobalSequencer {
   /**
    * Returns the current musical time (ms) for a channel computed from a
    * fresh performance.now() call — NOT from the RAF-updated SharedValue
-   * which can be up to ~16ms stale.  This eliminates timing discrepancies
+   * which can be up to ~16ms stale. This eliminates timing discrepancies
    * when multiple notes are triggered in the same synchronous loop.
    */
   getCurrentMusicalMs(channel: number): number {
     const s = this.channels.get(channel);
     if (!s) return 0;
+    if (s.isRecording && !s.sequence) {
+      return (
+        performance.now() - s.recordingStartTime + s.recordingLoopOffset
+      );
+    }
     if (this._transportState === 'playing') {
       const seq = s.sequence;
-      const elapsed = performance.now() - this.globalStartTime;
       const dur = seq ? seq.duration : this.masterDuration;
+      const timelineStart = seq
+        ? this.getChannelPlaybackStartTime(s)
+        : this.globalStartTime;
+      const elapsed = performance.now() - timelineStart;
       return dur > 0 ? elapsed % dur : elapsed;
     }
     if (s.isRecording) {
@@ -424,8 +683,34 @@ class GlobalSequencer {
   }
 
   /**
+   * Like getCurrentMusicalMs but for a specific wall-clock time instead of
+   * performance.now(). Used by the repeat engine to compute grid-aligned
+   * recording timestamps for boundaries that were missed due to RAF jitter.
+   */
+  wallClockToMusicalMs(channel: number, wallClockTime: number): number {
+    const s = this.channels.get(channel);
+    if (!s) return 0;
+    if (s.isRecording && !s.sequence) {
+      return wallClockTime - s.recordingStartTime + s.recordingLoopOffset;
+    }
+    if (this._transportState === 'playing') {
+      const seq = s.sequence;
+      const dur = seq ? seq.duration : this.masterDuration;
+      const timelineStart = seq
+        ? this.getChannelPlaybackStartTime(s)
+        : this.globalStartTime;
+      const elapsed = wallClockTime - timelineStart;
+      return dur > 0 ? elapsed % dur : elapsed;
+    }
+    if (s.isRecording) {
+      return wallClockTime - s.recordingStartTime;
+    }
+    return 0;
+  }
+
+  /**
    * Returns the absolute performance.now() timestamp of the next grid
-   * boundary aligned to the global transport.  When the transport is not
+   * boundary aligned to the global transport. When the transport is not
    * playing, returns `now` (fire immediately).
    */
   getNextGridTime(intervalMs: number): number {
@@ -451,6 +736,68 @@ class GlobalSequencer {
     this.transportListeners.clear();
     this.channelSequenceListeners.clear();
     GlobalSequencer._instance = null;
+  }
+
+  private getChannelPlaybackStartTime(state: ChannelState): number {
+    return state.playbackStartTime > 0
+      ? state.playbackStartTime
+      : this.globalStartTime;
+  }
+
+  private getLaunchQuantizationMs(sequence: LoopSequence | null): number {
+    if (sequence && sequence.beatIntervalMs > 0) {
+      const beatsPerBar = Math.max(1, sequence.timeSignature[0] ?? 4);
+      return Math.max(1, sequence.beatIntervalMs * beatsPerBar);
+    }
+    const bpm = this.getGlobalBPM();
+    if (bpm && bpm > 0) {
+      return (60000 / bpm) * 4;
+    }
+    return DEFAULT_LAUNCH_QUANTIZATION_MS;
+  }
+
+  private sortSequenceEvents(sequence: LoopSequence): void {
+    // noteOff MUST come before noteOn at the same timestamp — otherwise
+    // pairNotes creates zero-length ghost notes when a note ends and
+    // restarts at the same grid boundary (repeat mode chords).
+    sequence.events = [...sequence.events].sort(
+      (a, b) =>
+        a.timestamp - b.timestamp ||
+        (a.type === 'noteOff' ? -1 : 1),
+    );
+  }
+
+  private silenceChannel(channel: number, state: ChannelState): void {
+    if (state.activeNotes.size === 0) return;
+    state.activeNotes.forEach(n => {
+      NativeAudioModule.noteOff(channel, n);
+      state.delegate.onNoteOff(n);
+    });
+    state.activeNotes.clear();
+  }
+
+  private forceStopChannel(channel: number, state: ChannelState): void {
+    this.silenceChannel(channel, state);
+    state.clipLaunched = false;
+    state.queuedStopTime = null;
+    state.eventIndex = 0;
+    state.lastLoopTime = -1;
+  }
+
+  private forceLaunchChannel(
+    channel: number,
+    state: ChannelState,
+    launchTime: number,
+  ): void {
+    if (!state.sequence) return;
+    this.silenceChannel(channel, state);
+    state.clipLaunched = true;
+    state.playbackStartTime = launchTime;
+    state.queuedLaunchTime = null;
+    state.queuedLaunchSequence = null;
+    state.queuedStopTime = null;
+    state.eventIndex = 0;
+    state.lastLoopTime = -1;
   }
 }
 

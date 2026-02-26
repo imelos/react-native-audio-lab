@@ -50,7 +50,6 @@ Player (component)
 ```
 
 **Key design decisions:**
-
 - `GlobalSequencer` is framework-agnostic — no React imports, communicates via delegates and listeners
 - `detachDelegate()` replaces the delegate with a no-op on unmount, keeping the channel's sequence and playback alive while the UI is unmounted
 - Overdub recording captures `recordingLoopOffset` (current loop position at recording start) and offsets events on stop, so new recordings are loop-aligned
@@ -73,7 +72,6 @@ Raw recorded events (wall-clock timestamps)
 ### MidiVisualizer Rendering Modes
 
 MidiVisualizer has three render paths depending on props:
-
 1. **Static** (sequence + no currentMusicalMs) — computes rects once, no RAF loop. Used for session clip previews.
 2. **Playback** (sequence + currentMusicalMs) — RAF loop with pre-computed `pairNotes` cache. Shows active note highlighting.
 3. **Live/Overdub** (no sequence + loopDuration) — RAF loop, positions notes against master loop using `currentMusicalMs`.

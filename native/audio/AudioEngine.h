@@ -104,6 +104,29 @@ public:
     // ──────────────────────────────────────────
     void setWaveform(int channel, BaseOscillatorVoice::Waveform waveform);
     void setDetune(int channel, float cents);
+    void setVoiceParams(int channel, const BaseOscillatorVoice::VoiceParams& params);
+
+    // Individual per-voice parameter control
+    void setOsc2Waveform(int channel, BaseOscillatorVoice::Waveform wf);
+    void setOsc2Level(int channel, float level);
+    void setOsc2Semi(int channel, int semi);
+    void setOsc2Detune(int channel, float cents);
+    void setSubLevel(int channel, float level);
+    void setNoiseLevel(int channel, float level);
+    void setVoiceFilterEnabled(int channel, bool enabled);
+    void setVoiceFilterCutoff(int channel, float hz);
+    void setVoiceFilterResonance(int channel, float res);
+    void setVoiceFilterEnvAmount(int channel, float amt);
+
+    // New synthesis features
+    void setPulseWidth(int channel, float pw);
+    void setUnisonCount(int channel, int count);
+    void setUnisonSpread(int channel, float spread);
+    void setGlideTime(int channel, float seconds);
+    void setLfoRate(int channel, float rate);
+    void setLfoDepth(int channel, float depth);
+    void setLfoDestination(int channel, int dest);
+    void setLfoWaveform(int channel, BaseOscillatorVoice::Waveform wf);
 
     // ──────────────────────────────────────────
     // Common parameter control (works for both instrument types)

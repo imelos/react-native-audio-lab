@@ -58,9 +58,9 @@ bool AudioEngine::createOscillatorInstrument(int channel, const Config& config)
 {
     if (channel < 1 || channel > 16)
         return false;
-    
+
     juce::ScopedLock lock(instrumentLock);
-    
+
     auto instrument = std::make_unique<Instrument>(config);
     
     // Prepare if we're already playing
@@ -355,6 +355,122 @@ void AudioEngine::setDetune(int channel, float cents)
     {
         instrument->setDetune(cents);
     }
+}
+
+void AudioEngine::setVoiceParams(int channel, const BaseOscillatorVoice::VoiceParams& params)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+    {
+        instrument->setVoiceParams(params);
+    }
+}
+
+void AudioEngine::setOsc2Waveform(int channel, BaseOscillatorVoice::Waveform wf)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Waveform(wf);
+}
+
+void AudioEngine::setOsc2Level(int channel, float level)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Level(level);
+}
+
+void AudioEngine::setOsc2Semi(int channel, int semi)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Semi(semi);
+}
+
+void AudioEngine::setOsc2Detune(int channel, float cents)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setOsc2Detune(cents);
+}
+
+void AudioEngine::setSubLevel(int channel, float level)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setSubLevel(level);
+}
+
+void AudioEngine::setNoiseLevel(int channel, float level)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setNoiseLevel(level);
+}
+
+void AudioEngine::setVoiceFilterEnabled(int channel, bool enabled)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterEnabled(enabled);
+}
+
+void AudioEngine::setVoiceFilterCutoff(int channel, float hz)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterCutoff(hz);
+}
+
+void AudioEngine::setVoiceFilterResonance(int channel, float res)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterResonance(res);
+}
+
+void AudioEngine::setVoiceFilterEnvAmount(int channel, float amt)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setVoiceFilterEnvAmount(amt);
+}
+
+void AudioEngine::setPulseWidth(int channel, float pw)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setPulseWidth(pw);
+}
+
+void AudioEngine::setUnisonCount(int channel, int count)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setUnisonCount(count);
+}
+
+void AudioEngine::setUnisonSpread(int channel, float spread)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setUnisonSpread(spread);
+}
+
+void AudioEngine::setGlideTime(int channel, float seconds)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setGlideTime(seconds);
+}
+
+void AudioEngine::setLfoRate(int channel, float rate)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoRate(rate);
+}
+
+void AudioEngine::setLfoDepth(int channel, float depth)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoDepth(depth);
+}
+
+void AudioEngine::setLfoDestination(int channel, int dest)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoDestination(dest);
+}
+
+void AudioEngine::setLfoWaveform(int channel, BaseOscillatorVoice::Waveform wf)
+{
+    if (auto* instrument = getOscillatorInstrument(channel))
+        instrument->setLfoWaveform(wf);
 }
 
 // ──────────────────────────────────────────

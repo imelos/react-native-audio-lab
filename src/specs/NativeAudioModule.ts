@@ -8,7 +8,7 @@ export interface Spec extends TurboModule {
   // ────────────────────────────────────────────────
   
   // Create oscillator-based instrument
-  createOscillatorInstrument(channel: number, name: string, polyphony: number, waveform: string): void;
+  createOscillatorInstrument(channel: number, name: string, polyphony: number, waveform: string): boolean;
   
   // Create multi-sampler instrument
   createMultiSamplerInstrument(channel: number, name: string, polyphony: number): void;
@@ -94,6 +94,32 @@ export interface Spec extends TurboModule {
   setDetune(channel: number, cents: number): void;
 
   // ────────────────────────────────────────────────
+  // Individual Per-Voice Parameters
+  // ────────────────────────────────────────────────
+  setOsc2Waveform(channel: number, waveform: string): void;
+  setOsc2Level(channel: number, level: number): void;
+  setOsc2Semi(channel: number, semi: number): void;
+  setOsc2Detune(channel: number, cents: number): void;
+  setSubLevel(channel: number, level: number): void;
+  setNoiseLevel(channel: number, level: number): void;
+  setVoiceFilterEnabled(channel: number, enabled: boolean): void;
+  setVoiceFilterCutoff(channel: number, cutoff: number): void;
+  setVoiceFilterResonance(channel: number, resonance: number): void;
+  setVoiceFilterEnvAmount(channel: number, amount: number): void;
+
+  // ────────────────────────────────────────────────
+  // Advanced Synthesis Parameters
+  // ────────────────────────────────────────────────
+  setPulseWidth(channel: number, width: number): void;
+  setUnisonCount(channel: number, count: number): void;
+  setUnisonSpread(channel: number, spread: number): void;
+  setGlideTime(channel: number, seconds: number): void;
+  setLfoRate(channel: number, rate: number): void;
+  setLfoDepth(channel: number, depth: number): void;
+  setLfoDestination(channel: number, destination: number): void;
+  setLfoWaveform(channel: number, waveform: string): void;
+
+  // ────────────────────────────────────────────────
   // Effects Management (Oscillator only)
   // ────────────────────────────────────────────────
   addEffect(channel: number, type: string): number;  // Returns effect ID
@@ -101,6 +127,38 @@ export interface Spec extends TurboModule {
   clearEffects(channel: number): void;
   setEffectEnabled(channel: number, effectId: number, enabled: boolean): void;
   setEffectParameter(channel: number, effectId: number, paramName: string, value: number): void;
+
+  // ────────────────────────────────────────────────
+  // Preset Application (sets voice params + ADSR + volume in one call)
+  // ────────────────────────────────────────────────
+  applyPreset(
+    channel: number,
+    waveform1: string,
+    detuneCents1: number,
+    waveform2: string,
+    detuneCents2: number,
+    osc2Level: number,
+    osc2Semi: number,
+    subLevel: number,
+    noiseLevel: number,
+    filterEnabled: boolean,
+    filterCutoff: number,
+    filterResonance: number,
+    filterEnvAmount: number,
+    attack: number,
+    decay: number,
+    sustain: number,
+    release: number,
+    volume: number,
+    pulseWidth: number,
+    unisonCount: number,
+    unisonSpread: number,
+    glideTime: number,
+    lfoRate: number,
+    lfoDepth: number,
+    lfoDestination: number,
+    lfoWaveform: string
+  ): void;
 
   // ────────────────────────────────────────────────
   // Global Controls

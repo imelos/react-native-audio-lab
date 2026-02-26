@@ -1,7 +1,5 @@
 #pragma once
 #include "JuceHeader.h"
-//#include <juce_audio_basics/juce_audio_basics.h>
-//#include <juce_dsp/juce_dsp.h>
 
 // Forward declaration (so we can use it in canPlaySound without including the full header)
 class BasicSynthSound;
@@ -29,23 +27,116 @@ public:
     void controllerMoved(int controllerNumber, int newControllerValue) override;
 
     // Your public interface
-    enum class Waveform { Sine, Saw, Square, Triangle };
+    enum class Waveform { Sine, Saw, Square, Triangle, Pulse };
+
+    struct VoiceParams
+    {
+        // Oscillator 1
+        Waveform waveform1 = Waveform::Sine;
+        float detuneCents1 = 0.0f;
+
+        // Oscillator 2
+        Waveform waveform2 = Waveform::Sine;
+        float detuneCents2 = 0.0f;
+        float osc2Level = 0.0f;       // 0 = off
+        int osc2Semi = 0;             // -24 to +24 semitones
+
+        // Sub-oscillator (sine, one octave below osc1)
+        float subLevel = 0.0f;        // 0 = off
+
+        // Noise generator (white noise)
+        float noiseLevel = 0.0f;      // 0 = off
+
+        // Per-voice filter (one-pole RC lowpass)
+        bool filterEnabled = false;
+        float filterCutoff = 8000.0f;  // Hz
+        float filterResonance = 0.0f;  // 0-1 (simple feedback amount)
+        float filterEnvAmount = 0.0f;  // 0-1 (how much ADSR modulates cutoff)
+
+        // Pulse width (for Pulse waveform)
+        float pulseWidth = 0.5f;       // 0.0-1.0; 0.5 = square
+
+        // Unison (only applies to osc1)
+        int unisonCount = 1;           // 1-8, 1 = no unison
+        float unisonSpread = 20.0f;    // spread in cents, 0-100
+
+        // Glide/Portamento
+        float glideTime = 0.0f;        // seconds, 0 = off
+
+        // LFO
+        float lfoRate = 1.0f;          // Hz, 0.1-20
+        float lfoDepth = 0.0f;         // 0-1, 0 = off
+        int lfoDestination = 0;        // 0=pitch, 1=filter, 2=volume
+        Waveform lfoWaveform = Waveform::Sine;
+    };
 
     void setWaveform(Waveform newType);
     void setADSR(const juce::ADSR::Parameters& params);
     void setDetune(float cents);
+    void setVoiceParams(const VoiceParams& params);
+
+    // Individual per-voice parameter setters
+    void setOsc2Waveform(Waveform wf) { voiceParams.waveform2 = wf; }
+    void setOsc2Level(float level) { voiceParams.osc2Level = juce::jlimit(0.0f, 1.0f, level); }
+    void setOsc2Semi(int semi) { voiceParams.osc2Semi = juce::jlimit(-24, 24, semi); }
+    void setOsc2Detune(float cents) { voiceParams.detuneCents2 = juce::jlimit(-100.0f, 100.0f, cents); }
+    void setSubLevel(float level) { voiceParams.subLevel = juce::jlimit(0.0f, 1.0f, level); }
+    void setNoiseLevel(float level) { voiceParams.noiseLevel = juce::jlimit(0.0f, 1.0f, level); }
+    void setVoiceFilterEnabled(bool enabled) { voiceParams.filterEnabled = enabled; }
+    void setVoiceFilterCutoff(float hz) { voiceParams.filterCutoff = juce::jlimit(20.0f, 20000.0f, hz); }
+    void setVoiceFilterResonance(float res) { voiceParams.filterResonance = juce::jlimit(0.0f, 1.0f, res); }
+    void setVoiceFilterEnvAmount(float amt) { voiceParams.filterEnvAmount = juce::jlimit(0.0f, 1.0f, amt); }
+
+    // New feature setters
+    void setPulseWidth(float pw) { voiceParams.pulseWidth = juce::jlimit(0.01f, 0.99f, pw); }
+    void setUnisonCount(int count);
+    void setUnisonSpread(float spread) { voiceParams.unisonSpread = juce::jlimit(0.0f, 100.0f, spread); }
+    void setGlideTime(float seconds) { voiceParams.glideTime = juce::jlimit(0.0f, 5.0f, seconds); }
+    void setLfoRate(float rate) { voiceParams.lfoRate = juce::jlimit(0.1f, 20.0f, rate); }
+    void setLfoDepth(float depth) { voiceParams.lfoDepth = juce::jlimit(0.0f, 1.0f, depth); }
+    void setLfoDestination(int dest) { voiceParams.lfoDestination = juce::jlimit(0, 2, dest); }
+    void setLfoWaveform(Waveform wf) { voiceParams.lfoWaveform = wf; }
 
 private:
-    Waveform waveform = Waveform::Sine;
+    VoiceParams voiceParams;
 
-    double currentPhase     = 0.0;
-    double phaseDelta       = 0.0;
+    // Osc1 state
+    double phase1       = 0.0;
+    double phaseDelta1   = 0.0;
+
+    // Osc2 state
+    double phase2       = 0.0;
+    double phaseDelta2   = 0.0;
+
+    // Sub-oscillator state
+    double phaseSub     = 0.0;
+    double phaseDeltaSub = 0.0;
+
     double freqHz           = 440.0;
-
     float noteVelocity      = 1.0f;
-    float detuneCents       = 0.0f;
 
     juce::ADSR adsr;
 
-    float getOscValue(double phase) const;
+    // Noise RNG
+    juce::Random noiseRng;
+
+    // Per-voice filter state (SVF — state variable filter)
+    float svfIc1eq  = 0.0f;   // integrator 1 state (left channel)
+    float svfIc2eq  = 0.0f;   // integrator 2 state (left channel)
+    float svfIc1eqR = 0.0f;   // integrator 1 state (right channel, used in unison mode)
+    float svfIc2eqR = 0.0f;   // integrator 2 state (right channel, used in unison mode)
+
+    // Glide state
+    double targetFreqHz = 440.0;
+    double glideCoeff = 1.0;
+    bool isGliding = false;
+
+    // LFO state
+    double lfoPhase = 0.0;
+
+    // Unison phase state (for osc1 unison voices)
+    double unisonPhases[8] = {};
+
+    static float getOscValue(Waveform wf, double phase, float pulseWidth = 0.5f);
+    float applyFilter(float input, float envValue, float& ic1eq, float& ic2eq, float lfoFilterMod = 0.0f);
 };

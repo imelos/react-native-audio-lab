@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Dimensions } from 'react-native';
+import { useWindowDimensions } from 'react-native';
 import { useSharedValue } from 'react-native-reanimated';
 import GlobalSequencer, {
   ChannelDelegate,
@@ -13,6 +13,11 @@ import {
   LoopSequence,
   NoteEvent,
 } from '../utils/loopUtils';
+import {
+  getLatestPredictedEndTimeForNote,
+  mergeOverdubIntoSequence,
+  snapRepeatStartTime,
+} from '../engine/sequence/SequenceEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hook
@@ -29,7 +34,9 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   // ── Shared values for the visualizer (driven from RAF, no re-renders) ──
   const playheadX = useSharedValue(0);
   const currentMusicalMs = useSharedValue(0);
-  const windowWidth = Dimensions.get('window').width;
+  const { width: windowWidth } = useWindowDimensions();
+  const windowWidthRef = useRef(windowWidth);
+  windowWidthRef.current = windowWidth;
 
   // ── Visual notes (SharedValue — drives MidiVisualizer reactively) ─────
   const visualNotes = useSharedValue<VisualNote[]>([]);
@@ -51,6 +58,10 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   const [masterDuration, setMasterDuration] = useState(
     sequencer.getMasterDuration(),
   );
+  const isRecordingRef = useRef(isRecording);
+  isRecordingRef.current = isRecording;
+  const sequenceRef = useRef<LoopSequence | null>(sequence);
+  sequenceRef.current = sequence;
 
   // ── Build the delegate (stable ref, mutated only internally) ───────────
   const delegateRef = useRef<ChannelDelegate>({
@@ -64,8 +75,21 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
     onTick(loopTimeMs: number, loopDuration: number) {
       currentMusicalMs.value = loopTimeMs;
-      if (loopDuration > 0) {
-        playheadX.value = (loopTimeMs / loopDuration) * windowWidth;
+      const width = windowWidthRef.current;
+      if (loopDuration > 0 && width > 0) {
+        const isFirstTakeWithMasterClock =
+          isRecordingRef.current && sequenceRef.current == null;
+        if (isFirstTakeWithMasterClock) {
+          const total = Math.max(loopDuration, loopTimeMs);
+          const linearX = total > 0 ? (loopTimeMs / total) * width : 0;
+          playheadX.value = Math.max(0, Math.min(width, linearX));
+        } else {
+          const loopPos =
+            ((loopTimeMs % loopDuration) + loopDuration) % loopDuration;
+          playheadX.value = (loopPos / loopDuration) * width;
+        }
+      } else {
+        playheadX.value = 0;
       }
     },
 
@@ -113,8 +137,11 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
 
   const startRecording = useCallback(() => {
     sequencer.startRecording(channel);
+    // visualNotes now represent only the current recording pass (live overlay).
+    visualNotesRef.current = [];
+    visualNotes.value = [];
     setIsRecording(true);
-  }, [channel, sequencer]);
+  }, [channel, sequencer, visualNotes]);
 
   const clearRecording = useCallback(() => {
     sequencer.stopRecording(channel); // discard events
@@ -138,28 +165,38 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       overrideBPM?: number,
     ) => {
       const events = sequencer.stopRecording(channel);
+      setIsRecording(false);
       if (events.length === 0) return;
 
       const existing = sequencer.getSequence(channel);
-      const name = existing
-        ? `${existing.name} (take ${Date.now()})`
-        : `Ch ${channel} Loop`;
+      if (existing) {
+        const merged = mergeOverdubIntoSequence(existing, events);
+        sequencer.setSequence(channel, merged);
+        rebuildVisualNotes(merged);
+        return;
+      }
 
-      // Use global BPM and master duration so all channels stay in sync.
-      // overrideBPM (from repeat mode) takes priority over detection when
-      // recording the first sequence — avoids BPM detection inaccuracy.
+      const name = `Ch ${channel} Loop`;
+
+      // For first take on an empty channel:
+      // keep global BPM (if present). While transport is running against an
+      // existing session, enforce masterDuration as a minimum so new channels
+      // do not create shorter loops than the current arrangement.
       const globalBPM = sequencer.getGlobalBPM();
-      const masterDuration = sequencer.getMasterDuration();
+      const currentMasterDuration = sequencer.getMasterDuration();
+      const minDurationMs =
+        sequencer.transportState === 'playing' && currentMasterDuration > 0
+          ? currentMasterDuration
+          : undefined;
       const loop = createLoopFn(
         events,
         name,
         overrideBPM ?? globalBPM ?? undefined,
-        masterDuration > 0 ? masterDuration : undefined,
+        minDurationMs,
       );
       if (!loop) return;
 
       sequencer.setSequence(channel, loop);
-      setIsRecording(false);
 
       // Build visual notes from the new sequence
       rebuildVisualNotes(loop);
@@ -211,39 +248,35 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   // ── Recording event push (called by Player on pad touch) ─────────────────
 
   const pushNoteOn = useCallback(
-    (note: number, velocity: number, duration?: number) => {
+    (note: number, velocity: number, duration?: number, boundaryWallClock?: number) => {
       const arr = visualNotesRef.current;
-      // Use fresh performance.now()-based time instead of the stale
-      // SharedValue (~16ms behind). This ensures all notes triggered in
-      // the same synchronous tick get the same startTime, fixing chord
-      // alignment permanently.
-      let startTime = sequencer.getCurrentMusicalMs(channel);
+      let startTime: number;
 
-      if (duration != null) {
-        // Repeat mode: snap to the previous endTime for the SAME pitch so
-        // notes are perfectly back-to-back without RAF-jitter micro-gaps.
-        // Only snap if the previous note ended recently (within 1.5× the
-        // repeat interval) — otherwise the pitch was released and re-pressed
-        // later, and snapping would teleport the note backwards in time.
-        const tolerance = duration * 1.5;
-        for (let i = arr.length - 1; i >= 0; i--) {
-          if (arr[i].note === note && arr[i].endTime != null) {
-            if (Math.abs(startTime - arr[i].endTime!) < tolerance) {
-              startTime = arr[i].endTime!;
-            }
-            break;
-          }
-        }
+      if (boundaryWallClock != null) {
+        // Use the exact wall-clock boundary time from the repeat engine.
+        // This gives a grid-perfect musical timestamp even when the RAF frame
+        // arrived late and getCurrentMusicalMs() would return a stale value.
+        startTime = sequencer.wallClockToMusicalMs(channel, boundaryWallClock);
+      } else if (duration != null && duration > 0) {
+        // Repeat mode without boundary override: snap to nearest grid.
+        startTime = snapRepeatStartTime({
+          currentTime: sequencer.getCurrentMusicalMs(channel),
+          durationMs: duration,
+          visualNotes: arr,
+        });
+      } else {
+        startTime = sequencer.getCurrentMusicalMs(channel);
       }
 
-      // Pass the snapped startTime to the recording so committed sequences
-      // are grid-aligned (no wall-clock RAF jitter).
+      // Pass the grid-aligned startTime to the recording so committed
+      // sequences have no wall-clock RAF jitter.
+      const useExplicitTimestamp = duration != null || boundaryWallClock != null;
       sequencer.pushRecordEvent(
         channel,
         'noteOn',
         note,
         velocity,
-        duration != null ? startTime : undefined,
+        useExplicitTimestamp ? startTime : undefined,
       );
 
       const vn: VisualNote = {
@@ -264,17 +297,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       const endTime = sequencer.getCurrentMusicalMs(channel);
       const arr = visualNotesRef.current;
 
-      // Find the latest note for this pitch to get its predicted endTime
-      // (repeat mode) for grid-aligned recording.
-      let snappedEnd: number | undefined;
-      for (let i = arr.length - 1; i >= 0; i--) {
-        if (arr[i].note === note) {
-          if (arr[i].endTime != null) {
-            snappedEnd = arr[i].endTime!;
-          }
-          break;
-        }
-      }
+      const snappedEnd = getLatestPredictedEndTimeForNote(arr, note);
 
       sequencer.pushRecordEvent(
         channel,
