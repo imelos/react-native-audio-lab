@@ -29,7 +29,7 @@ type PerfMock = {
   __setNow: (value: number) => void;
 };
 
-type NoteOnFn = (note: number, velocity: number, duration?: number) => void;
+type NoteOnFn = (note: number, velocity: number, duration?: number, boundaryWallClock?: number) => void;
 type NoteOffFn = (note: number) => void;
 type RafCallback = (time: number) => void;
 
@@ -129,7 +129,7 @@ describe('useNoteRepeat regressions', () => {
     runNextFrame(); // first grid tick should fire pending oneshot
 
     expect(onNoteOn).toHaveBeenCalledTimes(1);
-    expect(onNoteOn).toHaveBeenCalledWith(60, 0.85, 250);
+    expect(onNoteOn).toHaveBeenCalledWith(60, 0.85, 250, expect.any(Number));
 
     setNow(370);
     runNextFrame(); // next grid tick should close sounding note

@@ -4,6 +4,10 @@ type NoteOnEmitter = (
   note: number,
   velocity: number,
   duration?: number,
+  /** Wall-clock time (performance.now() domain) of the grid boundary that
+   *  triggered this note. Lets the recording layer compute the exact musical
+   *  timestamp even when the RAF frame was late. */
+  boundaryWallClock?: number,
 ) => void;
 type NoteOffEmitter = (note: number) => void;
 
@@ -115,36 +119,43 @@ export class NoteRepeatEngine {
 
     if (now < this.nextTrigger) return;
 
-    // 1) Close all currently sounding notes.
-    this.soundingNotes.forEach(note => {
-      this.deps.emitNoteOff(note);
-    });
-    this.soundingNotes.clear();
+    const dur = this.intervalMs;
 
-    // 2) Advance through missed boundaries.
+    // Fire notes for every due boundary, including any that were missed because
+    // the JS thread was busy and the RAF frame arrived late. Each boundary gets
+    // its own noteOff/noteOn pair so the recording captures all grid positions.
     while (this.nextTrigger <= now) {
+      const boundaryWallClock = this.nextTrigger;
+
+      // Close notes sounding from the previous boundary.
+      if (this.soundingNotes.size > 0) {
+        this.soundingNotes.forEach(note => {
+          this.deps.emitNoteOff(note);
+        });
+        this.soundingNotes.clear();
+      }
+
+      // If no notes remain after the final noteOff, stop.
+      if (this.heldNotes.size === 0 && this.pendingNotes.size === 0) {
+        this.running = false;
+        return;
+      }
+
+      // Trigger held notes + pending one-shots for this boundary.
+      this.heldNotes.forEach((velocity, note) => {
+        this.deps.emitNoteOn(note, velocity, dur, boundaryWallClock);
+        this.soundingNotes.add(note);
+      });
+      this.pendingNotes.forEach((velocity, note) => {
+        if (!this.heldNotes.has(note)) {
+          this.deps.emitNoteOn(note, velocity, dur, boundaryWallClock);
+          this.soundingNotes.add(note);
+        }
+      });
+      this.pendingNotes.clear();
+
       this.nextTrigger += this.intervalMs;
     }
-
-    // 3) If no held/pending notes remain, we're done after final noteOff.
-    if (this.heldNotes.size === 0 && this.pendingNotes.size === 0) {
-      this.running = false;
-      return;
-    }
-
-    // 4) Trigger held notes + pending one-shots.
-    const dur = this.intervalMs;
-    this.heldNotes.forEach((velocity, note) => {
-      this.deps.emitNoteOn(note, velocity, dur);
-      this.soundingNotes.add(note);
-    });
-    this.pendingNotes.forEach((velocity, note) => {
-      if (!this.heldNotes.has(note)) {
-        this.deps.emitNoteOn(note, velocity, dur);
-        this.soundingNotes.add(note);
-      }
-    });
-    this.pendingNotes.clear();
   }
 
   flush(): void {

@@ -16,8 +16,9 @@ const CHORD_WINDOW_MS = 10;
 
 interface UseNoteRepeatOptions {
   mode: NoteRepeatMode;
-  /** Called to trigger a note. 3rd arg is the predicted visual duration (ms). */
-  onNoteOn: (note: number, velocity: number, duration?: number) => void;
+  /** Called to trigger a note. 3rd arg is the predicted visual duration (ms),
+   *  4th arg is the wall-clock time of the grid boundary that fired it. */
+  onNoteOn: (note: number, velocity: number, duration?: number, boundaryWallClock?: number) => void;
   onNoteOff: (note: number) => void;
 }
 
@@ -48,8 +49,8 @@ export function useNoteRepeat({
       getBpm: () => getBpmRef.current(),
       getNextGridTime: intervalMs =>
         GlobalSequencer.getInstance().getNextGridTime(intervalMs),
-      emitNoteOn: (note, velocity, duration) =>
-        onNoteOnRef.current(note, velocity, duration),
+      emitNoteOn: (note, velocity, duration, boundaryWallClock) =>
+        onNoteOnRef.current(note, velocity, duration, boundaryWallClock),
       emitNoteOff: note => onNoteOffRef.current(note),
       chordWindowMs: CHORD_WINDOW_MS,
     });

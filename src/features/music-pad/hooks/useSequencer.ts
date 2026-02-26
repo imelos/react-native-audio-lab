@@ -248,25 +248,29 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   // ── Recording event push (called by Player on pad touch) ─────────────────
 
   const pushNoteOn = useCallback(
-    (note: number, velocity: number, duration?: number) => {
+    (note: number, velocity: number, duration?: number, boundaryWallClock?: number) => {
       const arr = visualNotesRef.current;
-      // Use fresh performance.now()-based time instead of the stale
-      // SharedValue (~16ms behind). This ensures all notes triggered in
-      // the same synchronous tick get the same startTime, fixing chord
-      // alignment permanently.
-      let startTime = sequencer.getCurrentMusicalMs(channel);
+      let startTime: number;
 
-      if (duration != null && duration > 0) {
+      if (boundaryWallClock != null) {
+        // Use the exact wall-clock boundary time from the repeat engine.
+        // This gives a grid-perfect musical timestamp even when the RAF frame
+        // arrived late and getCurrentMusicalMs() would return a stale value.
+        startTime = sequencer.wallClockToMusicalMs(channel, boundaryWallClock);
+      } else if (duration != null && duration > 0) {
+        // Repeat mode without boundary override: snap to nearest grid.
         startTime = snapRepeatStartTime({
-          currentTime: startTime,
+          currentTime: sequencer.getCurrentMusicalMs(channel),
           durationMs: duration,
           visualNotes: arr,
         });
+      } else {
+        startTime = sequencer.getCurrentMusicalMs(channel);
       }
 
-      // Pass the snapped startTime to the recording so committed sequences
-      // are grid-aligned (no wall-clock RAF jitter).
-      const useExplicitTimestamp = duration != null;
+      // Pass the grid-aligned startTime to the recording so committed
+      // sequences have no wall-clock RAF jitter.
+      const useExplicitTimestamp = duration != null || boundaryWallClock != null;
       sequencer.pushRecordEvent(
         channel,
         'noteOn',

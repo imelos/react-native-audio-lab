@@ -121,10 +121,10 @@ export default function Player({
   }, [channel, noteRepeatMode, startRecording]);
 
   const rawNoteOn = useCallback(
-    (note: number, velocity: number, duration?: number) => {
+    (note: number, velocity: number, duration?: number, boundaryWallClock?: number) => {
       ensureRecordingArmed('trigger');
       NativeAudioModule.noteOn(channel, note, velocity);
-      pushNoteOn(note, velocity, duration);
+      pushNoteOn(note, velocity, duration, boundaryWallClock);
 
       // Live visual feedback (not from sequencer, since we're recording live)
       gridRef.current?.setPadActive(note, true);

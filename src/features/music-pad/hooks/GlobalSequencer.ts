@@ -683,6 +683,32 @@ class GlobalSequencer {
   }
 
   /**
+   * Like getCurrentMusicalMs but for a specific wall-clock time instead of
+   * performance.now(). Used by the repeat engine to compute grid-aligned
+   * recording timestamps for boundaries that were missed due to RAF jitter.
+   */
+  wallClockToMusicalMs(channel: number, wallClockTime: number): number {
+    const s = this.channels.get(channel);
+    if (!s) return 0;
+    if (s.isRecording && !s.sequence) {
+      return wallClockTime - s.recordingStartTime + s.recordingLoopOffset;
+    }
+    if (this._transportState === 'playing') {
+      const seq = s.sequence;
+      const dur = seq ? seq.duration : this.masterDuration;
+      const timelineStart = seq
+        ? this.getChannelPlaybackStartTime(s)
+        : this.globalStartTime;
+      const elapsed = wallClockTime - timelineStart;
+      return dur > 0 ? elapsed % dur : elapsed;
+    }
+    if (s.isRecording) {
+      return wallClockTime - s.recordingStartTime;
+    }
+    return 0;
+  }
+
+  /**
    * Returns the absolute performance.now() timestamp of the next grid
    * boundary aligned to the global transport. When the transport is not
    * playing, returns `now` (fire immediately).
