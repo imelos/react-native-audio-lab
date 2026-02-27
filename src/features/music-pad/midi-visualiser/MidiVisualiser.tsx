@@ -7,7 +7,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { StyleSheet, View } from 'react-native';
-import { LoopSequence, pairNotes, NotePair } from '../utils/loopUtils';
+import { AutomationEvent, LoopSequence, pairNotes, NotePair } from '../utils/loopUtils';
 
 export type VisualNote = {
   id: number;
@@ -15,6 +15,21 @@ export type VisualNote = {
   startTime: number;
   endTime?: number;
 };
+
+
+function automationColor(paramId: string): string {
+  'worklet';
+  if (paramId.startsWith('osc.'))         return '#4a9eff';
+  if (paramId.startsWith('voiceFilter.')) return '#ffe082';
+  if (paramId.startsWith('filter.'))      return '#ffd740';
+  if (paramId.startsWith('reverb.'))      return '#80cbc4';
+  if (paramId.startsWith('delay.'))       return '#ce93d8';
+  if (paramId.startsWith('chorus.'))      return '#ffb74d';
+  if (paramId.startsWith('distortion.'))  return '#ef9a9a';
+  if (paramId.startsWith('comp.'))        return '#a5d6a7';
+  if (paramId.startsWith('lfo.'))         return '#f48fb1';
+  return '#ffffff';
+}
 
 interface Props {
   width: number;
@@ -27,6 +42,7 @@ interface Props {
   showLiveOverlay?: boolean;
   /** Master loop duration — used to position live notes against the loop when overdubbing */
   loopDuration?: number;
+  automation?: AutomationEvent[];
   color: string;
 }
 
@@ -56,6 +72,7 @@ export function MidiVisualizer({
   sequence,
   showLiveOverlay = false,
   loopDuration,
+  automation,
   color = '#6200ee',
 }: Props) {
   const emptyNotes = useSharedValue<VisualNote[]>([]);
@@ -90,6 +107,13 @@ export function MidiVisualizer({
     _overlayStrokePaint.setStrokeWidth(1.5);
     return _overlayStrokePaint;
   }, [color]);
+
+  // ── Automation ──────────────────────────────────────────────────────────
+  const automationData = useSharedValue<AutomationEvent[]>(automation ?? []);
+  useEffect(() => {
+    automationData.value = automation ?? [];
+  }, [automation, automationData]);
+
 
   // Pre-compute sequence pairs synchronously when sequence changes.
   const pairs = useMemo(
@@ -343,6 +367,7 @@ export function MidiVisualizer({
     'worklet';
     const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, width, height));
 
+    // ── Note rects ────────────────────────────────────────────────────────
     const rects = rectsData.value;
     for (let i = 0; i < rects.length; i++) {
       const r = rects[i];
@@ -351,6 +376,50 @@ export function MidiVisualizer({
           Skia.XYWHRect(r.x, r.y, r.w, r.h),
           r.overlay ? overlayStrokePaint : r.active ? activePaint : inactivePaint,
         );
+      }
+    }
+
+    // ── Automation curves (full-size overlay) ─────────────────────────────
+    const automation = automationData.value;
+    const dur = sequenceDuration.value;
+    if (automation.length > 0 && dur > 0) {
+      // Collect unique paramIds in encounter order
+      const paramIds: string[] = [];
+      const seen: Record<string, boolean> = {};
+      for (let i = 0; i < automation.length; i++) {
+        const pid = automation[i].paramId;
+        if (!seen[pid]) {
+          seen[pid] = true;
+          paramIds.push(pid);
+        }
+      }
+
+      for (let pi = 0; pi < paramIds.length; pi++) {
+        const pid = paramIds[pi];
+        const hexColor = automationColor(pid);
+        const paint = Skia.Paint();
+        paint.setColor(Skia.Color(hexColor));
+        paint.setStyle(PaintStyle.Stroke);
+        paint.setStrokeWidth(1.5);
+        paint.setAntiAlias(true);
+
+        const path = Skia.Path.Make();
+        let first = true;
+        for (let i = 0; i < automation.length; i++) {
+          if (automation[i].paramId !== pid) continue;
+          const ev = automation[i];
+          const x = (ev.timestamp / dur) * width;
+          const y = (1 - ev.value) * height;
+          if (first) {
+            path.moveTo(x, y);
+            first = false;
+          } else {
+            path.lineTo(x, y);
+          }
+        }
+        if (!first) {
+          canvas.drawPath(path, paint);
+        }
       }
     }
 
@@ -363,6 +432,8 @@ export function MidiVisualizer({
     activePaint,
     inactivePaint,
     overlayStrokePaint,
+    automationData,
+    sequenceDuration,
   ]);
 
   return (

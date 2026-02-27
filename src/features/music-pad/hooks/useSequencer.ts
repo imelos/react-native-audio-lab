@@ -12,12 +12,69 @@ import {
   QuantizeGrid,
   LoopSequence,
   NoteEvent,
+  AutomationEvent,
 } from '../utils/loopUtils';
 import {
   getLatestPredictedEndTimeForNote,
   mergeOverdubIntoSequence,
   snapRepeatStartTime,
 } from '../engine/sequence/SequenceEngine';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Automation helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Wraps raw automation events (which may span multiple loop passes) into
+ * [0, loopDuration] and adds flat-line anchors so every paramId has complete
+ * coverage:
+ *   - anchor at t=0   with the value at the earliest recorded touch
+ *   - anchor at t=loopDuration with the value at the latest recorded touch
+ *
+ * This produces the Ableton-style behavior where untouched portions of the
+ * loop are represented as a straight line at the knob's held value.
+ */
+function prepareAutomationForCommit(
+  events: AutomationEvent[],
+  loopDuration: number,
+): AutomationEvent[] {
+  if (events.length === 0 || loopDuration <= 0) return events;
+
+  // Wrap every timestamp back into [0, loopDuration) to collapse multi-pass
+  // recordings — second-pass events land at the same positions as first-pass,
+  // giving them higher density (latest movement wins visually).
+  const wrapped: AutomationEvent[] = events.map(e => ({
+    ...e,
+    timestamp: ((e.timestamp % loopDuration) + loopDuration) % loopDuration,
+  }));
+
+  // Group by paramId
+  const byParam = new Map<string, AutomationEvent[]>();
+  for (const ev of wrapped) {
+    const arr = byParam.get(ev.paramId) ?? [];
+    arr.push(ev);
+    byParam.set(ev.paramId, arr);
+  }
+
+  const result: AutomationEvent[] = [];
+  for (const [paramId, evts] of byParam) {
+    const sorted = evts.sort((a, b) => a.timestamp - b.timestamp);
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+
+    // Flat line from loop start to first touch
+    if (first.timestamp > 0) {
+      result.push({ timestamp: 0, paramId, value: first.value });
+    }
+    result.push(...sorted);
+    // Flat line from last touch to loop end
+    if (last.timestamp < loopDuration) {
+      result.push({ timestamp: loopDuration, paramId, value: last.value });
+    }
+  }
+
+  return result.sort((a, b) => a.timestamp - b.timestamp);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Hook
@@ -107,6 +164,13 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     return sequencer.onTransport(state => setTransportState(state));
   }, [sequencer]);
 
+  // ── Sync isRecording with external startRecording calls (e.g. from useSynthChannel) ──
+  useEffect(() => {
+    return sequencer.onChannelRecording(channel, recording => {
+      setIsRecording(recording);
+    });
+  }, [channel, sequencer]);
+
   // ── Subscribe to sequence changes ───────────────────────────────────────
   useEffect(() => {
     return sequencer.onChannelSequence((ch, seq) => {
@@ -165,16 +229,35 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       overrideBPM?: number,
     ) => {
       const events = sequencer.stopRecording(channel);
+      const automationEvents = sequencer.stopAutomationRecording(channel);
       setIsRecording(false);
-      if (events.length === 0) return;
+      if (events.length === 0 && automationEvents.length === 0) return;
 
       const existing = sequencer.getSequence(channel);
       if (existing) {
-        const merged = mergeOverdubIntoSequence(existing, events);
+        // Always spread so we don't mutate the live sequence reference
+        const merged: typeof existing = events.length > 0
+          ? mergeOverdubIntoSequence(existing, events)
+          : { ...existing };
+        if (automationEvents.length > 0) {
+          const prepared = prepareAutomationForCommit(automationEvents, existing.duration);
+          // Replace existing automation for any paramId that was touched in this
+          // recording pass. Untouched params keep their existing curves.
+          const touchedIds = new Set(prepared.map(e => e.paramId));
+          const keptBase = (existing.automation ?? []).filter(
+            e => !touchedIds.has(e.paramId),
+          );
+          merged.automation = [...keptBase, ...prepared].sort(
+            (a, b) => a.timestamp - b.timestamp,
+          );
+        }
         sequencer.setSequence(channel, merged);
         rebuildVisualNotes(merged);
         return;
       }
+
+      // No existing sequence — can't create a loop from automation alone
+      if (events.length === 0) return;
 
       const name = `Ch ${channel} Loop`;
 
@@ -195,6 +278,10 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
         minDurationMs,
       );
       if (!loop) return;
+
+      if (automationEvents.length > 0) {
+        loop.automation = prepareAutomationForCommit(automationEvents, loop.duration);
+      }
 
       sequencer.setSequence(channel, loop);
 

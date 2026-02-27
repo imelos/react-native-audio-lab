@@ -186,6 +186,7 @@ export default function Player({
             ? masterDuration
             : undefined
         }
+        automation={sequence?.automation}
         color={color}
       />
     ),
