@@ -58,7 +58,16 @@ function prepareAutomationForCommit(
 
   const result: AutomationEvent[] = [];
   for (const [paramId, evts] of byParam) {
-    const sorted = evts.sort((a, b) => a.timestamp - b.timestamp);
+    // Deduplicate: events from pass N and pass N+1 both wrap to the same
+    // timestamp position, causing the replay to fire two events in the same
+    // RAF frame and the knob to jump. evts are in adjusted-timestamp order
+    // (pass 1 before pass 2), so iterating forward and overwriting via
+    // Map.set gives us latest-pass-wins at each 1ms-bucketed position.
+    const dedupMap = new Map<number, AutomationEvent>();
+    for (const ev of evts) {
+      dedupMap.set(Math.round(ev.timestamp), ev);
+    }
+    const sorted = Array.from(dedupMap.values()).sort((a, b) => a.timestamp - b.timestamp);
     const first = sorted[0];
     const last = sorted[sorted.length - 1];
 
@@ -103,6 +112,10 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   // (e.g. chord re-triggers in repeat mode).
   const visualNotesRef = useRef<VisualNote[]>([]);
   const noteIdRef = useRef(0);
+
+  // ── Live automation (dashed preview while recording, cleared on commit) ─
+  const liveAutomationEvents = useSharedValue<AutomationEvent[]>([]);
+  const liveAutomationRef = useRef<AutomationEvent[]>([]);
 
   // ── React state (only for UI that genuinely needs re-render) ───────────
   const [transportState, setTransportState] = useState<TransportState>(
@@ -150,7 +163,15 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       }
     },
 
-    onLoopWrap() {},
+    onLoopWrap() {
+      // Mirror the automationBuffer clear that GlobalSequencer does on wrap:
+      // discard the previous pass's live preview so the dashed curve starts
+      // fresh each time the loop restarts during recording.
+      if (isRecordingRef.current) {
+        liveAutomationRef.current = [];
+        liveAutomationEvents.value = [];
+      }
+    },
   });
 
   // ── Register / detach ───────────────────────────────────────────────────
@@ -168,8 +189,47 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
   useEffect(() => {
     return sequencer.onChannelRecording(channel, recording => {
       setIsRecording(recording);
+      if (!recording) {
+        // Clear live preview when recording stops (commit or clear).
+        liveAutomationRef.current = [];
+        liveAutomationEvents.value = [];
+      }
     });
-  }, [channel, sequencer]);
+  }, [channel, sequencer, liveAutomationEvents]);
+
+  // ── Accumulate live automation events for dashed preview ───────────────
+  useEffect(() => {
+    return sequencer.onChannelAutomationRecord(channel, event => {
+      const prev = liveAutomationRef.current;
+
+      // Find the last recorded timestamp for this paramId so we can detect
+      // a loop wrap (timestamps are always increasing within a pass because
+      // performance.now() is monotonic, so a backward jump means wrap).
+      let lastTs = -1;
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].paramId === event.paramId) {
+          lastTs = prev[i].timestamp;
+          break;
+        }
+      }
+
+      let next: AutomationEvent[];
+      if (lastTs >= 0 && event.timestamp < lastTs - 1) {
+        // Loop wrap detected for this param: drop all events at or after the
+        // new position (the current pass is overwriting them), keep everything
+        // before it (not yet reached by the recording head this pass).
+        next = prev.filter(
+          e => e.paramId !== event.paramId || e.timestamp < event.timestamp,
+        );
+        next = [...next, event];
+      } else {
+        next = [...prev, event];
+      }
+
+      liveAutomationRef.current = next;
+      liveAutomationEvents.value = next;
+    });
+  }, [channel, sequencer, liveAutomationEvents]);
 
   // ── Subscribe to sequence changes ───────────────────────────────────────
   useEffect(() => {
@@ -204,8 +264,10 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     // visualNotes now represent only the current recording pass (live overlay).
     visualNotesRef.current = [];
     visualNotes.value = [];
+    liveAutomationRef.current = [];
+    liveAutomationEvents.value = [];
     setIsRecording(true);
-  }, [channel, sequencer, visualNotes]);
+  }, [channel, sequencer, visualNotes, liveAutomationEvents]);
 
   const clearRecording = useCallback(() => {
     sequencer.stopRecording(channel); // discard events
@@ -422,6 +484,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
     playheadX,
     currentMusicalMs,
     visualNotes,
+    liveAutomationEvents,
     masterDuration,
 
     // Global transport (any Player can trigger these)

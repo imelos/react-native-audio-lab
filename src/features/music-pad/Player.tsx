@@ -68,6 +68,7 @@ export default function Player({
     playheadX,
     currentMusicalMs,
     visualNotes,
+    liveAutomationEvents,
     masterDuration,
     // play,
     // stop,
@@ -187,6 +188,7 @@ export default function Player({
             : undefined
         }
         automation={sequence?.automation}
+        liveAutomation={liveAutomationEvents}
         color={color}
       />
     ),

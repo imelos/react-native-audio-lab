@@ -363,6 +363,11 @@ export function useSynthChannel(channelId: number): SynthChannelHandle {
     return GlobalSequencer.getInstance().onChannelAutomation(
       channelId,
       (paramId, normValue) => {
+        // Never apply committed automation replay while the user is actively
+        // recording — live knob movements are authoritative during overdub.
+        // This prevents the knob from oscillating between the old committed
+        // value and the new value being recorded at 60fps.
+        if (GlobalSequencer.getInstance().isChannelRecording(channelId)) return;
         const raw = denormalizeParam(paramId, normValue);
         switch (paramId) {
           // ── Osc ──────────────────────────────────────────────────
