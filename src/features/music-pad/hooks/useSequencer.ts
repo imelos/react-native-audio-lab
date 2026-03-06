@@ -85,6 +85,68 @@ function prepareAutomationForCommit(
   return result.sort((a, b) => a.timestamp - b.timestamp);
 }
 
+/**
+ * Merges a new set of raw automation events into existing committed automation
+ * using Ableton-style overdub: only the time range actually touched by the user
+ * is replaced; everything outside that range keeps its old curve.
+ *
+ * For params with NO existing automation, flat-line anchors at t=0 and
+ * t=loopDuration are added so the full loop has coverage (same as first-take).
+ */
+function mergeAutomationOverdub(
+  existingAutomation: AutomationEvent[],
+  newEvents: AutomationEvent[],
+  loopDuration: number,
+): AutomationEvent[] {
+  if (newEvents.length === 0) return existingAutomation;
+
+  // Wrap timestamps to [0, loopDuration)
+  const wrapped: AutomationEvent[] = newEvents.map(e => ({
+    ...e,
+    timestamp: ((e.timestamp % loopDuration) + loopDuration) % loopDuration,
+  }));
+
+  // Group by paramId, deduplicate via 1ms buckets (latest-pass-wins)
+  const byParam = new Map<string, AutomationEvent[]>();
+  for (const ev of wrapped) {
+    const arr = byParam.get(ev.paramId) ?? [];
+    arr.push(ev);
+    byParam.set(ev.paramId, arr);
+  }
+
+  let result = [...existingAutomation];
+
+  for (const [paramId, evts] of byParam) {
+    const dedupMap = new Map<number, AutomationEvent>();
+    for (const ev of evts) {
+      dedupMap.set(Math.round(ev.timestamp), ev);
+    }
+    const sorted = Array.from(dedupMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+
+    const hasExisting = existingAutomation.some(e => e.paramId === paramId);
+    if (hasExisting) {
+      // Splice: replace [T1, T2] with new events, keep old events outside
+      result = result.filter(
+        e => e.paramId !== paramId || e.timestamp < first.timestamp || e.timestamp > last.timestamp,
+      );
+      result.push(...sorted);
+    } else {
+      // First time automating this param during overdub — add full-loop anchors
+      if (first.timestamp > 0) {
+        result.push({ timestamp: 0, paramId, value: first.value });
+      }
+      result.push(...sorted);
+      if (last.timestamp < loopDuration) {
+        result.push({ timestamp: loopDuration, paramId, value: last.value });
+      }
+    }
+  }
+
+  return result.sort((a, b) => a.timestamp - b.timestamp);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Hook
 // ─────────────────────────────────────────────────────────────────────────────
@@ -163,15 +225,7 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
       }
     },
 
-    onLoopWrap() {
-      // Mirror the automationBuffer clear that GlobalSequencer does on wrap:
-      // discard the previous pass's live preview so the dashed curve starts
-      // fresh each time the loop restarts during recording.
-      if (isRecordingRef.current) {
-        liveAutomationRef.current = [];
-        liveAutomationEvents.value = [];
-      }
-    },
+    onLoopWrap() {},
   });
 
   // ── Register / detach ───────────────────────────────────────────────────
@@ -302,15 +356,10 @@ export function useSequencer({ channel, gridRef }: UseSequencerOptions) {
           ? mergeOverdubIntoSequence(existing, events)
           : { ...existing };
         if (automationEvents.length > 0) {
-          const prepared = prepareAutomationForCommit(automationEvents, existing.duration);
-          // Replace existing automation for any paramId that was touched in this
-          // recording pass. Untouched params keep their existing curves.
-          const touchedIds = new Set(prepared.map(e => e.paramId));
-          const keptBase = (existing.automation ?? []).filter(
-            e => !touchedIds.has(e.paramId),
-          );
-          merged.automation = [...keptBase, ...prepared].sort(
-            (a, b) => a.timestamp - b.timestamp,
+          merged.automation = mergeAutomationOverdub(
+            existing.automation ?? [],
+            automationEvents,
+            existing.duration,
           );
         }
         sequencer.setSequence(channel, merged);
