@@ -1,6 +1,6 @@
 import performance from 'react-native-performance';
 import NativeAudioModule from '../../../specs/NativeAudioModule';
-import type { LoopSequence, NoteEvent } from '../utils/loopUtils';
+import type { AutomationEvent, LoopSequence, NoteEvent } from '../utils/loopUtils';
 import {
   computeLoopTime,
   findNextEventIndex,
@@ -43,6 +43,13 @@ interface ChannelState {
   recordingLoopOffset: number; // where in the active recording timeline we started
   recordingTimelineDuration: number; // seq.duration for overdub, else masterDuration
   recordedEvents: NoteEvent[];
+  automationBuffer: AutomationEvent[];
+  // Set of paramIds currently in automationBuffer — used by the RAF loop to
+  // suppress committed-automation replay for params being actively recorded,
+  // preventing the knob from oscillating between old and new values mid-take.
+  recordingParamIds: Set<string>;
+  // Playback replay cursor for automation events (reset on loop wrap)
+  lastAutomationIdx: number;
 }
 
 export interface ChannelPlaybackSnapshot {
@@ -72,6 +79,13 @@ const NO_OP_DELEGATE: ChannelDelegate = {
 
 const DEFAULT_LAUNCH_QUANTIZATION_MS = 2000; // 1 bar @ 120 BPM
 
+function findNextAutomationIdx(automation: AutomationEvent[], loopTime: number): number {
+  for (let i = 0; i < automation.length; i++) {
+    if (automation[i].timestamp > loopTime) return i;
+  }
+  return automation.length;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Singleton
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +110,9 @@ class GlobalSequencer {
 
   private transportListeners = new Set<TransportListener>();
   private channelSequenceListeners = new Set<ChannelSequenceListener>();
+  private automationListeners = new Map<number, Set<(paramId: string, value: number) => void>>();
+  private recordingListeners = new Map<number, Set<(isRecording: boolean) => void>>();
+  private automationRecordListeners = new Map<number, Set<(event: AutomationEvent) => void>>();
 
   private constructor() {}
 
@@ -124,6 +141,9 @@ class GlobalSequencer {
       recordingLoopOffset: 0,
       recordingTimelineDuration: 0,
       recordedEvents: [],
+      automationBuffer: [],
+      recordingParamIds: new Set(),
+      lastAutomationIdx: 0,
     });
   }
 
@@ -199,9 +219,13 @@ class GlobalSequencer {
       );
       state.lastLoopTime = loopTime;
       state.eventIndex = findNextEventIndex(sequence.events, loopTime);
+      state.lastAutomationIdx = sequence.automation
+        ? findNextAutomationIdx(sequence.automation, loopTime)
+        : 0;
     } else {
       state.eventIndex = 0;
       state.lastLoopTime = -1;
+      state.lastAutomationIdx = 0;
     }
 
     this.recalcMasterDuration();
@@ -331,9 +355,13 @@ class GlobalSequencer {
   startRecording(channel: number): void {
     const s = this.channels.get(channel);
     if (!s) return;
+    if (s.isRecording) return; // already armed — don't reset buffers mid-recording
     s.isRecording = true;
     s.recordingStartTime = performance.now();
     s.recordedEvents = [];
+    s.automationBuffer = [];
+    s.recordingParamIds = new Set();
+    this.recordingListeners.get(channel)?.forEach(fn => fn(true));
 
     // Capture where in the active timeline we are so recorded events can
     // be placed at the correct loop-relative position when recording stops.
@@ -361,6 +389,7 @@ class GlobalSequencer {
     const s = this.channels.get(channel);
     if (!s) return [];
     s.isRecording = false;
+    this.recordingListeners.get(channel)?.forEach(fn => fn(false));
     const offset = s.recordingLoopOffset;
     const timelineDuration = s.recordingTimelineDuration;
     // Offset events so they're timeline-aligned (sequence timeline for overdub,
@@ -396,6 +425,96 @@ class GlobalSequencer {
 
   isChannelRecording(channel: number): boolean {
     return this.channels.get(channel)?.isRecording ?? false;
+  }
+
+  /** Record a normalized automation value at the current musical time for the channel. */
+  pushAutomationEvent(channel: number, paramId: string, normalizedValue: number): void {
+    const s = this.channels.get(channel);
+    if (!s?.isRecording) return;
+    const timestamp = performance.now() - s.recordingStartTime;
+    s.automationBuffer.push({ timestamp, paramId, value: normalizedValue });
+    s.recordingParamIds.add(paramId);
+
+    // Fire live-preview listeners with a loop-relative timestamp so the
+    // MidiVisualizer can display dashed curves as the user moves knobs.
+    const liveListeners = this.automationRecordListeners.get(channel);
+    if (liveListeners && liveListeners.size > 0) {
+      const dur = s.recordingTimelineDuration;
+      const raw = timestamp + s.recordingLoopOffset;
+      const loopRelative = dur > 0 ? ((raw % dur) + dur) % dur : raw;
+      const liveEvent: AutomationEvent = { timestamp: loopRelative, paramId, value: normalizedValue };
+      liveListeners.forEach(fn => fn(liveEvent));
+    }
+  }
+
+  /** Finalize automation recording, apply the same loop-offset normalization as stopRecording(). */
+  stopAutomationRecording(channel: number): AutomationEvent[] {
+    const s = this.channels.get(channel);
+    if (!s) return [];
+    const offset = s.recordingLoopOffset;
+    const timelineDuration = s.recordingTimelineDuration;
+    let lastTimestamp = -Infinity;
+    const evts = s.automationBuffer.map(e => {
+      let timestamp = e.timestamp + offset;
+      if (timelineDuration > 0) {
+        while (timestamp < lastTimestamp - 1) {
+          timestamp += timelineDuration;
+        }
+      }
+      lastTimestamp = timestamp;
+      return { ...e, timestamp };
+    });
+    s.automationBuffer = [];
+    s.recordingParamIds = new Set();
+    return evts.sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  /** Subscribe to recording state changes for a channel. Returns unsubscribe fn. */
+  onChannelRecording(
+    channel: number,
+    fn: (isRecording: boolean) => void,
+  ): () => void {
+    let listeners = this.recordingListeners.get(channel);
+    if (!listeners) {
+      listeners = new Set();
+      this.recordingListeners.set(channel, listeners);
+    }
+    listeners.add(fn);
+    return () => {
+      this.recordingListeners.get(channel)?.delete(fn);
+    };
+  }
+
+  /** Subscribe to per-channel automation events fired during playback. Returns unsubscribe fn. */
+  onChannelAutomation(
+    channel: number,
+    fn: (paramId: string, value: number) => void,
+  ): () => void {
+    let listeners = this.automationListeners.get(channel);
+    if (!listeners) {
+      listeners = new Set();
+      this.automationListeners.set(channel, listeners);
+    }
+    listeners.add(fn);
+    return () => {
+      this.automationListeners.get(channel)?.delete(fn);
+    };
+  }
+
+  /** Subscribe to live automation events pushed during recording (loop-relative timestamps). Returns unsubscribe fn. */
+  onChannelAutomationRecord(
+    channel: number,
+    fn: (event: AutomationEvent) => void,
+  ): () => void {
+    let listeners = this.automationRecordListeners.get(channel);
+    if (!listeners) {
+      listeners = new Set();
+      this.automationRecordListeners.set(channel, listeners);
+    }
+    listeners.add(fn);
+    return () => {
+      this.automationRecordListeners.get(channel)?.delete(fn);
+    };
   }
 
   /** Called by the Player when the user touches a pad during recording.
@@ -603,6 +722,17 @@ class GlobalSequencer {
         if (loopTime < s.lastLoopTime) {
           this.silenceChannel(ch, s);
           s.eventIndex = 0;
+          s.lastAutomationIdx = 0;
+          // Clear the automation buffer on each loop wrap so that only the
+          // current pass is committed when ADD is pressed. Without this,
+          // events from multiple passes wrap to the same loop positions but
+          // land at slightly different timestamps (RAF jitter), causing the
+          // replay to alternate between old and new values at 60fps.
+          // recordingParamIds is kept so the committed automation remains
+          // suppressed throughout the entire recording session.
+          if (s.isRecording) {
+            s.automationBuffer = [];
+          }
           s.delegate.onLoopWrap();
         }
 
@@ -623,6 +753,27 @@ class GlobalSequencer {
             s.delegate.onNoteOff(e.note);
           }
           s.eventIndex++;
+        }
+
+        // ── Automation replay ──────────────────────────────────────
+        const automation = seq.automation;
+        if (automation && automation.length > 0) {
+          const autoListeners = this.automationListeners.get(ch);
+          if (autoListeners && autoListeners.size > 0) {
+            while (
+              s.lastAutomationIdx < automation.length &&
+              automation[s.lastAutomationIdx].timestamp <= loopTime
+            ) {
+              const ev = automation[s.lastAutomationIdx];
+              // Suppress replay for params currently being recorded — the user's
+              // live movement is the authoritative value; replaying the old
+              // committed curve would cause the knob to oscillate at 60fps.
+              if (!s.recordingParamIds.has(ev.paramId)) {
+                autoListeners.forEach(fn => fn(ev.paramId, ev.value));
+              }
+              s.lastAutomationIdx++;
+            }
+          }
         }
 
         // ── Per-frame tick (playhead, visualizer) ──────────────────
@@ -735,6 +886,9 @@ class GlobalSequencer {
     this.channels.clear();
     this.transportListeners.clear();
     this.channelSequenceListeners.clear();
+    this.automationListeners.clear();
+    this.recordingListeners.clear();
+    this.automationRecordListeners.clear();
     GlobalSequencer._instance = null;
   }
 

@@ -25,8 +25,15 @@ export interface NoteEvent {
   velocity: number;
 }
 
+export interface AutomationEvent {
+  timestamp: number; // loop-relative ms (same coordinate space as NoteEvent)
+  paramId: string;   // e.g. 'osc.waveform', 'reverb.wetLevel'
+  value: number;     // normalized [0, 1]
+}
+
 export interface LoopSequence {
   events: NoteEvent[];
+  automation?: AutomationEvent[]; // sorted ascending by timestamp
   duration: number; // loop length in ms
   durationBars: number;
   name: string;

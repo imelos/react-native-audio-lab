@@ -7,7 +7,7 @@ import Animated, {
   useSharedValue,
 } from 'react-native-reanimated';
 import { StyleSheet, View } from 'react-native';
-import { LoopSequence, pairNotes, NotePair } from '../utils/loopUtils';
+import { AutomationEvent, LoopSequence, pairNotes, NotePair } from '../utils/loopUtils';
 
 export type VisualNote = {
   id: number;
@@ -15,6 +15,21 @@ export type VisualNote = {
   startTime: number;
   endTime?: number;
 };
+
+
+function automationColor(paramId: string): string {
+  'worklet';
+  if (paramId.startsWith('osc.'))         return '#4a9eff';
+  if (paramId.startsWith('voiceFilter.')) return '#ffe082';
+  if (paramId.startsWith('filter.'))      return '#ffd740';
+  if (paramId.startsWith('reverb.'))      return '#80cbc4';
+  if (paramId.startsWith('delay.'))       return '#ce93d8';
+  if (paramId.startsWith('chorus.'))      return '#ffb74d';
+  if (paramId.startsWith('distortion.'))  return '#ef9a9a';
+  if (paramId.startsWith('comp.'))        return '#a5d6a7';
+  if (paramId.startsWith('lfo.'))         return '#f48fb1';
+  return '#ffffff';
+}
 
 interface Props {
   width: number;
@@ -27,6 +42,9 @@ interface Props {
   showLiveOverlay?: boolean;
   /** Master loop duration — used to position live notes against the loop when overdubbing */
   loopDuration?: number;
+  automation?: AutomationEvent[];
+  /** Live automation events accumulated during recording — shown as dashed preview */
+  liveAutomation?: SharedValue<AutomationEvent[]>;
   color: string;
 }
 
@@ -56,6 +74,8 @@ export function MidiVisualizer({
   sequence,
   showLiveOverlay = false,
   loopDuration,
+  automation,
+  liveAutomation,
   color = '#6200ee',
 }: Props) {
   const emptyNotes = useSharedValue<VisualNote[]>([]);
@@ -90,6 +110,17 @@ export function MidiVisualizer({
     _overlayStrokePaint.setStrokeWidth(1.5);
     return _overlayStrokePaint;
   }, [color]);
+
+  // ── Automation ──────────────────────────────────────────────────────────
+  const automationData = useSharedValue<AutomationEvent[]>(automation ?? []);
+  useEffect(() => {
+    automationData.value = automation ?? [];
+  }, [automation, automationData]);
+
+  // Live automation (dashed preview while recording)
+  const emptyAutomation = useSharedValue<AutomationEvent[]>([]);
+  const resolvedLiveAutomation = liveAutomation ?? emptyAutomation;
+
 
   // Pre-compute sequence pairs synchronously when sequence changes.
   const pairs = useMemo(
@@ -343,6 +374,7 @@ export function MidiVisualizer({
     'worklet';
     const canvas = recorder.beginRecording(Skia.XYWHRect(0, 0, width, height));
 
+    // ── Note rects ────────────────────────────────────────────────────────
     const rects = rectsData.value;
     for (let i = 0; i < rects.length; i++) {
       const r = rects[i];
@@ -351,6 +383,101 @@ export function MidiVisualizer({
           Skia.XYWHRect(r.x, r.y, r.w, r.h),
           r.overlay ? overlayStrokePaint : r.active ? activePaint : inactivePaint,
         );
+      }
+    }
+
+    // ── Automation curves (full-size overlay) ─────────────────────────────
+    const automation = automationData.value;
+    const dur = sequenceDuration.value;
+    // Build set of params currently being overridden by live recording —
+    // committed curves for those params are suppressed so the dashed live
+    // line is the only thing shown while the knob is moving.
+    const liveAutoForSuppress = resolvedLiveAutomation.value;
+    const liveOverriding: Record<string, boolean> = {};
+    for (let i = 0; i < liveAutoForSuppress.length; i++) {
+      liveOverriding[liveAutoForSuppress[i].paramId] = true;
+    }
+    if (automation.length > 0 && dur > 0) {
+      // Collect unique paramIds in encounter order, skipping live-overridden ones
+      const paramIds: string[] = [];
+      const seen: Record<string, boolean> = {};
+      for (let i = 0; i < automation.length; i++) {
+        const pid = automation[i].paramId;
+        if (!seen[pid] && !liveOverriding[pid]) {
+          seen[pid] = true;
+          paramIds.push(pid);
+        }
+      }
+
+      for (let pi = 0; pi < paramIds.length; pi++) {
+        const pid = paramIds[pi];
+        const hexColor = automationColor(pid);
+        const paint = Skia.Paint();
+        paint.setColor(Skia.Color(hexColor));
+        paint.setStyle(PaintStyle.Stroke);
+        paint.setStrokeWidth(1.5);
+        paint.setAntiAlias(true);
+
+        const path = Skia.Path.Make();
+        let first = true;
+        for (let i = 0; i < automation.length; i++) {
+          if (automation[i].paramId !== pid) continue;
+          const ev = automation[i];
+          const x = (ev.timestamp / dur) * width;
+          const y = (1 - ev.value) * height;
+          if (first) {
+            path.moveTo(x, y);
+            first = false;
+          } else {
+            path.lineTo(x, y);
+          }
+        }
+        if (!first) {
+          canvas.drawPath(path, paint);
+        }
+      }
+    }
+
+    // ── Live automation curves (dashed, shown while recording) ────────────
+    const liveAuto = resolvedLiveAutomation.value;
+    if (liveAuto.length > 0 && dur > 0) {
+      const liveParamIds: string[] = [];
+      const liveSeen: Record<string, boolean> = {};
+      for (let i = 0; i < liveAuto.length; i++) {
+        const pid = liveAuto[i].paramId;
+        if (!liveSeen[pid]) {
+          liveSeen[pid] = true;
+          liveParamIds.push(pid);
+        }
+      }
+
+      for (let pi = 0; pi < liveParamIds.length; pi++) {
+        const pid = liveParamIds[pi];
+        const hexColor = automationColor(pid);
+        const livePaint = Skia.Paint();
+        livePaint.setColor(Skia.Color(hexColor));
+        livePaint.setStyle(PaintStyle.Stroke);
+        livePaint.setStrokeWidth(1.5);
+        livePaint.setAntiAlias(true);
+        livePaint.setPathEffect(Skia.PathEffect.MakeDash([4, 4], 0));
+
+        const livePath = Skia.Path.Make();
+        let liveFirst = true;
+        for (let i = 0; i < liveAuto.length; i++) {
+          if (liveAuto[i].paramId !== pid) continue;
+          const ev = liveAuto[i];
+          const x = (ev.timestamp / dur) * width;
+          const y = (1 - ev.value) * height;
+          if (liveFirst) {
+            livePath.moveTo(x, y);
+            liveFirst = false;
+          } else {
+            livePath.lineTo(x, y);
+          }
+        }
+        if (!liveFirst) {
+          canvas.drawPath(livePath, livePaint);
+        }
       }
     }
 
@@ -363,6 +490,9 @@ export function MidiVisualizer({
     activePaint,
     inactivePaint,
     overlayStrokePaint,
+    automationData,
+    sequenceDuration,
+    resolvedLiveAutomation,
   ]);
 
   return (
